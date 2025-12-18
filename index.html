@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- ESTA LÍNEA ES LA SOLUCIÓN AL MODO OSCURO -->
+    <meta name="color-scheme" content="light"> 
+    <title>Sistema de Atención</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Estilos de emergencia para forzar colores -->
+    <style>
+      :root { color-scheme: light; }
+      body { background-color: #f1f5f9; color: #0f172a; }
+      /* Forzar inputs blancos con letras negras */
+      input, select, textarea {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+        border: 1px solid #cbd5e1;
+      }
+      input:read-only {
+        background-color: #f1f5f9 !important; 
+        color: #334155 !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
