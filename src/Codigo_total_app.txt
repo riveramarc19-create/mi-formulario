@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Activity, ArrowRight, ArrowLeft, X, Plus, 
-  LogOut, Database, Search, Trash2, FileSpreadsheet, Calendar, Edit, Download, Grid, Save, UserPlus, Users, Save as SaveIcon, FileText, AlertTriangle, Calculator, Siren, Baby, RefreshCw, CheckCircle, Droplets
+  LogOut, Database, Search, Trash2, FileSpreadsheet, Calendar, Edit, Download, Grid, Save, UserPlus, Users, Save as SaveIcon, FileText, AlertTriangle, Calculator, Siren, Baby, RefreshCw, CheckCircle, Droplets, Eye, EyeOff
 } from 'lucide-react';
 
 import NutritionalStatusModal from './NutritionalStatusModal';
@@ -155,12 +155,163 @@ const SimpleCalendar = ({ selectedDate, onSelectDate, onClose, themeColor }) => 
   );
 };
 
+// --- COMPONENTE MODAL PARA VER SEGUIMIENTO CRED ---
+const CredFollowUpModal = ({ isOpen, onClose }) => {
+  const [credData, setCredData] = useState([]);
+  const [columns, setColumns] = useState([]); // Estado para guardar las columnas fijas
+  const [filterTerm, setFilterTerm] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  if (!isOpen) return null;
+
+  // Función auxiliar para convertir fecha Excel (número serial) a formato legible
+  const formatExcelDate = (value) => {
+    if (typeof value === 'number' && value > 20000 && value < 60000) {
+       // Ajuste aproximado para fechas de Excel
+       const date = new Date(Math.round((value - 25569) * 86400 * 1000));
+       // Sumar horas para compensar zona horaria si es necesario
+       date.setMinutes(date.getMinutes() + date.getTimezoneOffset());
+       if(!isNaN(date.getTime())) {
+         return date.toLocaleDateString("es-PE");
+       }
+    }
+    return value;
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setIsLoading(true);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        // header: 1 devuelve un array de arrays (Fila 0 = Cabeceras)
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1 }); 
+        
+        if (data.length > 0) {
+            const headers = data[0]; // La primera fila son los títulos reales
+            setColumns(headers); // Guardamos las columnas exactas del Excel
+
+            const rows = data.slice(1).map((r, i) => {
+                let obj = { id: i };
+                headers.forEach((h, index) => {
+                    // Guardamos el valor o guión si está vacío
+                    obj[h] = r[index] !== undefined ? r[index] : "";
+                });
+                // Crear string para el buscador
+                obj.searchStr = Object.values(obj).join(" ").toUpperCase();
+                return obj;
+            });
+            setCredData(rows);
+        }
+      } catch (err) {
+        alert("Error al leer el Excel CRED: " + err.message);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const filteredData = credData.filter(row => 
+    !filterTerm || row.searchStr.includes(filterTerm.toUpperCase())
+  ).slice(0, 100); 
+
+  return (
+    <div className="fixed inset-0 z-[90] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[95%] h-[90vh] flex flex-col border border-slate-200 overflow-hidden">
+        
+        {/* CABECERA */}
+        <div className="bg-[#0F172A] p-4 flex justify-between items-center shrink-0">
+            <div className="flex items-center gap-3">
+                <div className="bg-emerald-500 p-2 rounded-lg text-white"><FileSpreadsheet size={24}/></div>
+                <div>
+                    <h3 className="text-white font-bold text-lg">SEGUIMIENTO CRED</h3>
+                    <p className="text-slate-400 text-xs">Visualización Completa del Archivo</p>
+                </div>
+            </div>
+            <button onClick={onClose} className="text-slate-400 hover:text-white hover:bg-white/10 p-2 rounded-full transition-all"><X size={24}/></button>
+        </div>
+
+        {/* BARRA DE HERRAMIENTAS */}
+        <div className="p-4 bg-slate-50 border-b border-slate-200 flex gap-4 items-center shrink-0">
+            {credData.length === 0 ? (
+                <div className="relative group w-full">
+                    <input type="file" id="fileCred" className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
+                    <label htmlFor="fileCred" className="cursor-pointer w-full border-2 border-dashed border-slate-300 hover:border-emerald-500 bg-white hover:bg-emerald-50 h-16 rounded-xl flex flex-col items-center justify-center transition-all group-hover:text-emerald-600 text-slate-500 font-bold">
+                        {isLoading ? "Cargando..." : "📂 CLIC AQUÍ PARA CARGAR EL EXCEL 'SEGUIMIENTO CRED'"}
+                    </label>
+                </div>
+            ) : (
+                <div className="flex w-full gap-4">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-3 top-3 text-slate-400" size={20}/>
+                        <input 
+                            autoFocus
+                            className="w-full h-11 pl-10 pr-4 rounded-xl border-2 border-slate-300 focus:border-emerald-500 outline-none font-bold uppercase text-sm" 
+                            placeholder="BUSCAR EN CUALQUIER COLUMNA..." 
+                            value={filterTerm}
+                            onChange={e => setFilterTerm(e.target.value)}
+                        />
+                    </div>
+                    <button onClick={() => { setCredData([]); setColumns([]); }} className="px-4 bg-red-100 text-red-600 font-bold rounded-xl hover:bg-red-200 text-xs whitespace-nowrap">CAMBIAR ARCHIVO</button>
+                </div>
+            )}
+        </div>
+
+        {/* TABLA DE DATOS CON SCROLL HORIZONTAL CORREGIDO */}
+        <div className="flex-1 overflow-auto bg-slate-100 p-4">
+            {credData.length > 0 ? (
+                // CAMBIO CLAVE: overflow-x-auto permite el scroll horizontal
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+                    <table className="w-full text-xs text-left border-collapse">
+                        <thead className="bg-slate-50 text-slate-500 font-bold uppercase">
+                            <tr>
+                                {/* Renderizamos usando las columnas reales del Excel */}
+                                {columns.map((col, i) => (
+                                    <th key={i} className="px-4 py-3 border-b border-r border-slate-200 whitespace-nowrap min-w-[100px] bg-slate-50 sticky top-0 z-10">
+                                        {col}
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {filteredData.map((row) => (
+                                <tr key={row.id} className="hover:bg-blue-50 transition-colors">
+                                    {columns.map((col, i) => (
+                                        <td key={i} className="px-4 py-2 text-slate-700 whitespace-nowrap border-r border-slate-100">
+                                            {formatExcelDate(row[col])}
+                                        </td>
+                                    ))}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    {filteredData.length === 0 && <div className="p-10 text-center text-slate-400 font-bold">No se encontraron resultados para "{filterTerm}"</div>}
+                </div>
+            ) : (
+                <div className="h-full flex items-center justify-center text-slate-400 font-medium">
+                    Esperando archivo...
+                </div>
+            )}
+        </div>
+        <div className="bg-slate-50 p-2 text-center text-[10px] text-slate-400 font-bold border-t border-slate-200">
+            Mostrando {filteredData.length} registros. (Deslice horizontalmente para ver más columnas)
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function App() {
   const [showNutriModal, setShowNutriModal] = useState(false);
   const [showAnemiaModal, setShowAnemiaModal] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const calendarRef = useRef(null);
   const handleDateSelect = (date) => setPatientData(prev => ({ ...prev, fecAtencion: date }));
+  const [showCredModal, setShowCredModal] = useState(false); // ESTADO DEL MODAL CRED
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -198,14 +349,12 @@ export default function App() {
   const [dbCie10, setDbCie10] = useState(CIE10_LIST); 
   const [dbPersonal, setDbPersonal] = useState(PERSONAL_LIST); 
   const [dbStatus, setDbStatus] = useState('loading'); 
-// =========================================================
-  // PEGAR ESTO JUSTO DEBAJO DE "const [dbStatus, setDbStatus]..."
-  // =========================================================
 
   // --- NUEVOS ESTADOS PARA LOGIN ---
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loginDni, setLoginDni] = useState("");
   const [loginPass, setLoginPass] = useState("");
+  const [showPassword, setShowPassword] = useState(false); // <--- CONTROL VISIBILIDAD PASSWORD
   const [loginError, setLoginError] = useState("");
 
   // --- FUNCIÓN DE LOGIN ---
@@ -221,7 +370,6 @@ export default function App() {
         setLoginError("");
 
         // 3. COPIAR DNI AL CAMPO DE CONFIGURACIÓN AUTOMÁTICAMENTE
-        // (Esto busca la variable setAdminData que está más abajo en tu código)
         if (typeof setAdminData === 'function') {
             setAdminData(prev => ({
                 ...prev,
@@ -248,7 +396,7 @@ export default function App() {
   const [currentDxRow, setCurrentDxRow] = useState(0); 
   const [modalSearchTerm, setModalSearchTerm] = useState("");
   const [modalSuggestions, setModalSuggestions] = useState([]);
-  const [tempDx, setTempDx] = useState({ desc: '', tipo: 'P', lab1: '', lab2: '', lab3: '', codigo: '' });
+  const [tempDx, setTempDx] = useState({ desc: '', tipo: 'D', lab1: '', lab2: '', lab3: '', codigo: '' });
 
   const [dxSuggestions, setDxSuggestions] = useState([]);
   const [activeDxIndex, setActiveDxIndex] = useState(null);
@@ -454,7 +602,7 @@ export default function App() {
   };
 
   const checkRowValidity = (row) => { return (row.desc && row.desc.trim() !== '' && row.tipo && row.tipo !== '-' && row.tipo !== '' && row.codigo && row.codigo.trim() !== ''); };
-  const openDxSearch = (index) => { setCurrentDxRow(index); const existing = diagnoses[index]; setTempDx({ desc: existing.desc || '', codigo: existing.codigo || '', tipo: (existing.tipo && existing.tipo !== '-') ? existing.tipo : 'P', lab1: existing.lab1 || '', lab2: existing.lab2 || '', lab3: existing.lab3 || '' }); setModalSearchTerm(""); setModalSuggestions([]); setIsDxModalOpen(true); };
+  const openDxSearch = (index) => { setCurrentDxRow(index); const existing = diagnoses[index]; setTempDx({ desc: existing.desc || '', codigo: existing.codigo || '', tipo: (existing.tipo && existing.tipo !== '-') ? existing.tipo : 'D', lab1: existing.lab1 || '', lab2: existing.lab2 || '', lab3: existing.lab3 || '' }); setModalSearchTerm(""); setModalSuggestions([]); setIsDxModalOpen(true); };
   
   const handleModalSearch = (val) => { 
     setModalSearchTerm(val); 
@@ -481,7 +629,7 @@ export default function App() {
           codigo: item.CODIGO,
           lab1: item.LAB1 || '', 
           lab2: item.LAB2 || '',
-          tipo: item.TIPO || prev.tipo || 'P'
+          tipo: item.TIPO || prev.tipo || 'D'
       })); 
       setModalSearchTerm(item.DESCRIPCION); 
       setModalSuggestions([]); 
@@ -907,7 +1055,7 @@ export default function App() {
         setTimeout(() => {
             if(window.confirm("✅ Excel generado con éxito.\n\n¿Desea LIMPIAR la lista para ingresar un nuevo lote de pacientes?")) {
                 setSavedPatients([]); 
-                resetForm();           
+                resetForm();            
                 setStep(1);
                 setIsCalendarOpen(true); // Abre calendario tras reset            
             }
@@ -940,17 +1088,28 @@ export default function App() {
                 autoFocus
               />
             </div>
+            {/* --- NUEVO CAMPO CONTRASEÑA CON OJITO --- */}
             <div>
               <label className="block text-xs font-bold text-slate-500 ml-1 mb-1">CONTRASEÑA</label>
-              <input 
-                type="password" 
-                className="w-full h-12 px-4 rounded-xl border-2 border-slate-200 font-bold text-slate-700 focus:border-blue-500 outline-none transition-all"
-                placeholder="••••••••"
-                value={loginPass}
-                onChange={(e) => setLoginPass(e.target.value)}
-              />
+              <div className="relative">
+                <input 
+                  /* Aquí cambiamos dinámicamente entre 'text' y 'password' */
+                  type={showPassword ? "text" : "password"} 
+                  className="w-full h-12 px-4 pr-12 rounded-xl border-2 border-slate-200 font-bold text-slate-700 focus:border-blue-500 outline-none transition-all"
+                  placeholder="••••••••"
+                  value={loginPass}
+                  onChange={(e) => setLoginPass(e.target.value)}
+                />
+                <button 
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition-colors p-1"
+                  tabIndex="-1" // Para que no moleste al navegar con Tab
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
             </div>
-
             {loginError && (
               <div className="p-3 bg-red-50 text-red-600 text-xs font-bold rounded-lg text-center border border-red-100 flex items-center justify-center gap-2">
                 <AlertTriangle size={14}/> {loginError}
@@ -991,7 +1150,7 @@ export default function App() {
               )}
             </div>
           </div>
-	  {/* --- INICIO DEL NUEVO FORMULARIO CON CAMPOS BLOQUEADOS --- */}
+      {/* --- INICIO DEL NUEVO FORMULARIO CON CAMPOS BLOQUEADOS --- */}
           <div className="p-10 grid grid-cols-1 md:grid-cols-4 gap-6 bg-white">
             <div className="flex flex-col gap-1"><label className={cfgLabelStyle}>Año</label><select name="anio" className={cfgInputStyle} value={adminData.anio} onChange={handleAdmin}><option>2025</option><option>2026</option></select></div>
             <div className="flex flex-col gap-1"><label className={cfgLabelStyle}>Mes</label><select name="mes" className={cfgInputStyle} value={adminData.mes} onChange={handleAdmin}>{MESES.map(m=><option key={m}>{m}</option>)}</select></div>
@@ -1042,11 +1201,40 @@ export default function App() {
 
   return (
     <div className="h-screen w-full bg-slate-100 font-sans flex flex-col overflow-hidden">
-      <div className="h-14 bg-[#0F172A] text-white flex justify-between items-center px-6 shadow-md z-20 shrink-0">
-        <div className="flex items-center gap-3"><div className="bg-blue-600 p-1.5 rounded-xl"><Activity size={18} className="text-white" /></div><div><h2 className="font-bold text-sm leading-tight tracking-wide">REGISTRO HIS</h2><p className="text-[10px] text-slate-400 uppercase">{adminData.establecimiento} • {adminData.turno}</p></div></div>
-        <div className="flex items-center gap-4 text-xs font-medium"><span className="uppercase text-slate-300 font-bold tracking-wide">{adminData.nombreResp}</span><button onClick={() => setAdminData({...adminData, isConfigured: false})} className="bg-red-500/10 hover:bg-red-500/20 text-red-200 px-3 py-1.5 rounded-xl border border-red-900/30 flex gap-2 transition-colors font-bold"><LogOut size={14}/> SALIR</button></div>
-      </div>
+      {/* --- CINTILLO SUPERIOR MEJORADO --- */}
+      <div className="h-16 bg-[#0F172A] text-white flex justify-between items-center px-6 shadow-md z-20 shrink-0 border-b border-slate-800">
+        
+        {/* PARTE IZQUIERDA: LOGO + ESTABLECIMIENTO + TURNO */}
+        <div className="flex items-center gap-4">
+            <div className="bg-blue-600 p-2 rounded-xl shadow-lg shadow-blue-900/50">
+                <Activity size={20} className="text-white" />
+            </div>
+            <div>
+                <h2 className="font-black text-sm tracking-widest text-white mb-0.5">REGISTRO HIS</h2>
+                <div className="flex gap-3 text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                    <span>ESTABLECIMIENTO: <span className="text-blue-300">{adminData.establecimiento}</span></span>
+                    <span className="text-slate-700">|</span>
+                    <span>TURNO: <span className="text-emerald-300">{adminData.turno}</span></span>
+                </div>
+            </div>
+        </div>
 
+        {/* PARTE DERECHA: USUARIO GRANDE + BOTÓN SALIR */}
+        <div className="flex items-center gap-6">
+            <div className="flex flex-col items-end">
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">USUARIO ACTIVO</span>
+                <span className="uppercase text-white font-black tracking-wide text-sm md:text-base">
+                    {adminData.nombreResp || "INVITADO"}
+                </span>
+            </div>
+            <button 
+                onClick={() => setAdminData({...adminData, isConfigured: false})} 
+                className="bg-red-500/10 hover:bg-red-500/20 text-red-200 px-4 py-2 rounded-xl border border-red-500/30 flex gap-2 transition-all hover:border-red-400 font-bold text-xs items-center"
+            >
+                <LogOut size={16}/> SALIR
+            </button>
+        </div>
+      </div>
       <div className="flex-1 w-full flex items-center justify-center p-4 relative bg-slate-100">
         {!isModalOpen ? (
           <div className="bg-white rounded-[30px] shadow-2xl border border-white p-12 text-center max-w-xl w-full animate-in fade-in zoom-in duration-300 m-auto">
@@ -1191,7 +1379,15 @@ export default function App() {
                                     <Search className={`absolute left-4 top-3.5 ${getTheme(1).labelText}`} size={22}/>
                                     {showSuggestions && (<div className="absolute z-50 w-full bg-white mt-2 border border-slate-100 rounded-xl shadow-2xl max-h-64 overflow-y-auto p-2 no-scrollbar">{suggestions.map((p, idx) => (<div key={idx} onMouseDown={() => selectPatient(p)} className={`px-4 py-3 cursor-pointer rounded-xl group transition-colors mb-1 ${getTheme(1).bgHover}`}><div className={`font-bold text-sm group-hover:${getTheme(1).text}`}>{p.nombre}</div><div className="text-[10px] text-slate-400 flex gap-2 mt-1 font-bold"><span className="bg-slate-100 px-2 py-0.5 rounded text-slate-500">DNI: {p.dni}</span><span className="bg-slate-100 px-2 py-0.5 rounded text-slate-500">HC: {p.hc}</span><span className="bg-slate-100 px-2 py-0.5 rounded text-slate-500">Est: {p.estOrigen}</span></div></div>))}</div>)}
                                 </div>
-                                <button onClick={() => setIsManualModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white w-12 h-12 rounded-xl flex items-center justify-center shadow-lg transition-transform active:scale-95" title="Registrar Paciente Nuevo"><UserPlus size={24}/></button>
+                                <div className="flex gap-2">
+                                    {/* Botón existente de Nuevo Paciente */}
+                                    <button onClick={() => setIsManualModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white w-12 h-12 rounded-xl flex items-center justify-center shadow-lg transition-transform active:scale-95" title="Registrar Paciente Nuevo"><UserPlus size={24}/></button>
+                                    
+                                    {/* --- NUEVO BOTÓN SEGUIMIENTO CRED --- */}
+                                    <button onClick={() => setShowCredModal(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 h-12 rounded-xl flex items-center justify-center shadow-lg transition-transform active:scale-95 font-bold text-xs gap-2" title="Ver Excel CRED">
+                                        <FileSpreadsheet size={20}/> VER SEGUIMIENTO CRED
+                                    </button>
+                                </div>
                             </div>
                         </div>
                         <div className="w-48 shrink-0"><label className={getLabelStyle(1)}>F. Atención</label><div className="relative"><input type="date" name="fecAtencion" className={getDateInputStyle(1) + ` h-12 ${getTheme(1).bgLight} text-center`} value={patientData.fecAtencion} onChange={handlePatient} /></div></div>
@@ -1441,7 +1637,7 @@ export default function App() {
 
       {isDxModalOpen && (
         <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-7xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
                 <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                     <div><h3 className="text-xl font-extrabold text-slate-800">Buscar Diagnóstico</h3><p className="text-xs text-slate-400 font-bold uppercase mt-1">Editando Fila {currentDxRow + 1} de {diagnoses.length}</p></div>
                     <button onClick={() => setIsDxModalOpen(false)} className="bg-white p-2 rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all shadow-sm border border-slate-100"><X size={24}/></button>
@@ -1493,6 +1689,8 @@ export default function App() {
       />
 
       <NutritionalStatusModal isOpen={showNutriModal} onClose={() => setShowNutriModal(false)} />
+      {/* INSERCIÓN DEL MODAL DE SEGUIMIENTO CRED */}
+      <CredFollowUpModal isOpen={showCredModal} onClose={() => setShowCredModal(false)} />
       <style>{` .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; } input[type="date"]::-webkit-calendar-picker-indicator { opacity: 1; display: block; width: 1em; height: 1em; position: absolute; top: 50%; right: 12px; transform: translateY(-50%); color: #475569; cursor: pointer; } input[type="date"] { text-align: center; padding-left: 0.5rem; padding-right: 2.5rem; } `}</style>
     </div>
   );

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Activity, ArrowRight, ArrowLeft, X, Plus, 
-  LogOut, Database, Search, Trash2, FileSpreadsheet, Calendar, Edit, Download, Grid, Save, UserPlus, Users, Save as SaveIcon, FileText, AlertTriangle, Calculator, Siren, Baby, RefreshCw, CheckCircle, Droplets
+  LogOut, Database, Search, Trash2, FileSpreadsheet, Calendar, Edit, Download, Grid, Save, UserPlus, Users, Save as SaveIcon, FileText, AlertTriangle, Calculator, Siren, Baby, RefreshCw, CheckCircle, Droplets, Eye, EyeOff
 } from 'lucide-react';
 
 import NutritionalStatusModal from './NutritionalStatusModal';
@@ -155,12 +155,163 @@ const SimpleCalendar = ({ selectedDate, onSelectDate, onClose, themeColor }) => 
   );
 };
 
+// --- COMPONENTE MODAL PARA VER SEGUIMIENTO CRED ---
+const CredFollowUpModal = ({ isOpen, onClose }) => {
+  const [credData, setCredData] = useState([]);
+  const [columns, setColumns] = useState([]); // Estado para guardar las columnas fijas
+  const [filterTerm, setFilterTerm] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  if (!isOpen) return null;
+
+  // Función auxiliar para convertir fecha Excel (número serial) a formato legible
+  const formatExcelDate = (value) => {
+    if (typeof value === 'number' && value > 20000 && value < 60000) {
+       // Ajuste aproximado para fechas de Excel
+       const date = new Date(Math.round((value - 25569) * 86400 * 1000));
+       // Sumar horas para compensar zona horaria si es necesario
+       date.setMinutes(date.getMinutes() + date.getTimezoneOffset());
+       if(!isNaN(date.getTime())) {
+         return date.toLocaleDateString("es-PE");
+       }
+    }
+    return value;
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setIsLoading(true);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        // header: 1 devuelve un array de arrays (Fila 0 = Cabeceras)
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1 }); 
+        
+        if (data.length > 0) {
+            const headers = data[0]; // La primera fila son los títulos reales
+            setColumns(headers); // Guardamos las columnas exactas del Excel
+
+            const rows = data.slice(1).map((r, i) => {
+                let obj = { id: i };
+                headers.forEach((h, index) => {
+                    // Guardamos el valor o guión si está vacío
+                    obj[h] = r[index] !== undefined ? r[index] : "";
+                });
+                // Crear string para el buscador
+                obj.searchStr = Object.values(obj).join(" ").toUpperCase();
+                return obj;
+            });
+            setCredData(rows);
+        }
+      } catch (err) {
+        alert("Error al leer el Excel CRED: " + err.message);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const filteredData = credData.filter(row => 
+    !filterTerm || row.searchStr.includes(filterTerm.toUpperCase())
+  ).slice(0, 100); 
+
+  return (
+    <div className="fixed inset-0 z-[90] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[95%] h-[90vh] flex flex-col border border-slate-200 overflow-hidden">
+        
+        {/* CABECERA */}
+        <div className="bg-[#0F172A] p-4 flex justify-between items-center shrink-0">
+            <div className="flex items-center gap-3">
+                <div className="bg-emerald-500 p-2 rounded-lg text-white"><FileSpreadsheet size={24}/></div>
+                <div>
+                    <h3 className="text-white font-bold text-lg">SEGUIMIENTO CRED</h3>
+                    <p className="text-slate-400 text-xs">Visualización Completa del Archivo</p>
+                </div>
+            </div>
+            <button onClick={onClose} className="text-slate-400 hover:text-white hover:bg-white/10 p-2 rounded-full transition-all"><X size={24}/></button>
+        </div>
+
+        {/* BARRA DE HERRAMIENTAS */}
+        <div className="p-4 bg-slate-50 border-b border-slate-200 flex gap-4 items-center shrink-0">
+            {credData.length === 0 ? (
+                <div className="relative group w-full">
+                    <input type="file" id="fileCred" className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
+                    <label htmlFor="fileCred" className="cursor-pointer w-full border-2 border-dashed border-slate-300 hover:border-emerald-500 bg-white hover:bg-emerald-50 h-16 rounded-xl flex flex-col items-center justify-center transition-all group-hover:text-emerald-600 text-slate-500 font-bold">
+                        {isLoading ? "Cargando..." : "📂 CLIC AQUÍ PARA CARGAR EL EXCEL 'SEGUIMIENTO CRED'"}
+                    </label>
+                </div>
+            ) : (
+                <div className="flex w-full gap-4">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-3 top-3 text-slate-400" size={20}/>
+                        <input 
+                            autoFocus
+                            className="w-full h-11 pl-10 pr-4 rounded-xl border-2 border-slate-300 focus:border-emerald-500 outline-none font-bold uppercase text-sm" 
+                            placeholder="BUSCAR EN CUALQUIER COLUMNA..." 
+                            value={filterTerm}
+                            onChange={e => setFilterTerm(e.target.value)}
+                        />
+                    </div>
+                    <button onClick={() => { setCredData([]); setColumns([]); }} className="px-4 bg-red-100 text-red-600 font-bold rounded-xl hover:bg-red-200 text-xs whitespace-nowrap">CAMBIAR ARCHIVO</button>
+                </div>
+            )}
+        </div>
+
+        {/* TABLA DE DATOS CON SCROLL HORIZONTAL CORREGIDO */}
+        <div className="flex-1 overflow-auto bg-slate-100 p-4">
+            {credData.length > 0 ? (
+                // CAMBIO CLAVE: overflow-x-auto permite el scroll horizontal
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+                    <table className="w-full text-xs text-left border-collapse">
+                        <thead className="bg-slate-50 text-slate-500 font-bold uppercase">
+                            <tr>
+                                {/* Renderizamos usando las columnas reales del Excel */}
+                                {columns.map((col, i) => (
+                                    <th key={i} className="px-4 py-3 border-b border-r border-slate-200 whitespace-nowrap min-w-[100px] bg-slate-50 sticky top-0 z-10">
+                                        {col}
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {filteredData.map((row) => (
+                                <tr key={row.id} className="hover:bg-blue-50 transition-colors">
+                                    {columns.map((col, i) => (
+                                        <td key={i} className="px-4 py-2 text-slate-700 whitespace-nowrap border-r border-slate-100">
+                                            {formatExcelDate(row[col])}
+                                        </td>
+                                    ))}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    {filteredData.length === 0 && <div className="p-10 text-center text-slate-400 font-bold">No se encontraron resultados para "{filterTerm}"</div>}
+                </div>
+            ) : (
+                <div className="h-full flex items-center justify-center text-slate-400 font-medium">
+                    Esperando archivo...
+                </div>
+            )}
+        </div>
+        <div className="bg-slate-50 p-2 text-center text-[10px] text-slate-400 font-bold border-t border-slate-200">
+            Mostrando {filteredData.length} registros. (Deslice horizontalmente para ver más columnas)
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function App() {
   const [showNutriModal, setShowNutriModal] = useState(false);
   const [showAnemiaModal, setShowAnemiaModal] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const calendarRef = useRef(null);
   const handleDateSelect = (date) => setPatientData(prev => ({ ...prev, fecAtencion: date }));
+  const [showCredModal, setShowCredModal] = useState(false); // ESTADO DEL MODAL CRED
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -198,14 +349,12 @@ export default function App() {
   const [dbCie10, setDbCie10] = useState(CIE10_LIST); 
   const [dbPersonal, setDbPersonal] = useState(PERSONAL_LIST); 
   const [dbStatus, setDbStatus] = useState('loading'); 
-// =========================================================
-  // PEGAR ESTO JUSTO DEBAJO DE "const [dbStatus, setDbStatus]..."
-  // =========================================================
 
   // --- NUEVOS ESTADOS PARA LOGIN ---
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loginDni, setLoginDni] = useState("");
   const [loginPass, setLoginPass] = useState("");
+  const [showPassword, setShowPassword] = useState(false); // <--- CONTROL VISIBILIDAD PASSWORD
   const [loginError, setLoginError] = useState("");
 
   // --- FUNCIÓN DE LOGIN ---
@@ -221,7 +370,6 @@ export default function App() {
         setLoginError("");
 
         // 3. COPIAR DNI AL CAMPO DE CONFIGURACIÓN AUTOMÁTICAMENTE
-        // (Esto busca la variable setAdminData que está más abajo en tu código)
         if (typeof setAdminData === 'function') {
             setAdminData(prev => ({
                 ...prev,
@@ -630,53 +778,360 @@ export default function App() {
 
   const handleSavePatient = () => { if (window.confirm("¿Desea guardar la información de este paciente en la lista?")) { const patientRecord = { patient: { ...patientData }, clinical: { ...clinicalData }, diagnoses: [...diagnoses], ageObj: { ...ageObj } }; setSavedPatients([...savedPatients, patientRecord]); resetForm(); alert("Paciente guardado. Puede agregar otro o exportar el Excel."); } };
 
-  const generatePDF = () => {
+const generatePDF = () => {
     try {
+        // 1. PREPARACIÓN DE DATOS
         const allPatients = [...savedPatients];
-        if (patientData.paciente) { allPatients.push({ patient: patientData, clinical: clinicalData, diagnoses: diagnoses, ageObj: ageObj }); }
+        if (patientData.paciente) { 
+            allPatients.push({ patient: patientData, clinical: clinicalData, diagnoses: diagnoses, ageObj: ageObj });
+        }
         if(allPatients.length === 0) return alert("No hay datos para exportar.");
-        const doc = new jsPDF('p', 'mm', 'a4'); 
-        const mx = 5; const my = 5; const width = 200; 
-        const cols = { dia: 6, dni: 18, fin: 6, dist: 26, edad: 8, sex: 6, antro: 14, hb: 10, desc: 68, tipo: 6, lab: 12, cie: 12 };
-        const hHeader = 4; const hRow = 4.5;
-        let y = my;
-        const cell = (txt, x, y, w, h, styles = {}) => {
-            const { fill, bold, align, fontSize, border } = styles;
-            if (fill) { doc.setFillColor(fill[0], fill[1], fill[2]); doc.rect(x, y, w, h, 'FD'); } else if (border !== false) { doc.rect(x, y, w, h); }
-            if (txt) { doc.setTextColor(0,0,0); doc.setFontSize(fontSize || 6); doc.setFont("helvetica", bold ? "bold" : "normal"); let text = String(txt); if (doc.getTextWidth(text) > w - 1) { text = text.substring(0, Math.floor(w / 1.5)) + ".."; } const txtWidth = doc.getTextWidth(text); const xPos = align === 'left' ? x + 1 : x + (w / 2) - (txtWidth / 2); const yPos = y + (h / 2) + 1; doc.text(text, xPos, yPos); }
-        };
-        const drawHeader = () => {
-            y = my; doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.text("MINISTERIO DE SALUD", 105, y + 3, { align: "center" }); doc.setFontSize(6); doc.text("OFICINA GENERAL DE ESTADÍSTICA E INFORMÁTICA", 105, y + 6, { align: "center" }); doc.text("REGISTRO DIARIO DE ATENCIÓN Y OTRAS ACTIVIDADES DE SALUD", 105, y + 9, { align: "center" }); y += 12;
-            const row1Y = y; cell("AÑO", mx, row1Y, 10, hHeader, {bold:true}); cell("MES", mx+10, row1Y, 20, hHeader, {bold:true}); cell("ESTABLECIMIENTO DE SALUD", mx+30, row1Y, 50, hHeader, {bold:true}); cell("UNIDAD PRODUCTORA (UPS)", mx+80, row1Y, 35, hHeader, {bold:true}); cell("DNI RESP.", mx+115, row1Y, 20, hHeader, {bold:true}); cell("RESPONSABLE DE LAS ATENCIONES", mx+135, row1Y, 45, hHeader, {bold:true}); cell("TURNO", mx+180, row1Y, 20, hHeader, {bold:true}); y += hHeader;
-            cell(adminData.anio, mx, y, 10, hHeader, {align:'center'}); cell(adminData.mes, mx+10, y, 20, hHeader, {align:'center'}); cell(adminData.establecimiento, mx+30, y, 50, hHeader, {align:'center'}); cell(adminData.ups, mx+80, y, 35, hHeader, {align:'center'}); cell(adminData.dniResp, mx+115, y, 20, hHeader, {align:'center'}); cell(adminData.nombreResp, mx+135, y, 45, hHeader, {align:'center'}); cell(adminData.turno, mx+180, y, 20, hHeader, {align:'center'}); y += hHeader + 2;
-            const bgHead = [220, 220, 220]; let cx = mx; const hTable = 6; cell("DIA", cx, y, cols.dia, hTable, {fill:bgHead, bold:true}); cx+=cols.dia; cell("D.N.I / H.C.", cx, y, cols.dni, hTable, {fill:bgHead, bold:true}); cx+=cols.dni; cell("FIN", cx, y, cols.fin, hTable, {fill:bgHead, bold:true}); cx+=cols.fin; cell("DISTRITO DE PROCEDENCIA", cx, y, cols.dist, hTable, {fill:bgHead, bold:true}); cx+=cols.dist; cell("EDAD", cx, y, cols.edad, hTable, {fill:bgHead, bold:true}); cx+=cols.edad; cell("SEX", cx, y, cols.sex, hTable, {fill:bgHead, bold:true}); cx+=cols.sex; cell("ANTROPOMETRÍA", cx, y, cols.antro, hTable, {fill:bgHead, bold:true}); cx+=cols.antro; cell("HB/P", cx, y, cols.hb, hTable, {fill:bgHead, bold:true}); cx+=cols.hb; cell("DIAGNÓSTICO MOTIVO DE CONSULTA", cx, y, cols.desc, hTable, {fill:bgHead, bold:true}); cx+=cols.desc; cell("TIPO", cx, y, cols.tipo, hTable, {fill:bgHead, bold:true}); cx+=cols.tipo; cell("LAB", cx, y, cols.lab, hTable, {fill:bgHead, bold:true}); cx+=cols.lab; cell("CÓDIGO", cx, y, cols.cie, hTable, {fill:bgHead, bold:true}); cx+=cols.cie; y += hTable;
-        };
-        drawHeader();
+
+        const visualBlocks = [];
+        let globalIndex = 1;
+
         allPatients.forEach(rec => {
-            const { patient, clinical, diagnoses: dxs, ageObj: age } = rec; const chunks = Math.ceil(Math.max(1, dxs.length) / 3);
-            for (let c = 0; c < chunks; c++) {
-                if (y > 270) { doc.addPage(); drawHeader(); }
-                const chunkStart = c * 3; const chunkDxs = dxs.slice(chunkStart, chunkStart + 3); while(chunkDxs.length < 3) chunkDxs.push({});
-                const bgName = [225, 245, 254]; const rowHeightName = hRow; cell("", mx, y, cols.dia, rowHeightName, {}); let nameText = c === 0 ? `${patient.paciente}   (F.N: ${patient.fecNac})` : ""; cell(nameText, mx + cols.dia, y, width - cols.dia, rowHeightName, {fill: bgName, bold: true, align: 'left', fontSize: 7}); y += rowHeightName;
-                for (let i = 0; i < 3; i++) {
-                    let cx = mx; const d = chunkDxs[i] || {};
-                    let valDia = (i === 0 && patient.fecAtencion) ? (patient.fecAtencion || "").split('-')[2] : ""; cell(valDia, cx, y, cols.dia, hRow, {align:'center'}); cx += cols.dia;
-                    let valDniHc = ""; if (i === 0) valDniHc = patient.dni ? String(patient.dni).trim().padStart(8, '0') : ""; if (i === 1) valDniHc = patient.hc; if (i === 2) valDniHc = patient.condicion || "-"; cell(valDniHc, cx, y, cols.dni, hRow, {align:'center'}); cx += cols.dni;
-                    let valFin = (i === 0) ? (patient.financiador === 'SIS' ? '2' : '1') : ""; cell(valFin, cx, y, cols.fin, hRow, {align:'center'}); cx += cols.fin;
-                    let valDist = ""; if (i === 0) valDist = patient.distrito; if (i === 1) valDist = patient.direccion; if (i === 2) valDist = "C.P: " + (patient.estOrigen || "-"); cell(valDist, cx, y, cols.dist, hRow, {align:'left', fontSize: 5}); cx += cols.dist;
-                    let valEdad = ""; if (i === 0 && (age.y || age.y===0)) valEdad = age.y + " A"; if (i === 1 && (age.m || age.m===0)) valEdad = age.m + " M"; if (i === 2 && (age.d || age.d===0)) valEdad = age.d + " D"; cell(valEdad, cx, y, cols.edad, hRow, {align:'center'}); cx += cols.edad;
-                    let valSex = (i === 0) ? patient.sexo : ""; cell(valSex, cx, y, cols.sex, hRow, {align:'center'}); cx += cols.sex;
-                    let valAntro = ""; if (i === 0 && c === 0) valAntro = "T: " + (clinical.talla || ""); if (i === 1 && c === 0) valAntro = "P: " + (clinical.peso || ""); if (i === 2 && c === 0) valAntro = "Hb: " + (clinical.hb || ""); cell(valAntro, cx, y, cols.antro, hRow, {align:'left'}); cx += cols.antro;
-                    let valHbP = ""; if (i === 0 && c === 0) valHbP = "PC: " + (clinical.pCef || ""); if (i === 1 && c === 0) valHbP = "PA: " + (clinical.pAbd || ""); cell(valHbP, cx, y, cols.hb, hRow, {align:'left'}); cx += cols.hb;
-                    cell(d.desc || "", cx, y, cols.desc, hRow, {align:'left', fontSize: 5.5}); cx += cols.desc; cell(d.tipo || "", cx, y, cols.tipo, hRow, {align:'center'}); cx += cols.tipo; let labs = [d.lab1, d.lab2, d.lab3].filter(Boolean).join(" "); cell(labs, cx, y, cols.lab, hRow, {align:'center'}); cx += cols.lab; cell(d.codigo || "", cx, y, cols.cie, hRow, {align:'center', bold:true}); cx += cols.cie; y += hRow;
+            const { patient, clinical, diagnoses: dxs, ageObj: age } = rec;
+            const totalChunks = Math.ceil(Math.max(1, dxs.length) / 3);
+
+            for (let c = 0; c < totalChunks; c++) {
+                const start = c * 3;
+                const chunkDxs = dxs.slice(start, start + 3);
+                while(chunkDxs.length < 3) chunkDxs.push({});
+
+                visualBlocks.push({
+                    index: globalIndex,
+                    isFirstChunk: c === 0,
+                    patient,
+                    clinical,
+                    age,
+                    diagnoses: chunkDxs
+                });
+            }
+            globalIndex++;
+        });
+
+        const doc = new jsPDF('p', 'mm', 'a4'); 
+        
+        // --- ESTILOS GENERALES ---
+        doc.setFont("helvetica", "normal"); 
+        doc.setDrawColor(50, 50, 50); 
+        doc.setLineWidth(0.15);       
+
+        // --- DIMENSIONES ---
+        const mx = 5; 
+        const my = 5; 
+        
+        const hRowName = 4.5; 
+        const hRowData = 5.5; 
+        const hBlock = hRowName + (hRowData * 3); 
+
+        const w = {
+            idx: 6,   dia: 6,   dni: 14,  fin: 5,   dist: 28, 
+            edad: 8,  sex: 5,   
+            antL: 7,  antV: 8,
+            est: 5,   serv: 5,
+            dx: 55,   tipo: 6,  lab: 5,   cie: 13
+        };
+
+        const hHeaderSmall = 4; 
+        
+        // --- HELPER CELDAS (CON AJUSTE DE TEXTO / WRAP) ---
+        const cell = (txt, x, y, cw, ch, styles = {}) => {
+            const { fill, bold, align, fontSize, border, rotate, vAlign, textColor, wrap } = styles;
+            
+            // FONDO
+            if (fill) { 
+                doc.setFillColor(fill[0], fill[1], fill[2]); 
+                if (border === false) doc.rect(x, y, cw, ch, 'F'); 
+                else doc.rect(x, y, cw, ch, 'FD');
+            } 
+            // BORDE
+            else if (border !== false) { 
+                doc.rect(x, y, cw, ch); 
+            }
+
+            // TEXTO
+            if (txt !== undefined && txt !== null && txt !== "") { 
+                if(textColor) doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+                else doc.setTextColor(0,0,0);
+
+                doc.setFontSize(fontSize || 6);
+                doc.setFont("helvetica", bold ? "bold" : "normal"); 
+                
+                let text = String(txt);
+                
+                const sensitiveLabels = ["Talla", "Peso", "HB", "P.C.", "P.Abd", "P.Preg", "años", "meses", "días"];
+                const isSensitive = sensitiveLabels.some(l => text.includes(l));
+                
+                if (!isSensitive) text = text.toUpperCase();
+
+                if (rotate) {
+                    const xPos = x + (cw / 2); 
+                    const yPos = y + ch - 1.5;   
+                    doc.text(text, xPos, yPos, { angle: 90, align: 'left' }); 
+                } 
+                else if (wrap) {
+                    // --- LÓGICA DE AJUSTE DE TEXTO (MULTILINEA) ---
+                    const lines = doc.splitTextToSize(text, cw - 2); 
+                    const lineHeight = (fontSize || 6) * 0.35; 
+                    
+                    let yPos = y + 2.5; 
+                    
+                    lines.forEach((line) => {
+                        if (yPos < y + ch) {
+                            doc.text(line, x + 1, yPos);
+                            yPos += lineHeight + 1; 
+                        }
+                    });
+                } 
+                else {
+                    // Lógica normal de truncado
+                    if (doc.getTextWidth(text) > cw - 1) { 
+                        const charWidth = doc.getTextWidth("A");
+                        const maxChars = Math.floor((cw - 1) / charWidth);
+                        text = text.substring(0, maxChars) + ".."; 
+                    }
+                    
+                    const txtWidth = doc.getTextWidth(text);
+                    const xPos = align === 'left' ? x + 1 : 
+                                 align === 'right' ? x + cw - 1 - txtWidth : 
+                                 x + (cw / 2) - (txtWidth / 2);
+                    
+                    let yPos = y + (ch / 2) + 1.2; 
+                    if (vAlign === 'top') yPos = y + 2.5; 
+                    if (vAlign === 'middle') yPos = y + (ch / 2) + 1.2;
+                    if (fontSize && fontSize < 6) yPos -= 0.1;
+
+                    doc.text(text, xPos, yPos);
                 }
             }
-        });
-        if (y < 270) { doc.setFontSize(6); doc.text("FIRMA Y SELLO DEL RESPONSABLE", 150, 280, {align:'center'}); doc.line(130, 278, 170, 278); }
-        doc.save(`HIS_${adminData.mes}_${allPatients.length}_PACIENTES_OFICIAL.pdf`);
-    } catch(err) { alert("Error al generar PDF: " + err.message); }
-  }; 
+        };
 
+        // --- ENCABEZADO ---
+        const drawHeader = (currY) => {
+            let y = currY;
+            const fullW = 201; 
+            const xContent = mx + w.idx; 
+
+            doc.setFontSize(6);
+            cell("Lote:", xContent, y, 20, hHeaderSmall, {bold:true, border:false, align:'left'});
+            cell("MINISTERIO DE SALUD", mx, y, fullW, hHeaderSmall, {bold:true, align:'center', fontSize:9, border:false});
+            cell("FIRMA Y SELLO", mx + 160, y, 40, hHeaderSmall, {align:'center', border:false, fontSize:5});
+            y += hHeaderSmall;
+
+            cell("Pag:", xContent, y, 20, hHeaderSmall, {bold:true, border:false, align:'left'});
+            cell("OFICINA GENERAL DE ESTADÍSTICA E INFORMÁTICA", mx, y, fullW, hHeaderSmall, {align:'center', fontSize:7, border:false});
+            cell("DEL PERSONAL DE SALUD", mx + 160, y, 40, hHeaderSmall, {align:'center', border:false, fontSize:5});
+            y += hHeaderSmall;
+
+            cell("Reg:", xContent, y, 20, hHeaderSmall, {bold:true, border:false, align:'left'});
+            cell("Registro Diario de Atención y Otras Actividades de Salud", mx, y, fullW, hHeaderSmall, {align:'center', fontSize:8, border:false});
+            doc.rect(mx + 160, y - (hHeaderSmall*2), 40, hHeaderSmall*4); 
+            y += hHeaderSmall + 1;
+
+            const bgHead = [230, 230, 230]; 
+            const hMeta = 6; 
+            
+            let cx = mx + w.idx; 
+            cell("AÑO", cx, y, 10, hMeta, {fill:bgHead, bold:true, align:'center'}); cx+=10;
+            cell("MES", cx, y, 20, hMeta, {fill:bgHead, bold:true, align:'center'}); cx+=20;
+            cell("ESTABLECIMIENTO DE SALUD", cx, y, 45, hMeta, {fill:bgHead, bold:true, align:'center'}); cx+=45;
+            cell("UNIDAD PRESTADORA (UPS)", cx, y, 35, hMeta, {fill:bgHead, bold:true, align:'center'}); cx+=35;
+            cell("DNI RESP.", cx, y, 20, hMeta, {fill:bgHead, bold:true, align:'center'}); cx+=20;
+            cell("RESPONSABLE DE LAS ATENCIONES", cx, y, 45, hMeta, {fill:bgHead, bold:true, align:'center'}); cx+=45;
+            cell("TURNO", cx, y, 20, hMeta, {fill:bgHead, bold:true, align:'center'}); 
+            y += hMeta;
+
+            cx = mx + w.idx; 
+            cell(adminData.anio, cx, y, 10, hMeta, {align:'center', bold:false}); cx+=10;
+            cell(adminData.mes, cx, y, 20, hMeta, {align:'center', bold:false}); cx+=20;
+            cell(adminData.establecimiento, cx, y, 45, hMeta, {align:'center', bold:false}); cx+=45;
+            cell(adminData.ups, cx, y, 35, hMeta, {align:'center', bold:false}); cx+=35;
+            cell(adminData.dniResp, cx, y, 20, hMeta, {align:'center', bold:false}); cx+=20;
+            cell(adminData.nombreResp, cx, y, 45, hMeta, {align:'center', bold:false}); cx+=45;
+            cell(adminData.turno, cx, y, 20, hMeta, {align:'center', bold:false}); 
+            y += hMeta + 2;
+
+            const hTable = 12; 
+            cx = mx;
+            
+            cell("", cx, y, w.idx, hTable, {border:false}); cx+=w.idx;
+            cell("F.A", cx, y, w.dia, hTable, {fill:bgHead, bold:true, align:'center'}); cx+=w.dia;
+            cell("D.N.I / H.C.", cx, y, w.dni, hTable, {fill:bgHead, bold:true, align:'center'}); cx+=w.dni;
+            cell("FINANC.", cx, y, w.fin, hTable, {fill:bgHead, bold:true, rotate:true}); cx+=w.fin;
+            cell("DISTRITO DE PROCEDENCIA", cx, y, w.dist, hTable, {fill:bgHead, bold:true, align:'center'}); cx+=w.dist;
+            cell("EDAD", cx, y, w.edad, hTable, {fill:bgHead, bold:true, rotate:true}); cx+=w.edad;
+            cell("SEXO", cx, y, w.sex, hTable, {fill:bgHead, bold:true, rotate:true}); cx+=w.sex;
+            cell("ANTROPOMETRÍA", cx, y, (w.antL*2 + w.antV*2), hTable, {fill:bgHead, bold:true, align:'center'}); cx+=(w.antL*2 + w.antV*2);
+            cell("EST", cx, y, w.est, hTable, {fill:bgHead, bold:true, rotate:true}); cx+=w.est;
+            cell("SERV", cx, y, w.serv, hTable, {fill:bgHead, bold:true, rotate:true}); cx+=w.serv;
+            cell("DIAGNÓSTICO MOTIVO DE CONSULTA", cx, y, w.dx, hTable, {fill:bgHead, bold:true, align:'center'}); cx+=w.dx;
+            cell("TIPO", cx, y, w.tipo, hTable, {fill:bgHead, bold:true, rotate:true}); cx+=w.tipo;
+            cell("LAB", cx, y, w.lab * 3, hTable, {fill:bgHead, bold:true, align:'center'}); cx+=(w.lab * 3);
+            cell("CÓDIGO", cx, y, w.cie, hTable, {fill:bgHead, bold:true, align:'center'}); 
+
+            return y + hTable;
+        };
+
+        // --- BUCLE PRINCIPAL ---
+        const BLOCKS_PER_PAGE = 11;
+        const totalPages = Math.ceil(visualBlocks.length / BLOCKS_PER_PAGE) || 1;
+
+        for (let page = 0; page < totalPages; page++) {
+            if (page > 0) doc.addPage();
+            let y = drawHeader(my);
+            
+            for (let i = 0; i < BLOCKS_PER_PAGE; i++) {
+                const globalIdx = (page * BLOCKS_PER_PAGE) + i;
+                const block = visualBlocks[globalIdx] || null;
+                
+                const p = block ? block.patient : {};
+                const c = block ? block.clinical : {};
+                const a = block ? block.age : {};
+                const dxs = block ? block.diagnoses : [{},{},{}];
+                const isFirst = block ? block.isFirstChunk : false;
+
+                const d1 = dxs[0] || {};
+                const d2 = dxs[1] || {};
+                const d3 = dxs[2] || {};
+                
+                let cx = mx;
+                
+                // --- FILA 1 ---
+                const idxText = (block && isFirst) ? block.index : "";
+                cell(idxText, cx, y, w.idx, hBlock, {align:'center', bold:true, vAlign:'middle', border:false, fontSize:8}); 
+                cx += w.idx;
+
+                if (isFirst) {
+                    const wName = w.dia + w.dni + w.fin + w.dist;
+                    cell(p.paciente, cx, y, wName, hRowName, {bold:true, align:'left', fontSize: 7, border: false}); cx += wName;
+                    
+                    const wFNLabel = w.edad + w.sex;
+                    cell("F.N:", cx, y, wFNLabel, hRowName, {align:'right', bold:true, border: false, fontSize:6}); cx += wFNLabel;
+                    
+                    const wFNVal = w.antL + w.antV;
+                    // Valor Numérico de Fecha: AHORA BOLD (SemiBold simulado)
+                    cell(p.fecNac, cx, y, wFNVal, hRowName, {align:'center', fill:[240,240,240], border:true, bold:true, fontSize:7}); cx += wFNVal;
+                    
+                    const wCenter = w.antL + w.antV + w.est + w.serv + w.dx + w.tipo; 
+                    cell(c.dosaje ? `DOSAJE: ${c.dosaje}` : "", cx, y, wCenter, hRowName, {align:'center', fontSize:6, border: false}); cx += wCenter;
+                    
+                    const wFURLabel = w.lab * 2;
+                    cell("FUR:", cx, y, wFURLabel, hRowName, {align:'right', bold:true, border: false, fontSize:6}); cx += wFURLabel;
+                    
+                    const wFURVal = w.lab + w.cie;
+                    // Valor Numérico de Fecha: AHORA BOLD
+                    cell(p.fur, cx, y, wFURVal, hRowName, {align:'center', fill:[240,240,240], border:true, bold:true, fontSize:7}); 
+                } else {
+                    let cxEmpty = cx;
+                    cell("", cxEmpty, y, w.dia + w.dni + w.fin + w.dist, hRowName, {border: false}); cxEmpty += (w.dia + w.dni + w.fin + w.dist);
+                    cell("", cxEmpty, y, w.edad + w.sex, hRowName, {border: false}); cxEmpty += (w.edad + w.sex);
+                    cell("", cxEmpty, y, w.antL + w.antV, hRowName, {fill:[240,240,240], border:false}); cxEmpty += (w.antL + w.antV);
+                    cell("", cxEmpty, y, w.antL + w.antV + w.est + w.serv + w.dx + w.tipo, hRowName, {border: false}); cxEmpty += (w.antL + w.antV + w.est + w.serv + w.dx + w.tipo);
+                    cell("", cxEmpty, y, w.lab * 2, hRowName, {border: false}); cxEmpty += (w.lab * 2);
+                    cell("", cxEmpty, y, w.lab + w.cie, hRowName, {fill:[240,240,240], border:false});
+                }
+                
+                const yData = y + hRowName; 
+                const hDataBlock = hRowData * 3; 
+
+                // --- FILAS 2, 3, 4 ---
+                cx = mx + w.idx; 
+
+                cell(p.fecAtencion ? p.fecAtencion.split('-')[2] : "", cx, yData, w.dia, hDataBlock, {align:'center', vAlign:'middle', fontSize:7, bold:false}); 
+                cx += w.dia;
+
+                // DNI / HC -> AHORA BOLD (SemiBold simulado)
+                cell(p.dni, cx, yData, w.dni, hRowData, {align:'center', fontSize:7, bold:true});
+                cell(p.hc, cx, yData + hRowData, w.dni, hRowData, {align:'center', fontSize:7, bold:true});
+                cell(p.condicion, cx, yData + (hRowData*2), w.dni, hRowData, {align:'center', fontSize:5.5, bold:false});
+                cx += w.dni;
+
+                cell(p.financiador === 'SIS' ? '2' : '1', cx, yData, w.fin, hDataBlock, {align:'center', vAlign:'middle', fontSize:7, bold:false});
+                cx += w.fin;
+
+                cell(p.distrito, cx, yData, w.dist, hRowData, {align:'left', fontSize:5, bold:false});
+                let direccionTexto = p.direccion || "";
+                if(p.centroPoblado) direccionTexto += " " + p.centroPoblado;
+                
+                cell(direccionTexto, cx, yData + hRowData, w.dist, hRowData * 2, {
+                    align:'left', 
+                    fontSize:5, 
+                    vAlign:'top', 
+                    bold:false, 
+                    wrap: true 
+                });
+                cx += w.dist;
+
+                // EDAD (NUMEROS) -> AHORA BOLD
+                cell(a.y ? a.y + " años" : "", cx, yData, w.edad, hRowData, {align:'center', fontSize: 5, bold:true});
+                cell(a.m ? a.m + " meses" : "", cx, yData + hRowData, w.edad, hRowData, {align:'center', fontSize: 5, bold:true});
+                cell(a.d ? a.d + " días" : "", cx, yData + (hRowData*2), w.edad, hRowData, {align:'center', fontSize: 5, bold:true});
+                cx += w.edad;
+
+                cell(p.sexo, cx, yData, w.sex, hDataBlock, {align:'center', vAlign:'middle', fontSize:7, bold:false});
+                cx += w.sex;
+
+                let cxAntro = cx;
+                cell("Talla", cxAntro, yData, w.antL, hRowData, {align:'center', fontSize:5, bold:true}); cxAntro+=w.antL;
+                // VALORES ANTROPOMÉTRICOS -> AHORA BOLD
+                cell(isFirst ? c.talla : "", cxAntro, yData, w.antV, hRowData, {align:'center', bold:true}); cxAntro+=w.antV;
+                cell("P.C.", cxAntro, yData, w.antL, hRowData, {align:'center', fontSize:5, bold:true}); cxAntro+=w.antL;
+                cell(isFirst ? c.pCef : "", cxAntro, yData, w.antV, hRowData, {align:'center', bold:true});
+                
+                cxAntro = cx;
+                cell("Peso", cxAntro, yData+hRowData, w.antL, hRowData, {align:'center', fontSize:5, bold:true}); cxAntro+=w.antL;
+                cell(isFirst ? c.peso : "", cxAntro, yData+hRowData, w.antV, hRowData, {align:'center', bold:true}); cxAntro+=w.antV;
+                cell("P.Abd", cxAntro, yData+hRowData, w.antL, hRowData, {align:'center', fontSize:5, bold:true}); cxAntro+=w.antL;
+                cell(isFirst ? c.pAbd : "", cxAntro, yData+hRowData, w.antV, hRowData, {align:'center', bold:true});
+
+                cxAntro = cx;
+                cell("HB", cxAntro, yData+(hRowData*2), w.antL, hRowData, {align:'center', fontSize:5, bold:true}); cxAntro+=w.antL;
+                cell(isFirst ? c.hb : "", cxAntro, yData+(hRowData*2), w.antV, hRowData, {align:'center', bold:true}); cxAntro+=w.antV;
+                cell("P.Preg", cxAntro, yData+(hRowData*2), w.antL, hRowData, {align:'center', fontSize:5, bold:true}); cxAntro+=w.antL;
+                cell(isFirst ? c.pPreGest : "", cxAntro, yData+(hRowData*2), w.antV, hRowData, {align:'center', bold:true});
+                
+                cx += (w.antL*2 + w.antV*2);
+
+                cell(p.condEst, cx, yData, w.est, hDataBlock, {align:'center', vAlign:'middle', bold:false}); cx += w.est;
+                cell(p.condServ, cx, yData, w.serv, hDataBlock, {align:'center', vAlign:'middle', bold:false}); cx += w.serv;
+
+                let cxDx = cx;
+                cell(d1.desc, cxDx, yData, w.dx, hRowData, {align:'left', fontSize:5.5, bold:false}); cxDx+=w.dx;
+                cell(d1.tipo, cxDx, yData, w.tipo, hRowData, {align:'center', bold:false}); cxDx+=w.tipo;
+                cell(d1.lab1, cxDx, yData, w.lab, hRowData, {align:'center', bold:false}); cxDx+=w.lab;
+                cell(d1.lab2, cxDx, yData, w.lab, hRowData, {align:'center', bold:false}); cxDx+=w.lab;
+                cell(d1.lab3, cxDx, yData, w.lab, hRowData, {align:'center', bold:false}); cxDx+=w.lab;
+                // CÓDIGOS -> AHORA BOLD
+                cell(d1.codigo, cxDx, yData, w.cie, hRowData, {align:'center', bold:true});
+
+                cxDx = cx;
+                cell(d2.desc, cxDx, yData+hRowData, w.dx, hRowData, {align:'left', fontSize:5.5, bold:false}); cxDx+=w.dx;
+                cell(d2.tipo, cxDx, yData+hRowData, w.tipo, hRowData, {align:'center', bold:false}); cxDx+=w.tipo;
+                cell(d2.lab1, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false}); cxDx+=w.lab;
+                cell(d2.lab2, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false}); cxDx+=w.lab;
+                cell(d2.lab3, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false}); cxDx+=w.lab;
+                cell(d2.codigo, cxDx, yData+hRowData, w.cie, hRowData, {align:'center', bold:true});
+
+                cxDx = cx;
+                cell(d3.desc, cxDx, yData+(hRowData*2), w.dx, hRowData, {align:'left', fontSize:5.5, bold:false}); cxDx+=w.dx;
+                cell(d3.tipo, cxDx, yData+(hRowData*2), w.tipo, hRowData, {align:'center', bold:false}); cxDx+=w.tipo;
+                cell(d3.lab1, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false}); cxDx+=w.lab;
+                cell(d3.lab2, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false}); cxDx+=w.lab;
+                cell(d3.lab3, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false}); cxDx+=w.lab;
+                cell(d3.codigo, cxDx, yData+(hRowData*2), w.cie, hRowData, {align:'center', bold:true});
+
+                y += hBlock;
+            }
+        }
+
+        doc.save(`HIS_${adminData.mes}_${allPatients.length}_PACIENTES_OFICIAL.pdf`);
+    } catch(err) { 
+        alert("Error al generar PDF: " + err.message);
+        console.error(err);
+    }
+  };
   const generateExcel = () => {
     try {
         if (typeof global === 'undefined') window.global = window;
@@ -907,7 +1362,7 @@ export default function App() {
         setTimeout(() => {
             if(window.confirm("✅ Excel generado con éxito.\n\n¿Desea LIMPIAR la lista para ingresar un nuevo lote de pacientes?")) {
                 setSavedPatients([]); 
-                resetForm();           
+                resetForm();            
                 setStep(1);
                 setIsCalendarOpen(true); // Abre calendario tras reset            
             }
@@ -940,17 +1395,28 @@ export default function App() {
                 autoFocus
               />
             </div>
+            {/* --- NUEVO CAMPO CONTRASEÑA CON OJITO --- */}
             <div>
               <label className="block text-xs font-bold text-slate-500 ml-1 mb-1">CONTRASEÑA</label>
-              <input 
-                type="password" 
-                className="w-full h-12 px-4 rounded-xl border-2 border-slate-200 font-bold text-slate-700 focus:border-blue-500 outline-none transition-all"
-                placeholder="••••••••"
-                value={loginPass}
-                onChange={(e) => setLoginPass(e.target.value)}
-              />
+              <div className="relative">
+                <input 
+                  /* Aquí cambiamos dinámicamente entre 'text' y 'password' */
+                  type={showPassword ? "text" : "password"} 
+                  className="w-full h-12 px-4 pr-12 rounded-xl border-2 border-slate-200 font-bold text-slate-700 focus:border-blue-500 outline-none transition-all"
+                  placeholder="••••••••"
+                  value={loginPass}
+                  onChange={(e) => setLoginPass(e.target.value)}
+                />
+                <button 
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition-colors p-1"
+                  tabIndex="-1" // Para que no moleste al navegar con Tab
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
             </div>
-
             {loginError && (
               <div className="p-3 bg-red-50 text-red-600 text-xs font-bold rounded-lg text-center border border-red-100 flex items-center justify-center gap-2">
                 <AlertTriangle size={14}/> {loginError}
@@ -991,7 +1457,7 @@ export default function App() {
               )}
             </div>
           </div>
-	  {/* --- INICIO DEL NUEVO FORMULARIO CON CAMPOS BLOQUEADOS --- */}
+      {/* --- INICIO DEL NUEVO FORMULARIO CON CAMPOS BLOQUEADOS --- */}
           <div className="p-10 grid grid-cols-1 md:grid-cols-4 gap-6 bg-white">
             <div className="flex flex-col gap-1"><label className={cfgLabelStyle}>Año</label><select name="anio" className={cfgInputStyle} value={adminData.anio} onChange={handleAdmin}><option>2025</option><option>2026</option></select></div>
             <div className="flex flex-col gap-1"><label className={cfgLabelStyle}>Mes</label><select name="mes" className={cfgInputStyle} value={adminData.mes} onChange={handleAdmin}>{MESES.map(m=><option key={m}>{m}</option>)}</select></div>
@@ -1042,11 +1508,40 @@ export default function App() {
 
   return (
     <div className="h-screen w-full bg-slate-100 font-sans flex flex-col overflow-hidden">
-      <div className="h-14 bg-[#0F172A] text-white flex justify-between items-center px-6 shadow-md z-20 shrink-0">
-        <div className="flex items-center gap-3"><div className="bg-blue-600 p-1.5 rounded-xl"><Activity size={18} className="text-white" /></div><div><h2 className="font-bold text-sm leading-tight tracking-wide">REGISTRO HIS</h2><p className="text-[10px] text-slate-400 uppercase">{adminData.establecimiento} • {adminData.turno}</p></div></div>
-        <div className="flex items-center gap-4 text-xs font-medium"><span className="uppercase text-slate-300 font-bold tracking-wide">{adminData.nombreResp}</span><button onClick={() => setAdminData({...adminData, isConfigured: false})} className="bg-red-500/10 hover:bg-red-500/20 text-red-200 px-3 py-1.5 rounded-xl border border-red-900/30 flex gap-2 transition-colors font-bold"><LogOut size={14}/> SALIR</button></div>
-      </div>
+      {/* --- CINTILLO SUPERIOR MEJORADO --- */}
+      <div className="h-16 bg-[#0F172A] text-white flex justify-between items-center px-6 shadow-md z-20 shrink-0 border-b border-slate-800">
+        
+        {/* PARTE IZQUIERDA: LOGO + ESTABLECIMIENTO + TURNO */}
+        <div className="flex items-center gap-4">
+            <div className="bg-blue-600 p-2 rounded-xl shadow-lg shadow-blue-900/50">
+                <Activity size={20} className="text-white" />
+            </div>
+            <div>
+                <h2 className="font-black text-sm tracking-widest text-white mb-0.5">REGISTRO HIS</h2>
+                <div className="flex gap-3 text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                    <span>ESTABLECIMIENTO: <span className="text-blue-300">{adminData.establecimiento}</span></span>
+                    <span className="text-slate-700">|</span>
+                    <span>TURNO: <span className="text-emerald-300">{adminData.turno}</span></span>
+                </div>
+            </div>
+        </div>
 
+        {/* PARTE DERECHA: USUARIO GRANDE + BOTÓN SALIR */}
+        <div className="flex items-center gap-6">
+            <div className="flex flex-col items-end">
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">USUARIO ACTIVO</span>
+                <span className="uppercase text-white font-black tracking-wide text-sm md:text-base">
+                    {adminData.nombreResp || "INVITADO"}
+                </span>
+            </div>
+            <button 
+                onClick={() => setAdminData({...adminData, isConfigured: false})} 
+                className="bg-red-500/10 hover:bg-red-500/20 text-red-200 px-4 py-2 rounded-xl border border-red-500/30 flex gap-2 transition-all hover:border-red-400 font-bold text-xs items-center"
+            >
+                <LogOut size={16}/> SALIR
+            </button>
+        </div>
+      </div>
       <div className="flex-1 w-full flex items-center justify-center p-4 relative bg-slate-100">
         {!isModalOpen ? (
           <div className="bg-white rounded-[30px] shadow-2xl border border-white p-12 text-center max-w-xl w-full animate-in fade-in zoom-in duration-300 m-auto">
@@ -1191,7 +1686,15 @@ export default function App() {
                                     <Search className={`absolute left-4 top-3.5 ${getTheme(1).labelText}`} size={22}/>
                                     {showSuggestions && (<div className="absolute z-50 w-full bg-white mt-2 border border-slate-100 rounded-xl shadow-2xl max-h-64 overflow-y-auto p-2 no-scrollbar">{suggestions.map((p, idx) => (<div key={idx} onMouseDown={() => selectPatient(p)} className={`px-4 py-3 cursor-pointer rounded-xl group transition-colors mb-1 ${getTheme(1).bgHover}`}><div className={`font-bold text-sm group-hover:${getTheme(1).text}`}>{p.nombre}</div><div className="text-[10px] text-slate-400 flex gap-2 mt-1 font-bold"><span className="bg-slate-100 px-2 py-0.5 rounded text-slate-500">DNI: {p.dni}</span><span className="bg-slate-100 px-2 py-0.5 rounded text-slate-500">HC: {p.hc}</span><span className="bg-slate-100 px-2 py-0.5 rounded text-slate-500">Est: {p.estOrigen}</span></div></div>))}</div>)}
                                 </div>
-                                <button onClick={() => setIsManualModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white w-12 h-12 rounded-xl flex items-center justify-center shadow-lg transition-transform active:scale-95" title="Registrar Paciente Nuevo"><UserPlus size={24}/></button>
+                                <div className="flex gap-2">
+                                    {/* Botón existente de Nuevo Paciente */}
+                                    <button onClick={() => setIsManualModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white w-12 h-12 rounded-xl flex items-center justify-center shadow-lg transition-transform active:scale-95" title="Registrar Paciente Nuevo"><UserPlus size={24}/></button>
+                                    
+                                    {/* --- NUEVO BOTÓN SEGUIMIENTO CRED --- */}
+                                    <button onClick={() => setShowCredModal(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 h-12 rounded-xl flex items-center justify-center shadow-lg transition-transform active:scale-95 font-bold text-xs gap-2" title="Ver Excel CRED">
+                                        <FileSpreadsheet size={20}/> VER SEGUIMIENTO CRED
+                                    </button>
+                                </div>
                             </div>
                         </div>
                         <div className="w-48 shrink-0"><label className={getLabelStyle(1)}>F. Atención</label><div className="relative"><input type="date" name="fecAtencion" className={getDateInputStyle(1) + ` h-12 ${getTheme(1).bgLight} text-center`} value={patientData.fecAtencion} onChange={handlePatient} /></div></div>
@@ -1493,6 +1996,8 @@ export default function App() {
       />
 
       <NutritionalStatusModal isOpen={showNutriModal} onClose={() => setShowNutriModal(false)} />
+      {/* INSERCIÓN DEL MODAL DE SEGUIMIENTO CRED */}
+      <CredFollowUpModal isOpen={showCredModal} onClose={() => setShowCredModal(false)} />
       <style>{` .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; } input[type="date"]::-webkit-calendar-picker-indicator { opacity: 1; display: block; width: 1em; height: 1em; position: absolute; top: 50%; right: 12px; transform: translateY(-50%); color: #475569; cursor: pointer; } input[type="date"] { text-align: center; padding-left: 0.5rem; padding-right: 2.5rem; } `}</style>
     </div>
   );
