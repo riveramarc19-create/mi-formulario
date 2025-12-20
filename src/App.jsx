@@ -833,13 +833,23 @@ const generatePDF = () => {
             est: 5,   serv: 5,
             dx: 55,   tipo: 6,  lab: 5,   cie: 13
         };
+        // Ancho total de la tabla = Suma de todas las columnas (excepto idx que va fuera a veces o dentro)
+        // idx(6)+dia(6)+dni(14)+fin(5)+dist(28)+edad(8)+sex(5)+ant(30)+est(5)+serv(5)+dx(55)+tipo(6)+lab(15)+cie(13) = ~201mm
 
         const hHeaderSmall = 4; 
         
-        // --- HELPER CELDAS (CON AJUSTE DE TEXTO / WRAP) ---
+        // --- HELPER CELDAS ---
         const cell = (txt, x, y, cw, ch, styles = {}) => {
-            const { fill, bold, align, fontSize, border, rotate, vAlign, textColor, wrap } = styles;
+            const { fill, bold, align, fontSize, border, rotate, vAlign, textColor, wrap, drawColor } = styles;
             
+            // GUARDAR COLOR DE BORDE ACTUAL
+            const originalDrawColor = doc.getDrawColor(); 
+
+            // APLICAR COLOR DE BORDE PERSONALIZADO (SI EXISTE)
+            if (drawColor) {
+                doc.setDrawColor(drawColor[0], drawColor[1], drawColor[2]);
+            }
+
             // FONDO
             if (fill) { 
                 doc.setFillColor(fill[0], fill[1], fill[2]); 
@@ -849,6 +859,11 @@ const generatePDF = () => {
             // BORDE
             else if (border !== false) { 
                 doc.rect(x, y, cw, ch); 
+            }
+
+            // RESTAURAR COLOR DE BORDE ORIGINAL (Para no afectar siguientes celdas)
+            if (drawColor) {
+                doc.setDrawColor(originalDrawColor); // Volver al gris oscuro por defecto
             }
 
             // TEXTO
@@ -864,7 +879,7 @@ const generatePDF = () => {
                 const sensitiveLabels = ["Talla", "Peso", "HB", "P.C.", "P.Abd", "P.Preg", "años", "meses", "días"];
                 const isSensitive = sensitiveLabels.some(l => text.includes(l));
                 
-                if (!isSensitive) text = text.toUpperCase();
+                if (!isSensitive && !styles.keepCase) text = text.toUpperCase();
 
                 if (rotate) {
                     const xPos = x + (cw / 2); 
@@ -872,12 +887,9 @@ const generatePDF = () => {
                     doc.text(text, xPos, yPos, { angle: 90, align: 'left' }); 
                 } 
                 else if (wrap) {
-                    // --- LÓGICA DE AJUSTE DE TEXTO (MULTILINEA) ---
-                    const lines = doc.splitTextToSize(text, cw - 2); 
+                    const lines = doc.splitTextToSize(text, cw - 1); 
                     const lineHeight = (fontSize || 6) * 0.35; 
-                    
                     let yPos = y + 2.5; 
-                    
                     lines.forEach((line) => {
                         if (yPos < y + ch) {
                             doc.text(line, x + 1, yPos);
@@ -886,7 +898,6 @@ const generatePDF = () => {
                     });
                 } 
                 else {
-                    // Lógica normal de truncado
                     if (doc.getTextWidth(text) > cw - 1) { 
                         const charWidth = doc.getTextWidth("A");
                         const maxChars = Math.floor((cw - 1) / charWidth);
@@ -916,18 +927,42 @@ const generatePDF = () => {
 
             doc.setFontSize(6);
             cell("Lote:", xContent, y, 20, hHeaderSmall, {bold:true, border:false, align:'left'});
-            cell("MINISTERIO DE SALUD", mx, y, fullW, hHeaderSmall, {bold:true, align:'center', fontSize:9, border:false});
-            cell("FIRMA Y SELLO", mx + 160, y, 40, hHeaderSmall, {align:'center', border:false, fontSize:5});
+            cell("MINISTERIO DE SALUD", mx, y, fullW, hHeaderSmall, {bold:true, align:'center', fontSize:8, border:false});
+            
+            // --- FIRMA Y SELLO (ALINEADO A LA DERECHA Y GRIS CLARO) ---
+            // El ancho total es 201 + mx(5) = 206 (Borde derecho pagina)
+            // Queremos que termine en 206.
+            // X = mx + fullW - 40 = 5 + 201 - 40 = 166.
+            const grayColor = [180, 180, 180]; // Gris Claro
+            
+            cell("FIRMA Y SELLO", mx + 161, y, 40, hHeaderSmall, {
+                align:'center', 
+                border:false, 
+                fontSize:5, 
+                textColor: grayColor,
+                keepCase: true // No forzar mayúsculas si no quieres, o dejarlo
+            });
             y += hHeaderSmall;
 
             cell("Pag:", xContent, y, 20, hHeaderSmall, {bold:true, border:false, align:'left'});
             cell("OFICINA GENERAL DE ESTADÍSTICA E INFORMÁTICA", mx, y, fullW, hHeaderSmall, {align:'center', fontSize:7, border:false});
-            cell("DEL PERSONAL DE SALUD", mx + 160, y, 40, hHeaderSmall, {align:'center', border:false, fontSize:5});
+            
+            cell("DEL PERSONAL DE SALUD", mx + 161, y, 40, hHeaderSmall, {
+                align:'center', 
+                border:false, 
+                fontSize:5,
+                textColor: grayColor
+            });
             y += hHeaderSmall;
 
             cell("Reg:", xContent, y, 20, hHeaderSmall, {bold:true, border:false, align:'left'});
-            cell("Registro Diario de Atención y Otras Actividades de Salud", mx, y, fullW, hHeaderSmall, {align:'center', fontSize:8, border:false});
-            doc.rect(mx + 160, y - (hHeaderSmall*2), 40, hHeaderSmall*4); 
+            cell("Registro Diario de Atención y Otras Actividades de Salud", mx, y, fullW, hHeaderSmall, {align:'center', fontSize:7, border:false});
+            
+            // RECUADRO FIRMA: Color de Borde GRIS CLARO
+            doc.setDrawColor(180, 180, 180); 
+            doc.rect(mx + 161, y - (hHeaderSmall*2), 40, hHeaderSmall*4); 
+            doc.setDrawColor(50, 50, 50); // Restaurar color oscuro
+            
             y += hHeaderSmall + 1;
 
             const bgHead = [230, 230, 230]; 
@@ -944,13 +979,13 @@ const generatePDF = () => {
             y += hMeta;
 
             cx = mx + w.idx; 
-            cell(adminData.anio, cx, y, 10, hMeta, {align:'center', bold:false}); cx+=10;
-            cell(adminData.mes, cx, y, 20, hMeta, {align:'center', bold:false}); cx+=20;
-            cell(adminData.establecimiento, cx, y, 45, hMeta, {align:'center', bold:false}); cx+=45;
-            cell(adminData.ups, cx, y, 35, hMeta, {align:'center', bold:false}); cx+=35;
-            cell(adminData.dniResp, cx, y, 20, hMeta, {align:'center', bold:false}); cx+=20;
-            cell(adminData.nombreResp, cx, y, 45, hMeta, {align:'center', bold:false}); cx+=45;
-            cell(adminData.turno, cx, y, 20, hMeta, {align:'center', bold:false}); 
+            cell(adminData.anio, cx, y, 10, hMeta, {align:'center', bold:false, fontSize:7}); cx+=10;
+            cell(adminData.mes, cx, y, 20, hMeta, {align:'center', bold:false, fontSize:7}); cx+=20;
+            cell(adminData.establecimiento, cx, y, 45, hMeta, {align:'center', bold:false, fontSize:7}); cx+=45;
+            cell(adminData.ups, cx, y, 35, hMeta, {align:'center', bold:false, fontSize:7}); cx+=35;
+            cell(adminData.dniResp, cx, y, 20, hMeta, {align:'center', bold:false, fontSize:7}); cx+=20;
+            cell(adminData.nombreResp, cx, y, 45, hMeta, {align:'center', bold:false, fontSize:7}); cx+=45;
+            cell(adminData.turno, cx, y, 20, hMeta, {align:'center', bold:false, fontSize:7}); 
             y += hMeta + 2;
 
             const hTable = 12; 
@@ -1005,13 +1040,12 @@ const generatePDF = () => {
 
                 if (isFirst) {
                     const wName = w.dia + w.dni + w.fin + w.dist;
-                    cell(p.paciente, cx, y, wName, hRowName, {bold:true, align:'left', fontSize: 7, border: false}); cx += wName;
+                    cell(p.paciente, cx, y, wName, hRowName, {bold:true, align:'left', fontSize: 7.5, border: false}); cx += wName;
                     
                     const wFNLabel = w.edad + w.sex;
                     cell("F.N:", cx, y, wFNLabel, hRowName, {align:'right', bold:true, border: false, fontSize:6}); cx += wFNLabel;
                     
                     const wFNVal = w.antL + w.antV;
-                    // Valor Numérico de Fecha: AHORA BOLD (SemiBold simulado)
                     cell(p.fecNac, cx, y, wFNVal, hRowName, {align:'center', fill:[240,240,240], border:true, bold:true, fontSize:7}); cx += wFNVal;
                     
                     const wCenter = w.antL + w.antV + w.est + w.serv + w.dx + w.tipo; 
@@ -1021,16 +1055,16 @@ const generatePDF = () => {
                     cell("FUR:", cx, y, wFURLabel, hRowName, {align:'right', bold:true, border: false, fontSize:6}); cx += wFURLabel;
                     
                     const wFURVal = w.lab + w.cie;
-                    // Valor Numérico de Fecha: AHORA BOLD
                     cell(p.fur, cx, y, wFURVal, hRowName, {align:'center', fill:[240,240,240], border:true, bold:true, fontSize:7}); 
                 } else {
+                    // CONTINUACIÓN: AHORA CON BORDES (border: true) PARA MANTENER LA REJILLA
                     let cxEmpty = cx;
-                    cell("", cxEmpty, y, w.dia + w.dni + w.fin + w.dist, hRowName, {border: false}); cxEmpty += (w.dia + w.dni + w.fin + w.dist);
-                    cell("", cxEmpty, y, w.edad + w.sex, hRowName, {border: false}); cxEmpty += (w.edad + w.sex);
-                    cell("", cxEmpty, y, w.antL + w.antV, hRowName, {fill:[240,240,240], border:false}); cxEmpty += (w.antL + w.antV);
-                    cell("", cxEmpty, y, w.antL + w.antV + w.est + w.serv + w.dx + w.tipo, hRowName, {border: false}); cxEmpty += (w.antL + w.antV + w.est + w.serv + w.dx + w.tipo);
-                    cell("", cxEmpty, y, w.lab * 2, hRowName, {border: false}); cxEmpty += (w.lab * 2);
-                    cell("", cxEmpty, y, w.lab + w.cie, hRowName, {fill:[240,240,240], border:false});
+                    cell("", cxEmpty, y, w.dia + w.dni + w.fin + w.dist, hRowName, {border: true}); cxEmpty += (w.dia + w.dni + w.fin + w.dist);
+                    cell("", cxEmpty, y, w.edad + w.sex, hRowName, {border: true}); cxEmpty += (w.edad + w.sex);
+                    cell("", cxEmpty, y, w.antL + w.antV, hRowName, {fill:[240,240,240], border:true}); cxEmpty += (w.antL + w.antV);
+                    cell("", cxEmpty, y, w.antL + w.antV + w.est + w.serv + w.dx + w.tipo, hRowName, {border: true}); cxEmpty += (w.antL + w.antV + w.est + w.serv + w.dx + w.tipo);
+                    cell("", cxEmpty, y, w.lab * 2, hRowName, {border: true}); cxEmpty += (w.lab * 2);
+                    cell("", cxEmpty, y, w.lab + w.cie, hRowName, {fill:[240,240,240], border:true});
                 }
                 
                 const yData = y + hRowName; 
@@ -1042,7 +1076,6 @@ const generatePDF = () => {
                 cell(p.fecAtencion ? p.fecAtencion.split('-')[2] : "", cx, yData, w.dia, hDataBlock, {align:'center', vAlign:'middle', fontSize:7, bold:false}); 
                 cx += w.dia;
 
-                // DNI / HC -> AHORA BOLD (SemiBold simulado)
                 cell(p.dni, cx, yData, w.dni, hRowData, {align:'center', fontSize:7, bold:true});
                 cell(p.hc, cx, yData + hRowData, w.dni, hRowData, {align:'center', fontSize:7, bold:true});
                 cell(p.condicion, cx, yData + (hRowData*2), w.dni, hRowData, {align:'center', fontSize:5.5, bold:false});
@@ -1064,10 +1097,9 @@ const generatePDF = () => {
                 });
                 cx += w.dist;
 
-                // EDAD (NUMEROS) -> AHORA BOLD
-                cell(a.y ? a.y + " años" : "", cx, yData, w.edad, hRowData, {align:'center', fontSize: 5, bold:true});
-                cell(a.m ? a.m + " meses" : "", cx, yData + hRowData, w.edad, hRowData, {align:'center', fontSize: 5, bold:true});
-                cell(a.d ? a.d + " días" : "", cx, yData + (hRowData*2), w.edad, hRowData, {align:'center', fontSize: 5, bold:true});
+                cell(a.y ? a.y + " años" : "", cx, yData, w.edad, hRowData, {align:'center', fontSize: 6, bold:true});
+                cell(a.m ? a.m + " meses" : "", cx, yData + hRowData, w.edad, hRowData, {align:'center', fontSize: 6, bold:true});
+                cell(a.d ? a.d + " días" : "", cx, yData + (hRowData*2), w.edad, hRowData, {align:'center', fontSize: 6, bold:true});
                 cx += w.edad;
 
                 cell(p.sexo, cx, yData, w.sex, hDataBlock, {align:'center', vAlign:'middle', fontSize:7, bold:false});
@@ -1075,52 +1107,50 @@ const generatePDF = () => {
 
                 let cxAntro = cx;
                 cell("Talla", cxAntro, yData, w.antL, hRowData, {align:'center', fontSize:5, bold:true}); cxAntro+=w.antL;
-                // VALORES ANTROPOMÉTRICOS -> AHORA BOLD
-                cell(isFirst ? c.talla : "", cxAntro, yData, w.antV, hRowData, {align:'center', bold:true}); cxAntro+=w.antV;
+                cell(isFirst ? c.talla : "", cxAntro, yData, w.antV, hRowData, {align:'center', bold:true, fontSize:7}); cxAntro+=w.antV;
                 cell("P.C.", cxAntro, yData, w.antL, hRowData, {align:'center', fontSize:5, bold:true}); cxAntro+=w.antL;
-                cell(isFirst ? c.pCef : "", cxAntro, yData, w.antV, hRowData, {align:'center', bold:true});
+                cell(isFirst ? c.pCef : "", cxAntro, yData, w.antV, hRowData, {align:'center', bold:true, fontSize:7});
                 
                 cxAntro = cx;
                 cell("Peso", cxAntro, yData+hRowData, w.antL, hRowData, {align:'center', fontSize:5, bold:true}); cxAntro+=w.antL;
-                cell(isFirst ? c.peso : "", cxAntro, yData+hRowData, w.antV, hRowData, {align:'center', bold:true}); cxAntro+=w.antV;
+                cell(isFirst ? c.peso : "", cxAntro, yData+hRowData, w.antV, hRowData, {align:'center', bold:true, fontSize:7}); cxAntro+=w.antV;
                 cell("P.Abd", cxAntro, yData+hRowData, w.antL, hRowData, {align:'center', fontSize:5, bold:true}); cxAntro+=w.antL;
-                cell(isFirst ? c.pAbd : "", cxAntro, yData+hRowData, w.antV, hRowData, {align:'center', bold:true});
+                cell(isFirst ? c.pAbd : "", cxAntro, yData+hRowData, w.antV, hRowData, {align:'center', bold:true, fontSize:7});
 
                 cxAntro = cx;
                 cell("HB", cxAntro, yData+(hRowData*2), w.antL, hRowData, {align:'center', fontSize:5, bold:true}); cxAntro+=w.antL;
-                cell(isFirst ? c.hb : "", cxAntro, yData+(hRowData*2), w.antV, hRowData, {align:'center', bold:true}); cxAntro+=w.antV;
+                cell(isFirst ? c.hb : "", cxAntro, yData+(hRowData*2), w.antV, hRowData, {align:'center', bold:true, fontSize:7}); cxAntro+=w.antV;
                 cell("P.Preg", cxAntro, yData+(hRowData*2), w.antL, hRowData, {align:'center', fontSize:5, bold:true}); cxAntro+=w.antL;
-                cell(isFirst ? c.pPreGest : "", cxAntro, yData+(hRowData*2), w.antV, hRowData, {align:'center', bold:true});
+                cell(isFirst ? c.pPreGest : "", cxAntro, yData+(hRowData*2), w.antV, hRowData, {align:'center', bold:true, fontSize:7});
                 
                 cx += (w.antL*2 + w.antV*2);
 
-                cell(p.condEst, cx, yData, w.est, hDataBlock, {align:'center', vAlign:'middle', bold:false}); cx += w.est;
-                cell(p.condServ, cx, yData, w.serv, hDataBlock, {align:'center', vAlign:'middle', bold:false}); cx += w.serv;
+                cell(p.condEst, cx, yData, w.est, hDataBlock, {align:'center', vAlign:'middle', bold:false, fontSize:7}); cx += w.est;
+                cell(p.condServ, cx, yData, w.serv, hDataBlock, {align:'center', vAlign:'middle', bold:false, fontSize:7}); cx += w.serv;
 
                 let cxDx = cx;
                 cell(d1.desc, cxDx, yData, w.dx, hRowData, {align:'left', fontSize:5.5, bold:false}); cxDx+=w.dx;
-                cell(d1.tipo, cxDx, yData, w.tipo, hRowData, {align:'center', bold:false}); cxDx+=w.tipo;
-                cell(d1.lab1, cxDx, yData, w.lab, hRowData, {align:'center', bold:false}); cxDx+=w.lab;
-                cell(d1.lab2, cxDx, yData, w.lab, hRowData, {align:'center', bold:false}); cxDx+=w.lab;
-                cell(d1.lab3, cxDx, yData, w.lab, hRowData, {align:'center', bold:false}); cxDx+=w.lab;
-                // CÓDIGOS -> AHORA BOLD
-                cell(d1.codigo, cxDx, yData, w.cie, hRowData, {align:'center', bold:true});
+                cell(d1.tipo, cxDx, yData, w.tipo, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.tipo;
+                cell(d1.lab1, cxDx, yData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
+                cell(d1.lab2, cxDx, yData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
+                cell(d1.lab3, cxDx, yData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
+                cell(d1.codigo, cxDx, yData, w.cie, hRowData, {align:'center', bold:true, fontSize:7});
 
                 cxDx = cx;
                 cell(d2.desc, cxDx, yData+hRowData, w.dx, hRowData, {align:'left', fontSize:5.5, bold:false}); cxDx+=w.dx;
-                cell(d2.tipo, cxDx, yData+hRowData, w.tipo, hRowData, {align:'center', bold:false}); cxDx+=w.tipo;
-                cell(d2.lab1, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false}); cxDx+=w.lab;
-                cell(d2.lab2, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false}); cxDx+=w.lab;
-                cell(d2.lab3, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false}); cxDx+=w.lab;
-                cell(d2.codigo, cxDx, yData+hRowData, w.cie, hRowData, {align:'center', bold:true});
+                cell(d2.tipo, cxDx, yData+hRowData, w.tipo, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.tipo;
+                cell(d2.lab1, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
+                cell(d2.lab2, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
+                cell(d2.lab3, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
+                cell(d2.codigo, cxDx, yData+hRowData, w.cie, hRowData, {align:'center', bold:true, fontSize:7});
 
                 cxDx = cx;
                 cell(d3.desc, cxDx, yData+(hRowData*2), w.dx, hRowData, {align:'left', fontSize:5.5, bold:false}); cxDx+=w.dx;
-                cell(d3.tipo, cxDx, yData+(hRowData*2), w.tipo, hRowData, {align:'center', bold:false}); cxDx+=w.tipo;
-                cell(d3.lab1, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false}); cxDx+=w.lab;
-                cell(d3.lab2, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false}); cxDx+=w.lab;
-                cell(d3.lab3, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false}); cxDx+=w.lab;
-                cell(d3.codigo, cxDx, yData+(hRowData*2), w.cie, hRowData, {align:'center', bold:true});
+                cell(d3.tipo, cxDx, yData+(hRowData*2), w.tipo, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.tipo;
+                cell(d3.lab1, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
+                cell(d3.lab2, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
+                cell(d3.lab3, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
+                cell(d3.codigo, cxDx, yData+(hRowData*2), w.cie, hRowData, {align:'center', bold:true, fontSize:7});
 
                 y += hBlock;
             }
