@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Activity, ArrowRight, ArrowLeft, X, Plus, 
-  LogOut, Database, Search, Trash2, FileSpreadsheet, Calendar, Edit, Download, Grid, Save, UserPlus, Users, Save as SaveIcon, FileText, AlertTriangle, Calculator, Siren, Baby, RefreshCw, CheckCircle, Droplets, Eye, EyeOff
+  LogOut, Database, Search, Trash2, FileSpreadsheet, Calendar, Edit, Download, Grid, Save, UserPlus, Users, Save as SaveIcon, FileText, AlertTriangle, Calculator, Siren, Baby, RefreshCw, CheckCircle, Droplets, Eye, EyeOff, Heart, Syringe, Brain, Smile
 } from 'lucide-react';
 
 import NutritionalStatusModal from './NutritionalStatusModal';
@@ -100,6 +100,17 @@ const idb = {
       const transaction = db.transaction([STORE_PACIENTES], 'readwrite');
       const store = transaction.objectStore(STORE_PACIENTES);
       const request = store.clear();
+      request.onsuccess = () => resolve(true);
+      request.onerror = () => reject(false);
+    });
+  },
+  // --- NUEVA FUNCIÓN PARA GUARDAR UN SOLO PACIENTE ---
+  addPatient: async (patient) => {
+    const db = await idb.open();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([STORE_PACIENTES], 'readwrite');
+      const store = transaction.objectStore(STORE_PACIENTES);
+      const request = store.add(patient);
       request.onsuccess = () => resolve(true);
       request.onerror = () => reject(false);
     });
@@ -305,6 +316,127 @@ const CredFollowUpModal = ({ isOpen, onClose }) => {
   );
 };
 
+// --- COMPONENTE VISOR INTEGRADO (NO MODAL) ---
+// --- COMPONENTE VISOR INTEGRADO (CORREGIDO PARA FECHAS) ---
+// --- COMPONENTE VISOR INTEGRADO (CON ALERTA ROJA EN TTO Y SELECCIÓN DE FILAS) ---
+const InlineFollowUpViewer = ({ type, data, onClose, onFileUpload }) => {
+  const [filter, setFilter] = useState("");
+  const [selectedRowIndex, setSelectedRowIndex] = useState(null); // Estado para la fila seleccionada
+  
+  // Obtenemos las columnas dinámicamente
+  const columns = data && data.length > 0 ? Object.keys(data[0]).filter(k => k !== 'id' && k !== 'searchStr') : [];
+  const filtered = data ? data.filter(row => !filter || row.searchStr.includes(filter.toUpperCase())).slice(0, 50) : [];
+
+  // --- FUNCIÓN PARA CORREGIR FECHAS DE EXCEL ---
+  const formatCell = (value) => {
+      if (typeof value === 'number' && value > 20000 && value < 60000) {
+          const date = new Date(Math.round((value - 25569) * 86400 * 1000));
+          date.setMinutes(date.getMinutes() + date.getTimezoneOffset());
+          if(!isNaN(date.getTime())) {
+              return date.toLocaleDateString("es-PE", { day: '2-digit', month: '2-digit', year: 'numeric' });
+          }
+      }
+      return value;
+  };
+
+  // --- LÓGICA DE ESTILOS DE CELDA ---
+  const getCellStyle = (columnName, value) => {
+      // 1. Columnas de Tratamiento (TTO_1 a TTO_6)
+      const ttoColumns = ['TTO_1', 'TTO_2', 'TTO_3', 'TTO_4', 'TTO_5', 'TTO_6'];
+      
+      // Si es columna TTO y está vacía (null, undefined o string vacío)
+      if (ttoColumns.includes(columnName) && (!value || String(value).trim() === '')) {
+          return "bg-red-200 animate-pulse"; // ROJO SI FALTA EL DATO
+      }
+      
+      // Si es TTO y tiene dato, lo pintamos de verde suave para confirmar
+      if (ttoColumns.includes(columnName) && value) {
+          return "bg-green-100 font-bold text-green-800";
+      }
+
+      return ""; // Estilo normal
+  };
+
+  return (
+    <div className="mb-6 bg-white border-2 border-slate-200 rounded-xl overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300 shadow-inner">
+      {/* CABECERA */}
+      <div className="bg-slate-100 p-3 flex justify-between items-center border-b border-slate-200">
+        <h3 className="font-black text-slate-700 uppercase flex items-center gap-2">
+           <Database size={18}/> SEGUIMIENTO: <span className="text-blue-600">{type}</span>
+        </h3>
+        <button onClick={onClose} className="text-xs font-bold bg-slate-200 hover:bg-red-100 text-slate-600 hover:text-red-600 px-3 py-1 rounded-lg transition-colors">
+            CERRAR VISOR
+        </button>
+      </div>
+
+      {/* CONTENIDO */}
+      <div className="p-4">
+        {(!data || data.length === 0) ? (
+            <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 flex flex-col items-center justify-center text-slate-400 bg-slate-50">
+                <p className="font-bold mb-3">No hay datos cargados para {type}</p>
+                <input type="file" id={`file_${type}`} className="hidden" accept=".xlsx, .xls" onChange={(e) => onFileUpload(e, type)} />
+                <label htmlFor={`file_${type}`} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold cursor-pointer text-xs flex items-center gap-2 shadow-lg transition-transform active:scale-95">
+                    <Download size={16}/> CARGAR EXCEL {type}
+                </label>
+            </div>
+        ) : (
+            <>
+                <div className="mb-3 relative">
+                    <Search className="absolute left-3 top-2.5 text-slate-400" size={16}/>
+                    <input 
+                        className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-300 text-xs font-bold uppercase focus:ring-2 focus:ring-blue-100 outline-none" 
+                        placeholder="BUSCAR EN ESTA LISTA..." 
+                        value={filter}
+                        onChange={e => setFilter(e.target.value)}
+                    />
+                </div>
+                <div className="overflow-x-auto border border-slate-200 rounded-lg max-h-[300px]">
+                    <table className="w-full text-[10px] text-left border-collapse">
+                        <thead className="bg-slate-50 text-slate-500 font-bold uppercase sticky top-0 z-10 shadow-sm">
+                            <tr>
+                                {columns.map((c, i) => <th key={i} className="px-2 py-2 border-b border-r border-slate-200 whitespace-nowrap bg-slate-50">{c}</th>)}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filtered.map((row, i) => (
+                                <tr 
+                                    key={i} 
+                                    // LOGICA DE SELECCIÓN DE FILA
+                                    onClick={() => setSelectedRowIndex(i === selectedRowIndex ? null : i)} // Clic para seleccionar/deseleccionar
+                                    className={`transition-colors cursor-pointer border-b border-slate-100 
+                                        ${selectedRowIndex === i 
+                                            ? 'bg-blue-600 text-white hover:bg-blue-700' // Estilo SELECCIONADO (Azul fuerte)
+                                            : 'hover:bg-blue-50 text-slate-700 even:bg-slate-50' // Estilo NORMAL
+                                        }`}
+                                >
+                                    {columns.map((c, j) => {
+                                        // Calculamos estilo especial para celdas TTO
+                                        const specialStyle = getCellStyle(c, row[c]);
+                                        // Si la fila está seleccionada, ignoramos el rojo para que se lea el texto blanco, 
+                                        // a menos que quieras que el rojo persista. Aquí priorizo la selección azul.
+                                        const finalClass = (selectedRowIndex === i) ? "" : specialStyle;
+
+                                        return (
+                                            <td key={j} className={`px-2 py-1 whitespace-nowrap border-r border-slate-100 ${finalClass}`}>
+                                                {formatCell(row[c])}
+                                            </td>
+                                        );
+                                    })}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+                <div className="mt-2 text-[10px] text-slate-400 font-bold text-right flex justify-between items-center">
+                    <span>💡 Tip: Haga clic en una fila para marcarla.</span>
+                    <span>Mostrando {filtered.length} coincidencias.</span>
+                </div>
+            </>
+        )}
+      </div>
+    </div>
+  );
+};
 export default function App() {
   const [showNutriModal, setShowNutriModal] = useState(false);
   const [showAnemiaModal, setShowAnemiaModal] = useState(false);
@@ -437,6 +569,15 @@ export default function App() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [step, setStep] = useState(1);
+  const [ignorePreGestValidation, setIgnorePreGestValidation] = useState(false);
+  const [showPreGestError, setShowPreGestError] = useState(false);
+  const [showHbError, setShowHbError] = useState(false);
+  const [ignorePAbdValidation, setIgnorePAbdValidation] = useState(false);
+  const [showPAbdError, setShowPAbdError] = useState(false);
+  const [ignorePCefValidation, setIgnorePCefValidation] = useState(false);
+  const [showPCefError, setShowPCefError] = useState(false);
+  const [activeFollowUp, setActiveFollowUp] = useState(null); 
+  const [followUpData, setFollowUpData] = useState({});
 
   // --- CARGA DE BD ---
   useEffect(() => {
@@ -533,7 +674,31 @@ export default function App() {
       reader.readAsBinaryString(file);
     } catch (error) { alert("Error subiendo el archivo: " + error.message); }
   };
-
+  const handleFollowUpUpload = (e, type) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1 }); // Array de arrays
+        if (data.length > 0) {
+            const headers = data[0];
+            const rows = data.slice(1).map((r, i) => {
+                let obj = { id: i };
+                headers.forEach((h, index) => { obj[h] = r[index] !== undefined ? r[index] : ""; });
+                obj.searchStr = Object.values(obj).join(" ").toUpperCase();
+                return obj;
+            });
+            // Guardamos en el estado general
+            setFollowUpData(prev => ({ ...prev, [type]: rows }));
+        }
+      } catch (err) { alert("Error al leer Excel: " + err.message); }
+    };
+    reader.readAsBinaryString(file);
+  };
+  
   const handleSearchInput = (e) => {
       const val = e.target.value.toUpperCase();
       setSearchTerm(val);
@@ -565,6 +730,8 @@ export default function App() {
 
   const selectPatient = (p) => {
       setShowSuggestions(false); setSuggestions([]); 
+      
+      // 1. Lógica de coincidencia de Establecimiento
       let estConfigRaw = adminData.establecimiento.trim().toUpperCase();
       let estPatientRaw = p.estOrigen ? p.estOrigen.trim().toUpperCase() : "";
 
@@ -577,26 +744,56 @@ export default function App() {
 
       const cleanConfig = cleanStr(keywordConfig);
       const cleanPatient = cleanStr(estPatientRaw);
+      
+      // Verificamos si el establecimiento de origen coincide (para la alerta de jurisdicción)
       const match = cleanPatient.includes(cleanConfig) || cleanConfig.includes(cleanPatient);
 
+      // Si NO coincide el origen, mostramos la alerta (pero permitimos continuar)
       if (!match) {
+          // NOTA: Si el paciente fue creado con el botón azul, su 'estOrigen' quizás sea otro,
+          // pero si ya lo guardamos con historialEst conteniendo el actual, lo trataremos bien abajo.
           setJurisdictionErrorMsg(`El paciente seleccionado pertenece a: "${p.estOrigen || 'DESCONOCIDO'}"\nPero usted está registrando en: "${adminData.establecimiento}"`);
-          setShowJurisdictionModal(true); return; 
+          setShowJurisdictionModal(true); 
+          // Quitamos el return para que seleccione los datos de fondo de todas formas
       }
 
       setSearchTerm(p.nombre || "");
       const safeFecNac = parseExcelDate(p.fecNac);
 
+      // Alerta Adolescente
       const currentAgeObj = getAgeComponents(safeFecNac, patientData.fecAtencion);
       if (currentAgeObj.y >= 12 && currentAgeObj.y <= 17) {
           setShowAdolescentModal(true);
       }
 
-      const esContinuador = p.historialEst.some(historialItem => { const itemLimpio = cleanStr(historialItem); return itemLimpio.includes(cleanConfig); });
+      // --- LÓGICA DE CONTINUADOR MEJORADA ---
+      // Verificamos si el establecimiento ACTUAL está en el historial del paciente
+      const esContinuador = p.historialEst.some(historialItem => { 
+          const itemLimpio = cleanStr(historialItem); 
+          return itemLimpio.includes(cleanConfig); 
+      });
+      
+      // Si está en el historial -> es CONTINUADOR (C)
+      // Si NO está en el historial -> es REINGRESANTE (R) (Asumiendo que ya existe en BD pero viene de otro lado)
       const condicionCalculada = esContinuador ? "C" : "R";
 
       setTimeout(() => { 
-          setPatientData(prev => ({ ...prev, dni: p.dni || "", paciente: p.nombre || "", hc: p.hc || "", fecNac: safeFecNac, sexo: p.sexo || 'M', financiador: p.financiador || 'SIS', direccion: p.direccion || '', distrito: p.distrito || '', estOrigen: p.estOrigen || '', condEst: condicionCalculada })); 
+          setPatientData(prev => ({ 
+              ...prev,
+	      id: p.id, 
+              dni: p.dni || "", 
+              paciente: p.nombre || "", 
+              hc: p.hc || "", 
+              fecNac: safeFecNac, 
+              sexo: p.sexo || 'M', 
+              financiador: p.financiador || 'SIS', 
+              direccion: p.direccion || '', 
+              distrito: p.distrito || '', 
+              estOrigen: p.estOrigen || '', 
+              // AQUI LA MAGIA:
+              condEst: condicionCalculada, // Se pone C o R automáticamente
+              condServ: '' // <--- SE DEJA VACÍO PARA QUE EL USUARIO ELIJA (N, C o R)
+          })); 
           setIsPatientDataLocked(true); 
       }, 10);
   };
@@ -662,7 +859,65 @@ export default function App() {
       setClinicalData({ ...clinicalData, [e.target.name]: val });
   };
 
-  const handleSaveManualPatient = () => { if(!manualData.dni || !manualData.nombres) return alert("Debe completar al menos DNI y Nombres"); setPatientData(prev => ({ ...prev, dni: manualData.dni, paciente: manualData.nombres.toUpperCase(), hc: manualData.hc, fecNac: manualData.fecNac, sexo: manualData.sexo, financiador: manualData.financiador, direccion: manualData.direccion.toUpperCase(), distrito: manualData.distrito.toUpperCase(), estOrigen: manualData.estOrigen.toUpperCase(), condEst: 'N', condServ: 'N' })); setSearchTerm(manualData.nombres.toUpperCase()); setIsPatientDataLocked(true); setIsManualModalOpen(false); setManualData({ dni: '', nombres: '', fecNac: '2000-01-01', sexo: 'M', hc: '', distrito: '', direccion: '', financiador: 'SIS', estOrigen: '' }); };
+  const handleSaveManualPatient = async () => {
+      // 1. Validaciones básicas
+      if(!manualData.dni || !manualData.nombres) return alert("Debe completar al menos DNI y Nombres");
+
+      // 2. Preparamos el objeto COMPLETO para la base de datos
+      const nuevoPacienteBD = {
+          dni: manualData.dni.trim(),
+          nombre: manualData.nombres.trim().toUpperCase(),
+          fecNac: manualData.fecNac,
+          sexo: manualData.sexo,
+          financiador: manualData.financiador,
+          hc: manualData.hc,
+          distrito: manualData.distrito.trim().toUpperCase(),
+          direccion: manualData.direccion.trim().toUpperCase(),
+          estOrigen: manualData.estOrigen.trim().toUpperCase(),
+          // --- CAMBIO CLAVE AQUÍ ---
+          // En lugar de historial vacío [], le ponemos el establecimiento actual.
+          // Así, la próxima vez que lo busques, el sistema sabrá que ya se atendió aquí.
+          historialEst: [adminData.establecimiento], 
+          // -------------------------
+          busqueda: (manualData.dni.trim() + " " + manualData.nombres.trim()).toUpperCase()
+      };
+
+      try {
+          // 3. Guardar en BD Local
+          await idb.addPatient(nuevoPacienteBD);
+	  markAsContinuadorOnSave(patientData);
+          // 4. Actualizar memoria
+          setDbPacientes(prev => [...prev, nuevoPacienteBD]);
+
+          // 5. Rellenar formulario (AQUÍ SÍ LO DEJAMOS COMO 'N' PORQUE ES LA PRIMERA VEZ)
+          setPatientData(prev => ({ 
+              ...prev, 
+              dni: manualData.dni, 
+              paciente: manualData.nombres.toUpperCase(), 
+              hc: manualData.hc, 
+              fecNac: manualData.fecNac, 
+              sexo: manualData.sexo, 
+              financiador: manualData.financiador, 
+              direccion: manualData.direccion.toUpperCase(), 
+              distrito: manualData.distrito.toUpperCase(), 
+              estOrigen: manualData.estOrigen.toUpperCase(), 
+              condEst: 'N', // Visualmente ahora es Nuevo (correcto)
+              condServ: 'N' // Visualmente ahora es Nuevo (correcto)
+          }));
+
+          setSearchTerm(manualData.nombres.toUpperCase());
+          setIsPatientDataLocked(true);
+          setIsManualModalOpen(false);
+          
+          setManualData({ dni: '', nombres: '', fecNac: '2000-01-01', sexo: 'M', hc: '', distrito: '', direccion: '', financiador: 'SIS', estOrigen: '' });
+
+          alert("✅ Paciente registrado. En futuras búsquedas aparecerá como CONTINUADOR.");
+
+      } catch (error) {
+          console.error(error);
+          alert("Error al guardar el paciente en la base de datos.");
+      }
+  };
   
   const calculateAnemiaSimple = () => { 
       if (!clinicalData.hb || !anemiaLocation) return alert("Ingrese HB y seleccione localidad"); 
@@ -698,8 +953,99 @@ export default function App() {
   const addDx = () => { setDiagnoses([...diagnoses, { desc: '', tipo: '-', lab1: '', lab2: '', lab3: '', codigo: '' }]); setTimeout(() => { if (dxBottomRef.current) { dxBottomRef.current.scrollIntoView({ behavior: 'smooth' }); } }, 100); };
   const removeDx = (i) => setDiagnoses(diagnoses.filter((_, idx) => idx !== i));
 
+  
+  // --- FUNCIÓN FUERTE: MARCAR COMO CONTINUADOR (CORREGIDA) ---
+  // --- FUNCIÓN MAESTRA: ACTUALIZAR A CONTINUADOR (EN MEMORIA Y BD) ---
+  // --- FUNCIÓN DE ACTUALIZACIÓN (VERSIÓN A PRUEBA DE FALLOS) ---
+  // --- FUNCIÓN HÍBRIDA: ACTUALIZAR A CONTINUADOR (ID O DNI) ---
+  // --- FUNCIÓN: ACTUALIZAR A CONTINUADOR (AL GUARDAR) ---
+  // --- FUNCIÓN: ACTUALIZAR A CONTINUADOR (MOTOR DEFINITIVO) ---
+  const updateToContinuador = (idPaciente) => {
+      if (!idPaciente) return;
+
+      console.log(`🔄 Convirtiendo a CONTINUADOR al ID: ${idPaciente}`);
+
+      // 1. ACTUALIZAR EN MEMORIA (Para que el buscador se entere YA)
+      setDbPacientes(prev => prev.map(p => {
+          if (p.id === idPaciente) {
+              // Agregamos el establecimiento actual al historial en memoria
+              const nuevoHistorial = p.historialEst ? [...p.historialEst] : [];
+              if (!nuevoHistorial.includes(adminData.establecimiento)) {
+                  nuevoHistorial.push(adminData.establecimiento);
+              }
+              return { ...p, condEst: 'C', historialEst: nuevoHistorial };
+          }
+          return p;
+      }));
+
+      // 2. ACTUALIZAR EN BASE DE DATOS (Para que se guarde mañana)
+      const request = indexedDB.open(DB_NAME, 1);
+      request.onsuccess = (e) => {
+          const db = e.target.result;
+          const tx = db.transaction([STORE_PACIENTES], 'readwrite');
+          const store = tx.objectStore(STORE_PACIENTES);
+          const getReq = store.get(idPaciente);
+
+          getReq.onsuccess = () => {
+              const record = getReq.result;
+              if (record) {
+                  // Cambiamos a Continuador
+                  record.condEst = 'C';
+                  
+                  // AGREGAMOS AL HISTORIAL FÍSICO (CRÍTICO para tu lógica de selectPatient)
+                  if (!record.historialEst) record.historialEst = [];
+                  if (!record.historialEst.includes(adminData.establecimiento)) {
+                      record.historialEst.push(adminData.establecimiento);
+                  }
+
+                  store.put(record);
+                  console.log("✅ Paciente actualizado en BD: Ahora es CONTINUADOR.");
+              }
+          };
+      };
+  };
+
+
+  const markAsContinuadorOnSave = (datosPaciente) => {
+      // Si no hay ID ni DNI, no hacemos nada (es un paciente sin registro previo)
+      if (!datosPaciente.id && !datosPaciente.dni) return;
+
+      console.log("💾 Guardando cambio de estado a CONTINUADOR...");
+
+      // 1. ACTUALIZAR MEMORIA (Buscador)
+      // Esto hace que si buscas al paciente dentro de 5 minutos, ya salga como 'C'
+      setAllPatients(prevLista => prevLista.map(p => {
+          // Coincidencia por ID o por DNI
+          if ((p.id && p.id === datosPaciente.id) || (p.dni && p.dni === datosPaciente.dni)) {
+              return { ...p, condEst: 'C' }; 
+          }
+          return p;
+      }));
+
+      // 2. ACTUALIZAR BASE DE DATOS (IndexedDB)
+      // Esto hace que el cambio persista aunque cierres el navegador
+      const request = indexedDB.open(DB_NAME, 1);
+      request.onsuccess = (e) => {
+          const db = e.target.result;
+          const tx = db.transaction([STORE_PACIENTES], 'readwrite');
+          const store = tx.objectStore(STORE_PACIENTES);
+          
+          // Intentamos buscar por ID primero
+          if (datosPaciente.id) {
+              const getReq = store.get(datosPaciente.id);
+              getReq.onsuccess = () => {
+                  const record = getReq.result;
+                  if (record && (record.condEst === 'N' || record.condEst === 'R')) {
+                      record.condEst = 'C'; 
+                      store.put(record); // Guardar cambio
+                  }
+              };
+          }
+      };
+  };
   // --- NUEVA FUNCIÓN DE VALIDACIÓN DE DIAGNÓSTICOS (HIS 1.12) ---
   const validateDiagnoses = () => {
+    if (!patientData.paciente || patientData.paciente.trim() === "") return true;
     for (let i = 0; i < diagnoses.length; i++) {
         const d = diagnoses[i];
         if(!d.codigo) continue; 
@@ -718,9 +1064,27 @@ export default function App() {
                 });
                 return false;
             }
+        } // <--- ¡AQUÍ SE CIERRA EL BLOQUE DEL D509!
+
+        // 2. Validación Dosaje Hb (85018, 85018.01) - AHORA ESTÁ AFUERA
+        
+        if (['85018', '85018.01'].includes(code)) {
+            const valorHb = clinicalData.hb;
+            // Si está vacío, nulo o es 0
+            if (!valorHb || valorHb === '' || parseFloat(valorHb) === 0) {
+                 setValidationAlert({
+                    isOpen: true,
+                    type: 'LAB_MISSING', 
+                    title: 'Falta Resultado de Hemoglobina',
+                    message: `En la fila ${i + 1}, ha registrado el procedimiento de Dosaje (${code}), pero no ingresó el resultado.`,
+                    // --- TEXTO ACTUALIZADO AQUÍ ABAJO ---
+                    details: 'El sistema detectó que el campo "Hemoglobina" en los Datos Clínicos (Paso 2) está vacío.\n\nRECUERDA QUE EL VALOR DE HEMOGLOBINA SE DEBE REGISTRAR SIN DESCUENTO.'
+                });
+                return false; 
+            }
         }
 
-        // 2. Validación Gestantes (Z3591, Z3592, Z3593)
+        // 3. Validación Gestantes (Z3591, etc) - TUS OTRAS VALIDACIONES...
         if (['Z3591', 'Z3592', 'Z3593'].includes(code)) {
             if (!d.lab1 || !d.lab2) {
                  setValidationAlert({
@@ -729,6 +1093,39 @@ export default function App() {
                     title: 'Supervisión de Embarazo (Riesgo)',
                     message: `En la fila ${i + 1}, el código ${code} requiere completar ambos campos de laboratorio.`,
                     details: 'LAB 1: Número de Control Prenatal\nLAB 2: Semanas de Gestación'
+                });
+                return false;
+            }
+        }
+	// 5. VALIDACIÓN DE CONSISTENCIA DE SEXO
+        // Lista de prefijos exclusivos para sexo FEMENINO (O=Embarazo/Parto, Z34/Z35=Control Emb, N7=Ginecológico)
+        const femalePrefixes = ['O', 'Z34', 'Z35', 'N70', 'N71', 'N72', 'N73', 'N75', 'N76', 'Z32', 'Z39']; 
+        // Lista de prefijos exclusivos para sexo MASCULINO (N4=Próstata, N5=Testículo)
+        const malePrefixes = ['N40', 'N41', 'N42', 'N43', 'N44', 'N45', 'N49', 'N50'];
+
+        // Si el paciente es MASCULINO pero usa código FEMENINO
+        if (patientData.sexo === 'M') {
+            if (femalePrefixes.some(pre => code.startsWith(pre))) {
+                setValidationAlert({
+                    isOpen: true,
+                    type: 'SEX_MISMATCH',
+                    title: 'Inconsistencia de Sexo',
+                    message: `En la fila ${i + 1}, el código ${code} es exclusivo para pacientes de sexo FEMENINO.`,
+                    details: `El paciente actual está registrado como MASCULINO.\nNo se puede registrar diagnósticos ginecológicos o de embarazo en hombres.`
+                });
+                return false;
+            }
+        }
+
+        // Si el paciente es FEMENINO pero usa código MASCULINO
+        if (patientData.sexo === 'F') {
+            if (malePrefixes.some(pre => code.startsWith(pre))) {
+                setValidationAlert({
+                    isOpen: true,
+                    type: 'SEX_MISMATCH',
+                    title: 'Inconsistencia de Sexo',
+                    message: `En la fila ${i + 1}, el código ${code} es exclusivo para pacientes de sexo MASCULINO.`,
+                    details: `La paciente actual está registrada como FEMENINO.\nNo se pueden registrar patologías de próstata o testículos.`
                 });
                 return false;
             }
@@ -749,7 +1146,33 @@ export default function App() {
               if (patientData.condicion === 'GESTANTE' && !patientData.fur) { alert("¡ATENCIÓN!\n\nHa seleccionado que la paciente es GESTANTE.\nDebe ingresar obligatoriamente la Fecha de Última Regla (FUR) para continuar."); return; }
           }
           // Si no hay paciente, pasa directamente sin validar nada
-      } 
+      }
+
+       if (step === 2) { 
+          // --- NUEVA LÓGICA MAESTRA: Solo validar si hay paciente seleccionado ---
+          const hasPatient = patientData.paciente && patientData.paciente.trim() !== "";
+
+          // 1. VALIDACIÓN PRE-GESTACIONAL (Solo si hay paciente)
+          if (hasPatient && patientData.condicion === 'GESTANTE' && !clinicalData.pPreGest && !ignorePreGestValidation) {
+              setShowPreGestError(true);
+              alert("¡ATENCIÓN!\n\nLa paciente es GESTANTE. Es obligatorio ingresar el PESO PRE-GESTACIONAL.\n\nSi no cuenta con esa información, haga clic en el botón 'NO TENGO ESE DATO' para continuar.");
+              return; 
+          }
+
+          // 2. VALIDACIÓN PERÍMETRO ABDOMINAL (12 años a más - Solo si hay paciente)
+          if (hasPatient && ageObj.y >= 12 && !clinicalData.pAbd && !ignorePAbdValidation) {
+              setShowPAbdError(true);
+              alert(`¡ATENCIÓN!\n\nEl paciente tiene ${ageObj.y} años.\nPara mayores de 12 años es necesario registrar el PERÍMETRO ABDOMINAL.\n\nSi no tiene el dato, presione el botón "NO TENGO ESE DATO" para continuar.`);
+              return; 
+          }
+
+          // 3. VALIDACIÓN PERÍMETRO CEFÁLICO (0 a 5 años - Solo si hay paciente)
+          if (hasPatient && ageObj.y <= 5 && !clinicalData.pCef && !ignorePCefValidation) {
+              setShowPCefError(true);
+              alert(`¡ATENCIÓN!\n\nEl paciente es menor de 5 años (${ageObj.y} años).\nEs necesario registrar el PERÍMETRO CEFÁLICO.\n\nSi no tiene el dato, presione el botón "NO TENGO ESE DATO" para continuar.`);
+              return; 
+          }
+      }     
       if (step === 3) { 
           const newErrors = {}; let hasError = false; 
           diagnoses.forEach((d, i) => { if (!checkRowValidity(d)) { newErrors[i] = true; hasError = true; } }); 
@@ -774,57 +1197,402 @@ export default function App() {
       setDxErrors({}); 
       setAnemiaResult("");
       setIsPremature(false); 
+      setIgnorePreGestValidation(false);
+      setShowPreGestError(false);
+      setShowHbError(false);
+      setIgnorePAbdValidation(false);
+      setShowPAbdError(false);
+      setIgnorePCefValidation(false);
+      setShowPCefError(false);
   };
 
-  const handleSavePatient = () => { if (window.confirm("¿Desea guardar la información de este paciente en la lista?")) { const patientRecord = { patient: { ...patientData }, clinical: { ...clinicalData }, diagnoses: [...diagnoses], ageObj: { ...ageObj } }; setSavedPatients([...savedPatients, patientRecord]); resetForm(); alert("Paciente guardado. Puede agregar otro o exportar el Excel."); } };
+  const handleSavePatient = () => { if (window.confirm("¿Desea guardar la información de este paciente en la lista?")) { const patientRecord = { patient: { ...patientData }, clinical: { ...clinicalData }, diagnoses: [...diagnoses], ageObj: { ...ageObj } }; setSavedPatients([...savedPatients, patientRecord]); 
+if (patientData.id) {updateToContinuador(patientData.id);} resetForm(); alert("Paciente guardado. Puede agregar otro o exportar el Excel."); } };
 
-  const generatePDF = () => {
+const generatePDF = () => {
     try {
+        // 1. PREPARACIÓN DE DATOS
         const allPatients = [...savedPatients];
-        if (patientData.paciente) { allPatients.push({ patient: patientData, clinical: clinicalData, diagnoses: diagnoses, ageObj: ageObj }); }
+        if (patientData.paciente) { 
+            allPatients.push({ patient: patientData, clinical: clinicalData, diagnoses: diagnoses, ageObj: ageObj });
+        }
         if(allPatients.length === 0) return alert("No hay datos para exportar.");
-        const doc = new jsPDF('p', 'mm', 'a4'); 
-        const mx = 5; const my = 5; const width = 200; 
-        const cols = { dia: 6, dni: 18, fin: 6, dist: 26, edad: 8, sex: 6, antro: 14, hb: 10, desc: 68, tipo: 6, lab: 12, cie: 12 };
-        const hHeader = 4; const hRow = 4.5;
-        let y = my;
-        const cell = (txt, x, y, w, h, styles = {}) => {
-            const { fill, bold, align, fontSize, border } = styles;
-            if (fill) { doc.setFillColor(fill[0], fill[1], fill[2]); doc.rect(x, y, w, h, 'FD'); } else if (border !== false) { doc.rect(x, y, w, h); }
-            if (txt) { doc.setTextColor(0,0,0); doc.setFontSize(fontSize || 6); doc.setFont("helvetica", bold ? "bold" : "normal"); let text = String(txt); if (doc.getTextWidth(text) > w - 1) { text = text.substring(0, Math.floor(w / 1.5)) + ".."; } const txtWidth = doc.getTextWidth(text); const xPos = align === 'left' ? x + 1 : x + (w / 2) - (txtWidth / 2); const yPos = y + (h / 2) + 1; doc.text(text, xPos, yPos); }
-        };
-        const drawHeader = () => {
-            y = my; doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.text("MINISTERIO DE SALUD", 105, y + 3, { align: "center" }); doc.setFontSize(6); doc.text("OFICINA GENERAL DE ESTADÍSTICA E INFORMÁTICA", 105, y + 6, { align: "center" }); doc.text("REGISTRO DIARIO DE ATENCIÓN Y OTRAS ACTIVIDADES DE SALUD", 105, y + 9, { align: "center" }); y += 12;
-            const row1Y = y; cell("AÑO", mx, row1Y, 10, hHeader, {bold:true}); cell("MES", mx+10, row1Y, 20, hHeader, {bold:true}); cell("ESTABLECIMIENTO DE SALUD", mx+30, row1Y, 50, hHeader, {bold:true}); cell("UNIDAD PRODUCTORA (UPS)", mx+80, row1Y, 35, hHeader, {bold:true}); cell("DNI RESP.", mx+115, row1Y, 20, hHeader, {bold:true}); cell("RESPONSABLE DE LAS ATENCIONES", mx+135, row1Y, 45, hHeader, {bold:true}); cell("TURNO", mx+180, row1Y, 20, hHeader, {bold:true}); y += hHeader;
-            cell(adminData.anio, mx, y, 10, hHeader, {align:'center'}); cell(adminData.mes, mx+10, y, 20, hHeader, {align:'center'}); cell(adminData.establecimiento, mx+30, y, 50, hHeader, {align:'center'}); cell(adminData.ups, mx+80, y, 35, hHeader, {align:'center'}); cell(adminData.dniResp, mx+115, y, 20, hHeader, {align:'center'}); cell(adminData.nombreResp, mx+135, y, 45, hHeader, {align:'center'}); cell(adminData.turno, mx+180, y, 20, hHeader, {align:'center'}); y += hHeader + 2;
-            const bgHead = [220, 220, 220]; let cx = mx; const hTable = 6; cell("DIA", cx, y, cols.dia, hTable, {fill:bgHead, bold:true}); cx+=cols.dia; cell("D.N.I / H.C.", cx, y, cols.dni, hTable, {fill:bgHead, bold:true}); cx+=cols.dni; cell("FIN", cx, y, cols.fin, hTable, {fill:bgHead, bold:true}); cx+=cols.fin; cell("DISTRITO DE PROCEDENCIA", cx, y, cols.dist, hTable, {fill:bgHead, bold:true}); cx+=cols.dist; cell("EDAD", cx, y, cols.edad, hTable, {fill:bgHead, bold:true}); cx+=cols.edad; cell("SEX", cx, y, cols.sex, hTable, {fill:bgHead, bold:true}); cx+=cols.sex; cell("ANTROPOMETRÍA", cx, y, cols.antro, hTable, {fill:bgHead, bold:true}); cx+=cols.antro; cell("HB/P", cx, y, cols.hb, hTable, {fill:bgHead, bold:true}); cx+=cols.hb; cell("DIAGNÓSTICO MOTIVO DE CONSULTA", cx, y, cols.desc, hTable, {fill:bgHead, bold:true}); cx+=cols.desc; cell("TIPO", cx, y, cols.tipo, hTable, {fill:bgHead, bold:true}); cx+=cols.tipo; cell("LAB", cx, y, cols.lab, hTable, {fill:bgHead, bold:true}); cx+=cols.lab; cell("CÓDIGO", cx, y, cols.cie, hTable, {fill:bgHead, bold:true}); cx+=cols.cie; y += hTable;
-        };
-        drawHeader();
+
+        const visualBlocks = [];
+        let globalIndex = 1;
+
         allPatients.forEach(rec => {
-            const { patient, clinical, diagnoses: dxs, ageObj: age } = rec; const chunks = Math.ceil(Math.max(1, dxs.length) / 3);
-            for (let c = 0; c < chunks; c++) {
-                if (y > 270) { doc.addPage(); drawHeader(); }
-                const chunkStart = c * 3; const chunkDxs = dxs.slice(chunkStart, chunkStart + 3); while(chunkDxs.length < 3) chunkDxs.push({});
-                const bgName = [225, 245, 254]; const rowHeightName = hRow; cell("", mx, y, cols.dia, rowHeightName, {}); let nameText = c === 0 ? `${patient.paciente}   (F.N: ${patient.fecNac})` : ""; cell(nameText, mx + cols.dia, y, width - cols.dia, rowHeightName, {fill: bgName, bold: true, align: 'left', fontSize: 7}); y += rowHeightName;
-                for (let i = 0; i < 3; i++) {
-                    let cx = mx; const d = chunkDxs[i] || {};
-                    let valDia = (i === 0 && patient.fecAtencion) ? (patient.fecAtencion || "").split('-')[2] : ""; cell(valDia, cx, y, cols.dia, hRow, {align:'center'}); cx += cols.dia;
-                    let valDniHc = ""; if (i === 0) valDniHc = patient.dni ? String(patient.dni).trim().padStart(8, '0') : ""; if (i === 1) valDniHc = patient.hc; if (i === 2) valDniHc = patient.condicion || "-"; cell(valDniHc, cx, y, cols.dni, hRow, {align:'center'}); cx += cols.dni;
-                    let valFin = (i === 0) ? (patient.financiador === 'SIS' ? '2' : '1') : ""; cell(valFin, cx, y, cols.fin, hRow, {align:'center'}); cx += cols.fin;
-                    let valDist = ""; if (i === 0) valDist = patient.distrito; if (i === 1) valDist = patient.direccion; if (i === 2) valDist = "C.P: " + (patient.estOrigen || "-"); cell(valDist, cx, y, cols.dist, hRow, {align:'left', fontSize: 5}); cx += cols.dist;
-                    let valEdad = ""; if (i === 0 && (age.y || age.y===0)) valEdad = age.y + " A"; if (i === 1 && (age.m || age.m===0)) valEdad = age.m + " M"; if (i === 2 && (age.d || age.d===0)) valEdad = age.d + " D"; cell(valEdad, cx, y, cols.edad, hRow, {align:'center'}); cx += cols.edad;
-                    let valSex = (i === 0) ? patient.sexo : ""; cell(valSex, cx, y, cols.sex, hRow, {align:'center'}); cx += cols.sex;
-                    let valAntro = ""; if (i === 0 && c === 0) valAntro = "T: " + (clinical.talla || ""); if (i === 1 && c === 0) valAntro = "P: " + (clinical.peso || ""); if (i === 2 && c === 0) valAntro = "Hb: " + (clinical.hb || ""); cell(valAntro, cx, y, cols.antro, hRow, {align:'left'}); cx += cols.antro;
-                    let valHbP = ""; if (i === 0 && c === 0) valHbP = "PC: " + (clinical.pCef || ""); if (i === 1 && c === 0) valHbP = "PA: " + (clinical.pAbd || ""); cell(valHbP, cx, y, cols.hb, hRow, {align:'left'}); cx += cols.hb;
-                    cell(d.desc || "", cx, y, cols.desc, hRow, {align:'left', fontSize: 5.5}); cx += cols.desc; cell(d.tipo || "", cx, y, cols.tipo, hRow, {align:'center'}); cx += cols.tipo; let labs = [d.lab1, d.lab2, d.lab3].filter(Boolean).join(" "); cell(labs, cx, y, cols.lab, hRow, {align:'center'}); cx += cols.lab; cell(d.codigo || "", cx, y, cols.cie, hRow, {align:'center', bold:true}); cx += cols.cie; y += hRow;
+            const { patient, clinical, diagnoses: dxs, ageObj: age } = rec;
+            const totalChunks = Math.ceil(Math.max(1, dxs.length) / 3);
+
+            for (let c = 0; c < totalChunks; c++) {
+                const start = c * 3;
+                const chunkDxs = dxs.slice(start, start + 3);
+                while(chunkDxs.length < 3) chunkDxs.push({});
+
+                visualBlocks.push({
+                    index: globalIndex,
+                    isFirstChunk: c === 0,
+                    patient,
+                    clinical,
+                    age,
+                    diagnoses: chunkDxs
+                });
+            }
+            globalIndex++;
+        });
+
+        const doc = new jsPDF('p', 'mm', 'a4'); 
+        
+        // --- ESTILOS GENERALES ---
+        doc.setFont("helvetica", "normal"); 
+        doc.setDrawColor(50, 50, 50); 
+        doc.setLineWidth(0.15);       
+
+        // --- DIMENSIONES ---
+        const mx = 5; 
+        const my = 5; 
+        
+        const hRowName = 4.5; 
+        const hRowData = 5.5; 
+        const hBlock = hRowName + (hRowData * 3); 
+
+        const w = {
+            idx: 6,   dia: 6,   dni: 14,  fin: 5,   dist: 28, 
+            edad: 8,  sex: 5,   
+            antL: 7,  antV: 8,
+            est: 5,   serv: 5,
+            dx: 55,   tipo: 6,  lab: 5,   cie: 13
+        };
+        // Ancho total de la tabla = Suma de todas las columnas (excepto idx que va fuera a veces o dentro)
+        // idx(6)+dia(6)+dni(14)+fin(5)+dist(28)+edad(8)+sex(5)+ant(30)+est(5)+serv(5)+dx(55)+tipo(6)+lab(15)+cie(13) = ~201mm
+
+        const hHeaderSmall = 4; 
+        
+        // --- HELPER CELDAS ---
+        const cell = (txt, x, y, cw, ch, styles = {}) => {
+            const { fill, bold, align, fontSize, border, rotate, vAlign, textColor, wrap, drawColor } = styles;
+            
+            // GUARDAR COLOR DE BORDE ACTUAL
+            const originalDrawColor = doc.getDrawColor(); 
+
+            // APLICAR COLOR DE BORDE PERSONALIZADO (SI EXISTE)
+            if (drawColor) {
+                doc.setDrawColor(drawColor[0], drawColor[1], drawColor[2]);
+            }
+
+            // FONDO
+            if (fill) { 
+                doc.setFillColor(fill[0], fill[1], fill[2]); 
+                if (border === false) doc.rect(x, y, cw, ch, 'F'); 
+                else doc.rect(x, y, cw, ch, 'FD');
+            } 
+            // BORDE
+            else if (border !== false) { 
+                doc.rect(x, y, cw, ch); 
+            }
+
+            // RESTAURAR COLOR DE BORDE ORIGINAL (Para no afectar siguientes celdas)
+            if (drawColor) {
+                doc.setDrawColor(originalDrawColor); // Volver al gris oscuro por defecto
+            }
+
+            // TEXTO
+            if (txt !== undefined && txt !== null && txt !== "") { 
+                if(textColor) doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+                else doc.setTextColor(0,0,0);
+
+                doc.setFontSize(fontSize || 6);
+                doc.setFont("helvetica", bold ? "bold" : "normal"); 
+                
+                let text = String(txt);
+                
+                const sensitiveLabels = ["Talla", "Peso", "HB", "P.C.", "P.Abd", "P.Preg", "años", "meses", "días"];
+                const isSensitive = sensitiveLabels.some(l => text.includes(l));
+                
+                if (!isSensitive && !styles.keepCase) text = text.toUpperCase();
+
+                if (rotate) {
+                    const xPos = x + (cw / 2); 
+                    const yPos = y + ch - 1.5;   
+                    doc.text(text, xPos, yPos, { angle: 90, align: 'left' }); 
+                } 
+                else if (wrap) {
+                    const lines = doc.splitTextToSize(text, cw - 1); 
+                    const lineHeight = (fontSize || 6) * 0.35; 
+                    let yPos = y + 2.5; 
+                    lines.forEach((line) => {
+                        if (yPos < y + ch) {
+                            doc.text(line, x + 1, yPos);
+                            yPos += lineHeight + 1; 
+                        }
+                    });
+                } 
+                else {
+                    if (doc.getTextWidth(text) > cw - 1) { 
+                        const charWidth = doc.getTextWidth("A");
+                        const maxChars = Math.floor((cw - 1) / charWidth);
+                        text = text.substring(0, maxChars) + ".."; 
+                    }
+                    
+                    const txtWidth = doc.getTextWidth(text);
+                    const xPos = align === 'left' ? x + 1 : 
+                                 align === 'right' ? x + cw - 1 - txtWidth : 
+                                 x + (cw / 2) - (txtWidth / 2);
+                    
+                    let yPos = y + (ch / 2) + 1.2; 
+                    if (vAlign === 'top') yPos = y + 2.5; 
+                    if (vAlign === 'middle') yPos = y + (ch / 2) + 1.2;
+                    if (fontSize && fontSize < 6) yPos -= 0.1;
+
+                    doc.text(text, xPos, yPos);
                 }
             }
-        });
-        if (y < 270) { doc.setFontSize(6); doc.text("FIRMA Y SELLO DEL RESPONSABLE", 150, 280, {align:'center'}); doc.line(130, 278, 170, 278); }
-        doc.save(`HIS_${adminData.mes}_${allPatients.length}_PACIENTES_OFICIAL.pdf`);
-    } catch(err) { alert("Error al generar PDF: " + err.message); }
-  }; 
+        };
 
+        // --- ENCABEZADO ---
+        const drawHeader = (currY) => {
+            let y = currY;
+            const fullW = 201; 
+            const xContent = mx + w.idx; 
+
+            doc.setFontSize(6);
+            cell("Lote:", xContent, y, 20, hHeaderSmall, {bold:true, border:false, align:'left'});
+            cell("MINISTERIO DE SALUD", mx, y, fullW, hHeaderSmall, {bold:true, align:'center', fontSize:8, border:false});
+            
+            // --- FIRMA Y SELLO (ALINEADO A LA DERECHA Y GRIS CLARO) ---
+            // El ancho total es 201 + mx(5) = 206 (Borde derecho pagina)
+            // Queremos que termine en 206.
+            // X = mx + fullW - 40 = 5 + 201 - 40 = 166.
+            const grayColor = [180, 180, 180]; // Gris Claro
+            
+            cell("FIRMA Y SELLO", mx + 161, y, 40, hHeaderSmall, {
+                align:'center', 
+                border:false, 
+                fontSize:5, 
+                textColor: grayColor,
+                keepCase: true // No forzar mayúsculas si no quieres, o dejarlo
+            });
+            y += hHeaderSmall;
+
+            cell("Pag:", xContent, y, 20, hHeaderSmall, {bold:true, border:false, align:'left'});
+            cell("OFICINA GENERAL DE ESTADÍSTICA E INFORMÁTICA", mx, y, fullW, hHeaderSmall, {align:'center', fontSize:7, border:false});
+            
+            cell("DEL PERSONAL DE SALUD", mx + 161, y, 40, hHeaderSmall, {
+                align:'center', 
+                border:false, 
+                fontSize:5,
+                textColor: grayColor
+            });
+            y += hHeaderSmall;
+
+            cell("Reg:", xContent, y, 20, hHeaderSmall, {bold:true, border:false, align:'left'});
+            cell("Registro Diario de Atención y Otras Actividades de Salud", mx, y, fullW, hHeaderSmall, {align:'center', fontSize:7, border:false});
+            
+            // RECUADRO FIRMA: Color de Borde GRIS CLARO
+            doc.setDrawColor(180, 180, 180); 
+            doc.rect(mx + 161, y - (hHeaderSmall*2), 40, hHeaderSmall*4); 
+            doc.setDrawColor(50, 50, 50); // Restaurar color oscuro
+            
+            y += hHeaderSmall + 1;
+
+            const bgHead = [230, 230, 230]; 
+            const hMeta = 6; 
+            
+            let cx = mx + w.idx; 
+            cell("AÑO", cx, y, 10, hMeta, {fill:bgHead, bold:true, align:'center'}); cx+=10;
+            cell("MES", cx, y, 20, hMeta, {fill:bgHead, bold:true, align:'center'}); cx+=20;
+            cell("ESTABLECIMIENTO DE SALUD", cx, y, 45, hMeta, {fill:bgHead, bold:true, align:'center'}); cx+=45;
+            cell("UNIDAD PRESTADORA (UPS)", cx, y, 35, hMeta, {fill:bgHead, bold:true, align:'center'}); cx+=35;
+            cell("DNI RESP.", cx, y, 20, hMeta, {fill:bgHead, bold:true, align:'center'}); cx+=20;
+            cell("RESPONSABLE DE LAS ATENCIONES", cx, y, 45, hMeta, {fill:bgHead, bold:true, align:'center'}); cx+=45;
+            cell("TURNO", cx, y, 20, hMeta, {fill:bgHead, bold:true, align:'center'}); 
+            y += hMeta;
+
+            cx = mx + w.idx; 
+            cell(adminData.anio, cx, y, 10, hMeta, {align:'center', bold:false, fontSize:7}); cx+=10;
+            cell(adminData.mes, cx, y, 20, hMeta, {align:'center', bold:false, fontSize:7}); cx+=20;
+            cell(adminData.establecimiento, cx, y, 45, hMeta, {align:'center', bold:false, fontSize:7}); cx+=45;
+            cell(adminData.ups, cx, y, 35, hMeta, {align:'center', bold:false, fontSize:7}); cx+=35;
+            cell(adminData.dniResp, cx, y, 20, hMeta, {align:'center', bold:false, fontSize:7}); cx+=20;
+            cell(adminData.nombreResp, cx, y, 45, hMeta, {align:'center', bold:false, fontSize:7}); cx+=45;
+            cell(adminData.turno, cx, y, 20, hMeta, {align:'center', bold:false, fontSize:7}); 
+            y += hMeta + 2;
+
+            const hTable = 12; 
+            cx = mx;
+            
+            cell("", cx, y, w.idx, hTable, {border:false}); cx+=w.idx;
+            cell("F.A", cx, y, w.dia, hTable, {fill:bgHead, bold:true, align:'center'}); cx+=w.dia;
+            cell("D.N.I / H.C.", cx, y, w.dni, hTable, {fill:bgHead, bold:true, align:'center'}); cx+=w.dni;
+            cell("FINANC.", cx, y, w.fin, hTable, {fill:bgHead, bold:true, rotate:true}); cx+=w.fin;
+            cell("DISTRITO DE PROCEDENCIA", cx, y, w.dist, hTable, {fill:bgHead, bold:true, align:'center'}); cx+=w.dist;
+            cell("EDAD", cx, y, w.edad, hTable, {fill:bgHead, bold:true, rotate:true}); cx+=w.edad;
+            cell("SEXO", cx, y, w.sex, hTable, {fill:bgHead, bold:true, rotate:true}); cx+=w.sex;
+            cell("ANTROPOMETRÍA", cx, y, (w.antL*2 + w.antV*2), hTable, {fill:bgHead, bold:true, align:'center'}); cx+=(w.antL*2 + w.antV*2);
+            cell("EST", cx, y, w.est, hTable, {fill:bgHead, bold:true, rotate:true}); cx+=w.est;
+            cell("SERV", cx, y, w.serv, hTable, {fill:bgHead, bold:true, rotate:true}); cx+=w.serv;
+            cell("DIAGNÓSTICO MOTIVO DE CONSULTA", cx, y, w.dx, hTable, {fill:bgHead, bold:true, align:'center'}); cx+=w.dx;
+            cell("TIPO", cx, y, w.tipo, hTable, {fill:bgHead, bold:true, rotate:true}); cx+=w.tipo;
+            cell("LAB", cx, y, w.lab * 3, hTable, {fill:bgHead, bold:true, align:'center'}); cx+=(w.lab * 3);
+            cell("CÓDIGO", cx, y, w.cie, hTable, {fill:bgHead, bold:true, align:'center'}); 
+
+            return y + hTable;
+        };
+
+        // --- BUCLE PRINCIPAL ---
+        const BLOCKS_PER_PAGE = 11;
+        const totalPages = Math.ceil(visualBlocks.length / BLOCKS_PER_PAGE) || 1;
+
+        for (let page = 0; page < totalPages; page++) {
+            if (page > 0) doc.addPage();
+            let y = drawHeader(my);
+            
+            for (let i = 0; i < BLOCKS_PER_PAGE; i++) {
+                const globalIdx = (page * BLOCKS_PER_PAGE) + i;
+                const block = visualBlocks[globalIdx] || null;
+                
+                const p = block ? block.patient : {};
+                const c = block ? block.clinical : {};
+                const a = block ? block.age : {};
+                const dxs = block ? block.diagnoses : [{},{},{}];
+                const isFirst = block ? block.isFirstChunk : false;
+
+                const d1 = dxs[0] || {};
+                const d2 = dxs[1] || {};
+                const d3 = dxs[2] || {};
+                
+                let cx = mx;
+                
+                // --- FILA 1 ---
+                const idxText = (block && isFirst) ? block.index : "";
+                cell(idxText, cx, y, w.idx, hBlock, {align:'center', bold:true, vAlign:'middle', border:false, fontSize:8}); 
+                cx += w.idx;
+
+                if (isFirst) {
+                    const wName = w.dia + w.dni + w.fin + w.dist;
+                    cell(p.paciente, cx, y, wName, hRowName, {bold:true, align:'left', fontSize: 7.5, border: false}); cx += wName;
+                    
+                    const wFNLabel = w.edad + w.sex;
+                    cell("F.N:", cx, y, wFNLabel, hRowName, {align:'right', bold:true, border: false, fontSize:6}); cx += wFNLabel;
+                    
+                    const wFNVal = w.antL + w.antV;
+                    cell(p.fecNac, cx, y, wFNVal, hRowName, {align:'center', fill:[240,240,240], border:true, bold:true, fontSize:7}); cx += wFNVal;
+                    
+                    const wCenter = w.antL + w.antV + w.est + w.serv + w.dx + w.tipo; 
+                    cell(c.dosaje ? `DOSAJE: ${c.dosaje}` : "", cx, y, wCenter, hRowName, {align:'center', fontSize:6, border: false}); cx += wCenter;
+                    
+                    const wFURLabel = w.lab * 2;
+                    cell("FUR:", cx, y, wFURLabel, hRowName, {align:'right', bold:true, border: false, fontSize:6}); cx += wFURLabel;
+                    
+                    const wFURVal = w.lab + w.cie;
+                    cell(p.fur, cx, y, wFURVal, hRowName, {align:'center', fill:[240,240,240], border:true, bold:true, fontSize:7}); 
+                } else {
+                    // CONTINUACIÓN: AHORA CON BORDES (border: true) PARA MANTENER LA REJILLA
+                    let cxEmpty = cx;
+                    cell("", cxEmpty, y, w.dia + w.dni + w.fin + w.dist, hRowName, {border: true}); cxEmpty += (w.dia + w.dni + w.fin + w.dist);
+                    cell("", cxEmpty, y, w.edad + w.sex, hRowName, {border: true}); cxEmpty += (w.edad + w.sex);
+                    cell("", cxEmpty, y, w.antL + w.antV, hRowName, {fill:[240,240,240], border:true}); cxEmpty += (w.antL + w.antV);
+                    cell("", cxEmpty, y, w.antL + w.antV + w.est + w.serv + w.dx + w.tipo, hRowName, {border: true}); cxEmpty += (w.antL + w.antV + w.est + w.serv + w.dx + w.tipo);
+                    cell("", cxEmpty, y, w.lab * 2, hRowName, {border: true}); cxEmpty += (w.lab * 2);
+                    cell("", cxEmpty, y, w.lab + w.cie, hRowName, {fill:[240,240,240], border:true});
+                }
+                
+                const yData = y + hRowName; 
+                const hDataBlock = hRowData * 3; 
+
+                // --- FILAS 2, 3, 4 ---
+                cx = mx + w.idx; 
+
+                cell(p.fecAtencion ? p.fecAtencion.split('-')[2] : "", cx, yData, w.dia, hDataBlock, {align:'center', vAlign:'middle', fontSize:7, bold:false}); 
+                cx += w.dia;
+
+                cell(p.dni, cx, yData, w.dni, hRowData, {align:'center', fontSize:7, bold:true});
+                cell(p.hc, cx, yData + hRowData, w.dni, hRowData, {align:'center', fontSize:7, bold:true});
+                cell(p.condicion, cx, yData + (hRowData*2), w.dni, hRowData, {align:'center', fontSize:5.5, bold:false});
+                cx += w.dni;
+
+                cell(p.financiador === 'SIS' ? '2' : '1', cx, yData, w.fin, hDataBlock, {align:'center', vAlign:'middle', fontSize:7, bold:false});
+                cx += w.fin;
+
+                cell(p.distrito, cx, yData, w.dist, hRowData, {align:'left', fontSize:5, bold:false});
+                let direccionTexto = p.direccion || "";
+                if(p.centroPoblado) direccionTexto += " " + p.centroPoblado;
+                
+                cell(direccionTexto, cx, yData + hRowData, w.dist, hRowData * 2, {
+                    align:'left', 
+                    fontSize:5, 
+                    vAlign:'top', 
+                    bold:false, 
+                    wrap: true 
+                });
+                cx += w.dist;
+
+                cell(a.y ? a.y + " años" : "", cx, yData, w.edad, hRowData, {align:'center', fontSize: 6, bold:true});
+                cell(a.m ? a.m + " meses" : "", cx, yData + hRowData, w.edad, hRowData, {align:'center', fontSize: 6, bold:true});
+                cell(a.d ? a.d + " días" : "", cx, yData + (hRowData*2), w.edad, hRowData, {align:'center', fontSize: 6, bold:true});
+                cx += w.edad;
+
+                cell(p.sexo, cx, yData, w.sex, hDataBlock, {align:'center', vAlign:'middle', fontSize:7, bold:false});
+                cx += w.sex;
+
+                let cxAntro = cx;
+                cell("Talla", cxAntro, yData, w.antL, hRowData, {align:'center', fontSize:5, bold:true}); cxAntro+=w.antL;
+                cell(isFirst ? c.talla : "", cxAntro, yData, w.antV, hRowData, {align:'center', bold:true, fontSize:7}); cxAntro+=w.antV;
+                cell("P.C.", cxAntro, yData, w.antL, hRowData, {align:'center', fontSize:5, bold:true}); cxAntro+=w.antL;
+                cell(isFirst ? c.pCef : "", cxAntro, yData, w.antV, hRowData, {align:'center', bold:true, fontSize:7});
+                
+                cxAntro = cx;
+                cell("Peso", cxAntro, yData+hRowData, w.antL, hRowData, {align:'center', fontSize:5, bold:true}); cxAntro+=w.antL;
+                cell(isFirst ? c.peso : "", cxAntro, yData+hRowData, w.antV, hRowData, {align:'center', bold:true, fontSize:7}); cxAntro+=w.antV;
+                cell("P.Abd", cxAntro, yData+hRowData, w.antL, hRowData, {align:'center', fontSize:5, bold:true}); cxAntro+=w.antL;
+                cell(isFirst ? c.pAbd : "", cxAntro, yData+hRowData, w.antV, hRowData, {align:'center', bold:true, fontSize:7});
+
+                cxAntro = cx;
+                cell("HB", cxAntro, yData+(hRowData*2), w.antL, hRowData, {align:'center', fontSize:5, bold:true}); cxAntro+=w.antL;
+                cell(isFirst ? c.hb : "", cxAntro, yData+(hRowData*2), w.antV, hRowData, {align:'center', bold:true, fontSize:7}); cxAntro+=w.antV;
+                cell("P.Preg", cxAntro, yData+(hRowData*2), w.antL, hRowData, {align:'center', fontSize:5, bold:true}); cxAntro+=w.antL;
+                cell(isFirst ? c.pPreGest : "", cxAntro, yData+(hRowData*2), w.antV, hRowData, {align:'center', bold:true, fontSize:7});
+                
+                cx += (w.antL*2 + w.antV*2);
+
+                cell(p.condEst, cx, yData, w.est, hDataBlock, {align:'center', vAlign:'middle', bold:false, fontSize:7}); cx += w.est;
+                cell(p.condServ, cx, yData, w.serv, hDataBlock, {align:'center', vAlign:'middle', bold:false, fontSize:7}); cx += w.serv;
+
+                let cxDx = cx;
+                cell(d1.desc, cxDx, yData, w.dx, hRowData, {align:'left', fontSize:5.5, bold:false}); cxDx+=w.dx;
+                cell(d1.tipo, cxDx, yData, w.tipo, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.tipo;
+                cell(d1.lab1, cxDx, yData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
+                cell(d1.lab2, cxDx, yData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
+                cell(d1.lab3, cxDx, yData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
+                cell(d1.codigo, cxDx, yData, w.cie, hRowData, {align:'center', bold:true, fontSize:7});
+
+                cxDx = cx;
+                cell(d2.desc, cxDx, yData+hRowData, w.dx, hRowData, {align:'left', fontSize:5.5, bold:false}); cxDx+=w.dx;
+                cell(d2.tipo, cxDx, yData+hRowData, w.tipo, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.tipo;
+                cell(d2.lab1, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
+                cell(d2.lab2, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
+                cell(d2.lab3, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
+                cell(d2.codigo, cxDx, yData+hRowData, w.cie, hRowData, {align:'center', bold:true, fontSize:7});
+
+                cxDx = cx;
+                cell(d3.desc, cxDx, yData+(hRowData*2), w.dx, hRowData, {align:'left', fontSize:5.5, bold:false}); cxDx+=w.dx;
+                cell(d3.tipo, cxDx, yData+(hRowData*2), w.tipo, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.tipo;
+                cell(d3.lab1, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
+                cell(d3.lab2, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
+                cell(d3.lab3, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
+                cell(d3.codigo, cxDx, yData+(hRowData*2), w.cie, hRowData, {align:'center', bold:true, fontSize:7});
+
+                y += hBlock;
+            }
+        }
+
+        doc.save(`HIS_${adminData.mes}_${allPatients.length}_PACIENTES_OFICIAL.pdf`);
+	    } catch(err) { 
+        alert("Error al generar PDF: " + err.message);
+        console.error(err);
+    }
+  };
   const generateExcel = () => {
     try {
         if (typeof global === 'undefined') window.global = window;
@@ -1052,6 +1820,7 @@ export default function App() {
         }
         XLSX.utils.book_append_sheet(wb, ws, "HIS_Export");
         XLSX.writeFile(wb, `HIS_${adminData.mes}_${allPatients.length}_PACIENTES.xlsx`);
+	
         setTimeout(() => {
             if(window.confirm("✅ Excel generado con éxito.\n\n¿Desea LIMPIAR la lista para ingresar un nuevo lote de pacientes?")) {
                 setSavedPatients([]); 
@@ -1060,7 +1829,7 @@ export default function App() {
                 setIsCalendarOpen(true); // Abre calendario tras reset            
             }
         }, 1000); 
-    } catch(err) { alert("Error al exportar Excel: " + err.message); }
+    } catch(err) { alert("Error al exportar Excel: " + err.message); }  
   };
 
 // --- PANTALLA DE LOGIN (PRIMERA CAPA DE SEGURIDAD) ---
@@ -1277,7 +2046,17 @@ export default function App() {
                         </div>
                         <div className="px-8 py-5 bg-slate-50 border-t border-slate-100 flex justify-end">
                             <button 
-                                onClick={() => setValidationAlert({ ...validationAlert, isOpen: false })} 
+                                onClick={() => {
+                                    // 1. Primero cerramos la alerta (lo que ya hacías)
+                                    setValidationAlert({ ...validationAlert, isOpen: false });
+                                    
+                                    // 2. AQUÍ ESTÁ EL CÓDIGO DEL PASO 3:
+                                    // Si el error es "LAB_MISSING" (el que definimos para la Hb), redirigimos.
+                                    if (validationAlert.type === 'LAB_MISSING') {
+                                        setStep(2);           // Nos lleva a la ventana "Datos Clínicos"
+                                        setShowHbError(true); // Pone el input en ROJO
+                                    }
+                                }} 
                                 className={`px-8 py-3 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-sm tracking-wide text-white ${validationAlert.type === 'GESTANTE' ? 'bg-pink-500 hover:bg-pink-600' : 'bg-orange-500 hover:bg-orange-600'}`}
                             >
                                 ENTENDIDO, VOY A CORREGIR
@@ -1393,6 +2172,49 @@ export default function App() {
                         <div className="w-48 shrink-0"><label className={getLabelStyle(1)}>F. Atención</label><div className="relative"><input type="date" name="fecAtencion" className={getDateInputStyle(1) + ` h-12 ${getTheme(1).bgLight} text-center`} value={patientData.fecAtencion} onChange={handlePatient} /></div></div>
                     </div>
                   </div>
+                   {/* --- BARRA DE BOTONES DE SEGUIMIENTO (SCROLL HORIZONTAL) --- */}
+		   {/* --- BARRA DE BOTONES DE SEGUIMIENTO (ACTUALIZADA CON DIENTE 🦷) --- */}
+                  <div className="mb-4">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 ml-1">Paneles de Seguimiento</p>
+                      <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                          {[
+                              { id: 'CRED', label: 'CRED', icon: <Baby size={16}/>, color: 'emerald' },
+                              { id: 'GESTANTE', label: 'GESTANTES', icon: <UserPlus size={16}/>, color: 'pink' },
+                              { id: 'ANEMIA', label: 'ANEMIA', icon: <Activity size={16}/>, color: 'red' },
+                              { id: 'ANEMIA_GEST', label: 'ANEMIA GEST.', icon: <Activity size={16}/>, color: 'rose' },
+                              { id: 'HIPER', label: 'HIPERTENSOS', icon: <Heart size={16}/>, color: 'orange' },
+                              { id: 'DIABETES', label: 'DIABETES', icon: <Droplets size={16}/>, color: 'blue' },
+                              { id: 'PSICOLOGIA', label: 'PSICOLOGÍA', icon: <Brain size={16}/>, color: 'indigo' },
+                              // AQUÍ ESTÁ EL CAMBIO: Usamos un emoji de diente dentro de un span
+                              { id: 'BUCAL', label: 'ODONTO', icon: <span className="text-base leading-none grayscale">🦷</span>, color: 'cyan' },
+                              { id: 'VACUNAS', label: 'VACUNAS', icon: <Syringe size={16}/>, color: 'purple' },
+                          ].map((item) => (
+                              <button 
+                                  key={item.id}
+                                  onClick={() => setActiveFollowUp(activeFollowUp === item.id ? null : item.id)} 
+                                  className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs whitespace-nowrap transition-all border-2 shadow-sm
+                                      ${activeFollowUp === item.id 
+                                          ? `bg-${item.color}-100 border-${item.color}-500 text-${item.color}-700` 
+                                          : `bg-white border-slate-200 text-slate-600 hover:border-${item.color}-300 hover:text-${item.color}-600`
+                                      }`}
+                              >
+                                  {item.icon} {item.label}
+                                  {followUpData[item.id] && <span className="w-2 h-2 rounded-full bg-green-500 ml-1"></span>}
+                              </button>
+                          ))}
+                      </div>
+                  </div>
+		   
+                  {/* --- VISOR DESPLEGABLE (SE MUESTRA SOLO SI HAY UNO ACTIVO) --- */}
+                  {activeFollowUp && (
+                      <InlineFollowUpViewer 
+                          type={activeFollowUp} 
+                          data={followUpData[activeFollowUp]} 
+                          onClose={() => setActiveFollowUp(null)}
+                          onFileUpload={handleFollowUpUpload}
+                      />
+                  )}
+
                   <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
                     <div className="flex justify-end mb-2">{isPatientDataLocked ? (<button onClick={() => setIsPatientDataLocked(false)} className={`bg-slate-100 hover:bg-slate-200 text-${stepColors[0]}-600 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors`}><Edit size={16}/> EDITAR DATOS (Desbloquear)</button>) : (<button onClick={() => setIsPatientDataLocked(true)} className={`bg-red-100 hover:bg-red-200 text-red-600 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors`}><X size={16}/> BLOQUEAR</button>)}</div>
                     
@@ -1457,19 +2279,169 @@ export default function App() {
                         {/* PESO (MOVIDO AL SEGUNDO LUGAR) */}
                         <div className="flex flex-col gap-1"><label className={getLabelStyle(2)}>Peso (0.8 - 180 kg)</label><input name="peso" type="text" className={borderlessInputStyle} value={clinicalData.peso} onChange={(e) => handleNumericInput(e, 0.8, 180)} /></div>
                         
-                        <div className="flex flex-col gap-1"><label className={getLabelStyle(2)}>P. Abd (30 - 200 cm)</label><input name="pAbd" type="text" className={borderlessInputStyle} value={clinicalData.pAbd} onChange={(e) => handleNumericInput(e, 30, 200)} /></div>
-                        <div className="flex flex-col gap-1"><label className={getLabelStyle(2)}>P. Cefálico (20 - 60 cm)</label><input name="pCef" type="text" className={borderlessInputStyle} value={clinicalData.pCef} onChange={(e) => handleNumericInput(e, 20, 60)} /></div>
-                        
-                        {/* CAMPO HEMOGLOBINA AGREGADO */}
+			{/* --- CAMPO P. ABDOMINAL (Bloqueado si < 12 años) --- */}
                         <div className="flex flex-col gap-1">
-                            <label className={getLabelStyle(2)}>Hemoglobina (0 - 21 g/dL)</label>
-                            <input name="hb" type="text" className={borderlessInputStyle} value={clinicalData.hb} onChange={(e) => handleNumericInput(e, 0, 21)} />
+                            <div className="flex justify-between items-center">
+                                <label className={getLabelStyle(2)}>P. Abd (30 - 200 cm)</label>
+                                {/* Botón: Solo aparece si tiene 12+ años (campo habilitado) */}
+                                {ageObj.y >= 12 && !clinicalData.pAbd && !ignorePAbdValidation && (
+                                    <button 
+                                        onClick={() => { setIgnorePAbdValidation(true); setShowPAbdError(false); }}
+                                        className="text-[9px] font-black bg-slate-200 text-slate-600 px-2 py-0.5 rounded hover:bg-slate-300 hover:text-slate-800 transition-colors uppercase tracking-tighter"
+                                    >
+                                        No tengo ese dato
+                                    </button>
+                                )}
+                            </div>
+                            <input 
+                                name="pAbd" 
+                                type="text" 
+                                // PROPIEDAD PARA BLOQUEAR REALMENTE EL CAMPO
+                                disabled={ageObj.y < 12} 
+                                
+                                className={`${borderlessInputStyle} transition-all duration-300 
+                                    ${ageObj.y < 12 
+                                        ? 'bg-slate-200 cursor-not-allowed text-slate-400 border-slate-200 shadow-none' // ESTILO BLOQUEADO (Gris oscuro)
+                                        : ignorePAbdValidation 
+                                            ? 'bg-emerald-50 border-2 border-emerald-500 text-emerald-700 font-bold' 
+                                            : showPAbdError && !clinicalData.pAbd
+                                                ? 'bg-red-50 border-2 border-red-500 text-red-900 animate-pulse' 
+                                                : 'bg-white'
+                                    }`
+                                } 
+                                value={clinicalData.pAbd} 
+                                onChange={(e) => {
+                                    handleNumericInput(e, 30, 200);
+                                    if(e.target.value) { setShowPAbdError(false); setIgnorePAbdValidation(false); }
+                                }} 
+                                placeholder={ageObj.y < 12 ? "NO APLICA POR EDAD" : (ignorePAbdValidation ? "OMITIDO" : "")}
+                            />
                         </div>
+			
+                        {/* --- CAMPO P. CEFÁLICO (Bloqueado si > 5 años) --- */}
+                        <div className="flex flex-col gap-1">
+                            <div className="flex justify-between items-center">
+                                <label className={getLabelStyle(2)}>P. Cefálico (20 - 60 cm)</label>
+                                {/* Botón: Solo aparece si tiene 0-5 años (campo habilitado) */}
+                                {ageObj.y <= 5 && !clinicalData.pCef && !ignorePCefValidation && (
+                                    <button 
+                                        onClick={() => { setIgnorePCefValidation(true); setShowPCefError(false); }}
+                                        className="text-[9px] font-black bg-slate-200 text-slate-600 px-2 py-0.5 rounded hover:bg-slate-300 hover:text-slate-800 transition-colors uppercase tracking-tighter"
+                                    >
+                                        No tengo ese dato
+                                    </button>
+                                )}
+                            </div>
+                            <input 
+                                name="pCef" 
+                                type="text"
+                                // PROPIEDAD PARA BLOQUEAR REALMENTE EL CAMPO
+                                disabled={ageObj.y > 5} 
 
-                        <div className="flex flex-col gap-1">
-                            <label className={getLabelStyle(2)}>Peso Pre-Gest. (Solo Gestante)</label>
-                            <input name="pPreGest" type="text" className={`${borderlessInputStyle} ${patientData.condicion !== 'GESTANTE' ? 'bg-slate-100 cursor-not-allowed opacity-50' : 'bg-white'}`} value={clinicalData.pPreGest || ''} onChange={(e) => handleNumericInput(e, 30, 150)} disabled={patientData.condicion !== 'GESTANTE'} />
+                                className={`${borderlessInputStyle} transition-all duration-300 
+                                    ${ageObj.y > 5 
+                                        ? 'bg-slate-200 cursor-not-allowed text-slate-400 border-slate-200 shadow-none' // ESTILO BLOQUEADO (Gris oscuro)
+                                        : ignorePCefValidation 
+                                            ? 'bg-emerald-50 border-2 border-emerald-500 text-emerald-700 font-bold' 
+                                            : showPCefError && !clinicalData.pCef
+                                                ? 'bg-red-50 border-2 border-red-500 text-red-900 animate-pulse' 
+                                                : 'bg-white'
+                                    }`
+                                } 
+                                value={clinicalData.pCef} 
+                                onChange={(e) => {
+                                    handleNumericInput(e, 20, 60);
+                                    if(e.target.value) { setShowPCefError(false); setIgnorePCefValidation(false); }
+                                }} 
+                                placeholder={ageObj.y > 5 ? "NO APLICA POR EDAD" : (ignorePCefValidation ? "OMITIDO" : "")}
+                            />
                         </div>
+			                        
+                        {/* CAMPO HEMOGLOBINA AGREGADO */}
+                        {/* --- CAMPO HEMOGLOBINA INTELIGENTE (PASO 4) --- */}
+<div className="flex flex-col gap-1">
+     <label className={getLabelStyle(2)}>Hemoglobina (0 - 21 g/dL)</label>
+     <input 
+        name="hb" 
+        type="text" 
+        // LÓGICA DE COLORES:
+        // 1. ROJO: Si hay error activado y el campo está vacío.
+        // 2. VERDE: Si tiene algún dato escrito.
+        // 3. BLANCO: Estado normal.
+        className={`${borderlessInputStyle} transition-all duration-300
+            ${showHbError && !clinicalData.hb 
+                ? 'bg-red-50 border-2 border-red-500 text-red-900 animate-pulse placeholder-red-300' 
+                : clinicalData.hb 
+                    ? 'bg-emerald-50 border-2 border-emerald-500 text-emerald-700 font-bold' 
+                    : ''
+            }`
+        } 
+        value={clinicalData.hb} 
+        onChange={(e) => {
+            handleNumericInput(e, 0, 21); // Mantiene tu validación de números
+        }}
+        placeholder={showHbError ? "¡REQUERIDO!" : ""}
+    />
+    {/* Mensaje de error rojo debajo si hace falta */}
+    {showHbError && !clinicalData.hb && (
+        <span className="text-[9px] font-bold text-red-500 mt-1 animate-bounce">
+            * Ingrese valor SIN DESCUENTO
+        </span>
+    )}
+</div>
+{/* ----------------------------------------------- */}
+			
+			{/* --- CAMPO PESO PRE-GESTACIONAL CON VALIDACIÓN --- */}
+                        <div className="flex flex-col gap-1">
+                            <div className="flex justify-between items-center">
+                                <label className={getLabelStyle(2)}>Peso Pre-Gest. (Solo Gestante)</label>
+                                {/* Botón pequeño para omitir validación */}
+                                {patientData.condicion === 'GESTANTE' && !clinicalData.pPreGest && !ignorePreGestValidation && (
+                                    <button 
+                                        onClick={() => {
+                                            setIgnorePreGestValidation(true);
+                                            setShowPreGestError(false);
+                                        }}
+                                        className="text-[9px] font-black bg-slate-200 text-slate-600 px-2 py-0.5 rounded hover:bg-slate-300 hover:text-slate-800 transition-colors uppercase tracking-tighter"
+                                        title="Clic para omitir este dato y continuar"
+                                    >
+                                        No tengo ese dato
+                                    </button>
+                                )}
+                            </div>
+                            
+                            <input 
+                                name="pPreGest" 
+                                type="text" 
+                                className={`${borderlessInputStyle} transition-all duration-300 
+                                    ${patientData.condicion !== 'GESTANTE' 
+                                        ? 'bg-slate-100 cursor-not-allowed opacity-50' 
+                                        : ignorePreGestValidation 
+                                            ? 'bg-emerald-50 border-2 border-emerald-500 text-emerald-700 shadow-emerald-100' // Estilo VERDE (Validado/Omitido)
+                                            : showPreGestError && !clinicalData.pPreGest
+                                                ? 'bg-red-50 border-2 border-red-500 text-red-900 animate-pulse' // Estilo ROJO (Error)
+                                                : 'bg-white' // Estilo Normal
+                                    }`
+                                } 
+                                value={clinicalData.pPreGest || ''} 
+                                onChange={(e) => {
+                                    handleNumericInput(e, 30, 150);
+                                    if(e.target.value) {
+                                        setShowPreGestError(false); // Quitar error si escribe
+                                        setIgnorePreGestValidation(false); // Resetear ignorar si escribe
+                                    }
+                                }} 
+                                disabled={patientData.condicion !== 'GESTANTE'} 
+                                placeholder={patientData.condicion === 'GESTANTE' && ignorePreGestValidation ? "DATO OMITIDO" : ""}
+                            />
+                            {/* Mensaje de error pequeño debajo si aplica */}
+                            {showPreGestError && !clinicalData.pPreGest && !ignorePreGestValidation && (
+                                <span className="text-[9px] font-bold text-red-500 animate-bounce mt-1">
+                                    * Dato requerido para Gestantes
+                                </span>
+                            )}
+                        </div>
+                        {/* ------------------------------------------------- */}
                       </div>
                     </div>
                     
