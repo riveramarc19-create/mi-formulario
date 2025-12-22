@@ -756,12 +756,11 @@ export default function App() {
   };
 
   const cleanStr = (str) => { if (!str) return ""; return str.replace(/[^A-Z0-9]/g, ''); };
-
-const selectPatient = (p) => {
+  const selectPatient = (p) => {
       setShowSuggestions(false); 
       setSuggestions([]); 
       
-      // 1. Lógica de coincidencia de Establecimiento
+      // 1. Lógica de coincidencia de Establecimiento (Igual que antes)
       let estConfigRaw = adminData.establecimiento.trim().toUpperCase();
       let estPatientRaw = p.estOrigen ? p.estOrigen.trim().toUpperCase() : "";
 
@@ -775,10 +774,8 @@ const selectPatient = (p) => {
       const cleanConfig = cleanStr(keywordConfig);
       const cleanPatient = cleanStr(estPatientRaw);
       
-      // Verificamos si el establecimiento de origen coincide (para la alerta de jurisdicción)
       const match = cleanPatient.includes(cleanConfig) || cleanConfig.includes(cleanPatient);
 
-      // Si NO coincide el origen, mostramos la alerta (pero permitimos continuar)
       if (!match) {
           setJurisdictionErrorMsg(`El paciente seleccionado pertenece a: "${p.estOrigen || 'DESCONOCIDO'}"\nPero usted está registrando en: "${adminData.establecimiento}"`);
           setShowJurisdictionModal(true); 
@@ -793,27 +790,35 @@ const selectPatient = (p) => {
           setShowAdolescentModal(true);
       }
 
-      // --- LÓGICA DE CONTINUADOR MEJORADA ---
-      // Verificamos si el establecimiento ACTUAL está en el historial del paciente
+      // Lógica de Continuador
       const esContinuador = p.historialEst.some(historialItem => { 
           const itemLimpio = cleanStr(historialItem); 
           return itemLimpio.includes(cleanConfig); 
       });
-      
-      // Si está en el historial -> es CONTINUADOR (C), si no -> REINGRESANTE (R)
       const condicionCalculada = esContinuador ? "C" : "R";
 
       // =========================================================
-      // NUEVO CÓDIGO INTEGRADO: CARGA DE DATOS HISTÓRICOS (SEMÁFOROS)
+      // 🔥 AQUÍ ESTÁ EL CAMBIO PARA LA FECHA (DD/MM/YYYY)
       // =========================================================
       
-      // Función auxiliar interna para formatear fechas
       const formatLastDate = (val) => {
           if(!val) return "-";
-          return parseExcelDate(val); 
+          
+          // 1. Obtenemos formato estándar YYYY-MM-DD
+          const isoDate = parseExcelDate(val); 
+          
+          // 2. Si no es válido, guión
+          if (!isoDate || isoDate === '2000-01-01') return "-";
+
+          // 3. LO VOLTEAMOS A DD/MM/AAAA
+          const partes = isoDate.split('-'); // [2025, 05, 10]
+          if(partes.length === 3) {
+              return `${partes[2]}/${partes[1]}/${partes[0]}`; // Retorna 10/05/2025
+          }
+          return isoDate;
       };
 
-      // Guardamos los datos históricos en el estado para los semáforos
+      // Guardamos los datos históricos
       setLastClinicalData({
           talla: { val: p.last_talla, date: formatLastDate(p.last_fec_talla) },
           peso:  { val: p.last_peso,  date: formatLastDate(p.last_fec_peso) },
@@ -827,7 +832,7 @@ const selectPatient = (p) => {
       setTimeout(() => { 
           setPatientData(prev => ({ 
               ...prev,
-              id: p.id, // <--- IMPORTANTE: El ID para actualizar a Continuador después
+              id: p.id, 
               dni: p.dni || "", 
               paciente: p.nombre || "", 
               hc: p.hc || "", 
@@ -838,15 +843,17 @@ const selectPatient = (p) => {
               distrito: p.distrito || '', 
               estOrigen: p.estOrigen || '', 
               
-              // Si la FUR viene del Excel (histórica), la cargamos, sino mantenemos la previa
+              // FUR (Esta sí la dejamos en formato YYYY-MM-DD porque va a un input tipo fecha)
               fur: p.last_fur ? parseExcelDate(p.last_fur) : prev.fur,
 
-              condEst: condicionCalculada, // Se pone C o R automáticamente
-              condServ: '' // Se deja vacío para elección manual
+              condEst: condicionCalculada, 
+              condServ: '' 
           })); 
           setIsPatientDataLocked(true); 
       }, 10);
   };
+
+
 
   const checkRowValidity = (row) => { return (row.desc && row.desc.trim() !== '' && row.tipo && row.tipo !== '-' && row.tipo !== '' && row.codigo && row.codigo.trim() !== ''); };
   const openDxSearch = (index) => { setCurrentDxRow(index); const existing = diagnoses[index]; setTempDx({ desc: existing.desc || '', codigo: existing.codigo || '', tipo: (existing.tipo && existing.tipo !== '-') ? existing.tipo : 'D', lab1: existing.lab1 || '', lab2: existing.lab2 || '', lab3: existing.lab3 || '' }); setModalSearchTerm(""); setModalSuggestions([]); setIsDxModalOpen(true); };
@@ -1892,8 +1899,8 @@ const generatePDF = () => {
             <div className="bg-blue-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg text-white">
               <Siren size={32} />
             </div>
-            <h1 className="text-2xl font-black text-slate-800">HIS 2025</h1>
-            <p className="text-slate-400 text-xs font-bold uppercase">Acceso Profesional de Salud</p>
+            <h1 className="text-2xl font-black text-slate-800">SMART HIS</h1>
+            <p className="text-slate-400 text-xs font-bold uppercase">Acceso Personal de Salud</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
@@ -2318,18 +2325,19 @@ const generatePDF = () => {
               )}
               
               {step === 2 && (
-                <div className="w-full max-w-[98%] mx-auto">
+                /* 1. ANCHO REDUCIDO AL ~60% EN PANTALLAS GRANDES (lg:max-w-[65%]) */
+                <div className="w-full lg:max-w-[65%] mx-auto transition-all duration-300">
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                     
-                    {/* COLUMNA 1 y 2: ANTROPOMETRÍA CON SEMÁFOROS (OCUPA 2 ESPACIOS) */}
+                    {/* --- ZONA PRINCIPAL (INPUTS + CASILLAS DE DATOS) --- */}
                     <div className="lg:col-span-2 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-                      <h3 className={`font-extrabold mb-5 flex items-center gap-2 text-lg ${getTheme(2).text}`}>
+                      {/* 2. CABECERA CON VERDE PETRÓLEO (text-teal-800) */}
+                      <h3 className="font-extrabold mb-5 flex items-center gap-2 text-lg text-teal-800">
                         <Activity size={24}/> Antropometría y Funciones Vitales
                       </h3>
                       
                       <div className="space-y-5">
                         
-                        {/* HELPER PARA GENERAR FILAS: INPUT (IZQ) + SEMÁFORO (DER) */}
                         {[
                             { label: "Talla (cm)", name: "talla", min: 30, max: 200, hist: lastClinicalData.talla },
                             { label: "Peso (kg)", name: "peso", min: 0.5, max: 180, hist: lastClinicalData.peso },
@@ -2339,24 +2347,19 @@ const generatePDF = () => {
                             { label: "P. Pre-Gest.", name: "pPreGest", min: 30, max: 150, hist: lastClinicalData.pPreg, checkCond: patientData.condicion === 'GESTANTE', specialBtn: true }
                         ].map((item, idx) => {
                             
-                            // 1. Lógica de visibilidad (Si no cumple edad, no se renderiza nada)
                             if (item.checkAge === false) return null; 
                             
-                            // 2. Lógica de Bloqueo (Si no cumple condición o edad mínima para editar)
                             const isLocked = item.checkCond === false || (item.name === 'pAbd' && ageObj.y < 12) || (item.name === 'pCef' && ageObj.y > 5);
-                            
-                            // 3. Verificamos si hay dato histórico para mostrar
                             const hasHist = item.hist && item.hist.val;
 
                             return (
                                 <div key={idx} className="grid grid-cols-12 gap-4 items-center border-b border-slate-50 pb-4 last:border-0 last:pb-0">
                                     
-                                    {/* --- IZQUIERDA: INPUT PARA EL DATO ACTUAL --- */}
-                                    <div className="col-span-4">
+                                    {/* 1. INPUT (IZQUIERDA) */}
+                                    <div className="col-span-5">
                                         <div className="flex justify-between items-center mb-1">
-                                            <label className={getLabelStyle(2)}>{item.label}</label>
+                                            <label className="text-[11px] font-bold text-teal-700 uppercase tracking-wider">{item.label}</label>
                                             
-                                            {/* Botón "OMITIR/NO TENGO DATO" para campos especiales */}
                                             {item.specialBtn && !clinicalData[item.name] && !isLocked && (
                                                 <button onClick={() => {
                                                     if(item.name==='pAbd') { setIgnorePAbdValidation(true); setShowPAbdError(false); }
@@ -2372,38 +2375,37 @@ const generatePDF = () => {
                                             value={clinicalData[item.name] || ''}
                                             onChange={(e) => handleNumericInput(e, item.min, item.max)}
                                             placeholder={isLocked ? "NO APLICA" : ""}
-                                            className={`${borderlessInputStyle} border-2 border-slate-200 focus:border-blue-500 h-10 text-center text-lg font-bold text-slate-700
+                                            className={`${borderlessInputStyle} border-2 border-slate-200 focus:border-teal-500 h-10 text-center text-lg font-bold text-slate-700
                                                 ${(item.isHb && showHbError && !clinicalData.hb) ? 'bg-red-50 border-red-500 animate-pulse placeholder-red-300' : ''}
                                                 ${(item.name === 'pPreGest' && showPreGestError) ? 'bg-red-50 border-red-500 animate-pulse' : ''}
-                                                ${isLocked ? 'bg-slate-100 text-slate-400' : ''}
+                                                ${isLocked ? 'bg-slate-100 text-slate-400 shadow-none' : ''}
+                                                ${!isLocked && clinicalData[item.name] ? 'bg-teal-50 border-teal-500 text-teal-800' : ''}
                                             `}
                                         />
-                                        {/* Mensaje de error específico para Hb o P.Preg si hace falta */}
-                                        {(item.isHb && showHbError && !clinicalData.hb) && <span className="text-[9px] font-bold text-red-500 block mt-1">* Requerido</span>}
                                     </div>
 
-                                    {/* --- DERECHA: SEMÁFORO DE DATOS HISTÓRICOS (AMARILLO/VERDE) --- */}
-                                    <div className="col-span-8 flex flex-col justify-end h-full pt-6">
+                                    {/* 2. LAS CASILLAS DE DATOS (DERECHA) */}
+                                    <div className="col-span-7 flex flex-col justify-end h-full pt-6">
                                         <div className="flex w-full h-10 rounded-lg overflow-hidden text-xs font-bold shadow-sm border border-slate-200">
                                             
-                                            {/* CELDA AMARILLA: FECHA DEL DATO ANTERIOR */}
-                                            <div className="w-1/2 bg-amber-100 text-amber-800 flex items-center justify-center border-r border-amber-200">
+                                            {/* 3. CASILLA FECHA -> ROSADO BAJO (rose-100) */}
+                                            <div className="w-1/2 bg-rose-100 text-rose-800 flex items-center justify-center border-r border-rose-200">
                                                 {hasHist ? (
-                                                    <div className="flex items-center gap-1">
-                                                        <Calendar size={12}/> {item.hist.date}
+                                                    <div className="flex items-center gap-1 truncate px-1">
+                                                        <Calendar size={12} className="shrink-0"/> {item.hist.date}
                                                     </div>
-                                                ) : <span className="text-amber-300 select-none">SIN FECHA</span>}
+                                                ) : <span className="text-rose-300 select-none">SIN FECHA</span>}
                                             </div>
 
-                                            {/* CELDA VERDE: VALOR DEL DATO ANTERIOR */}
-                                            <div className="w-1/2 bg-[#84CC16] text-white flex items-center justify-center text-sm tracking-wider">
+                                            {/* 4. CASILLA DATO -> VERDE PETRÓLEO (bg-teal-600) */}
+                                            <div className="w-1/2 bg-teal-600 text-white flex items-center justify-center text-sm tracking-wider truncate px-1">
                                                 {hasHist ? (
                                                     <span>{item.hist.val} <span className="text-[9px] opacity-70">Ant.</span></span>
-                                                ) : <span className="opacity-50 text-[10px] select-none">SIN DATO PREVIO</span>}
+                                                ) : <span className="opacity-60 text-[10px] select-none font-medium">SIN DATO PREVIO</span>}
                                             </div>
                                         </div>
-                                        <p className="text-[9px] text-slate-400 text-center mt-1 uppercase tracking-wider">
-                                            {hasHist ? "Último registro encontrado en BD" : "Datos no actualizados en BD"}
+                                        <p className="text-[9px] text-slate-400 text-center mt-1 uppercase tracking-wider select-none">
+                                            {hasHist ? "Último registro" : "No registrado"}
                                         </p>
                                     </div>
                                 </div>
@@ -2413,30 +2415,30 @@ const generatePDF = () => {
                       </div>
                     </div>
                     
-                    {/* COLUMNA 3: CALCULADORAS Y RESULTADOS (DERECHA) */}
+                    {/* --- ZONA DERECHA (CALCULADORAS Y RESULTADOS) --- */}
                     <div className="flex flex-col gap-4">
-                        {/* CALCULADORA ANEMIA (BOTÓN GRANDE) */}
-                        <div className="bg-purple-50 p-6 rounded-2xl border border-purple-100 flex flex-col items-center text-center shadow-sm">
-                            <div className="bg-white p-3 rounded-full shadow-sm mb-3 text-purple-600"><Calculator size={28}/></div>
-                            <h4 className="text-purple-900 font-bold text-sm mb-1">Evaluación de Anemia</h4>
-                            <p className="text-purple-600 text-[10px] mb-4">Ajuste por altitud y diagnóstico</p>
-                            <button onClick={() => setShowAnemiaModal(true)} className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl text-xs shadow-md transition-all active:scale-95">ABRIR CALCULADORA</button>
+                        {/* CALCULADORA ANEMIA */}
+                        <div className="bg-white p-6 rounded-2xl border border-slate-200 flex flex-col items-center text-center shadow-sm">
+                            <div className="bg-purple-50 p-3 rounded-full shadow-sm mb-3 text-purple-600"><Calculator size={28}/></div>
+                            <h4 className="text-slate-800 font-bold text-sm mb-1">Evaluación de Anemia</h4>
+                            <p className="text-slate-500 text-[10px] mb-4">Ajuste por altitud y diagnóstico</p>
+                            <button onClick={() => setShowAnemiaModal(true)} className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 rounded-xl text-xs shadow-md transition-all active:scale-95">ABRIR CALCULADORA</button>
                         </div>
 
-                        {/* RESULTADOS IMC Y RIESGO */}
+                        {/* RESULTADOS IMC */}
                         <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-                            <h4 className="text-slate-700 font-bold text-sm mb-4 border-b pb-2">Diagnóstico Nutricional</h4>
+                            <h4 className="text-teal-800 font-bold text-sm mb-4 border-b border-slate-100 pb-2">Diagnóstico Nutricional</h4>
                             <div className="flex gap-2 mb-3">
                                 <div className="flex-1">
-                                    <label className="text-[10px] font-bold text-slate-400 block mb-1">IMC</label>
-                                    <div className="h-10 bg-slate-100 rounded-lg flex items-center justify-center font-black text-slate-700">{clinicalData.imc || '--'}</div>
+                                    <label className="text-[10px] font-bold text-slate-400 block mb-1 uppercase">IMC</label>
+                                    <div className="h-10 bg-slate-100 rounded-lg flex items-center justify-center font-black text-slate-700 border border-slate-200">{clinicalData.imc || '--'}</div>
                                 </div>
-                                <div className="flex-[2]">
-                                    <label className="text-[10px] font-bold text-slate-400 block mb-1">Diagnóstico / Riesgo</label>
-                                    <input name="riesgo" value={clinicalData.riesgo} onChange={handleClinical} className="w-full h-10 bg-white border-2 border-slate-200 rounded-lg px-2 text-xs font-bold outline-none focus:border-blue-500 uppercase" placeholder="NORMAL / SOBREPESO..." />
+                                <div className="flex-[1.5]">
+                                    <label className="text-[10px] font-bold text-slate-400 block mb-1 uppercase">Diagnóstico / Riesgo</label>
+                                    <input name="riesgo" value={clinicalData.riesgo} onChange={handleClinical} className="w-full h-10 bg-white border-2 border-slate-200 rounded-lg px-2 text-xs font-bold outline-none focus:border-teal-500 uppercase text-center" placeholder="NORMAL..." />
                                 </div>
                             </div>
-                            <button onClick={() => setShowNutriModal(true)} className="w-full border-2 border-dashed border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-600 font-bold py-2 rounded-xl text-xs transition-colors">
+                            <button onClick={() => setShowNutriModal(true)} className="w-full border-2 border-dashed border-slate-300 text-slate-500 hover:border-teal-400 hover:text-teal-700 hover:bg-teal-50 font-bold py-2 rounded-xl text-xs transition-all">
                                 Ver Tabla Z-Score (OMS)
                             </button>
                         </div>
