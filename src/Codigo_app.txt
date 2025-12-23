@@ -169,18 +169,15 @@ const SimpleCalendar = ({ selectedDate, onSelectDate, onClose, themeColor }) => 
 // --- COMPONENTE MODAL PARA VER SEGUIMIENTO CRED ---
 const CredFollowUpModal = ({ isOpen, onClose }) => {
   const [credData, setCredData] = useState([]);
-  const [columns, setColumns] = useState([]); // Estado para guardar las columnas fijas
+  const [columns, setColumns] = useState([]); 
   const [filterTerm, setFilterTerm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   if (!isOpen) return null;
 
-  // Función auxiliar para convertir fecha Excel (número serial) a formato legible
   const formatExcelDate = (value) => {
     if (typeof value === 'number' && value > 20000 && value < 60000) {
-       // Ajuste aproximado para fechas de Excel
        const date = new Date(Math.round((value - 25569) * 86400 * 1000));
-       // Sumar horas para compensar zona horaria si es necesario
        date.setMinutes(date.getMinutes() + date.getTimezoneOffset());
        if(!isNaN(date.getTime())) {
          return date.toLocaleDateString("es-PE");
@@ -198,20 +195,17 @@ const CredFollowUpModal = ({ isOpen, onClose }) => {
       try {
         const wb = XLSX.read(evt.target.result, { type: 'binary' });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        // header: 1 devuelve un array de arrays (Fila 0 = Cabeceras)
         const data = XLSX.utils.sheet_to_json(ws, { header: 1 }); 
         
         if (data.length > 0) {
-            const headers = data[0]; // La primera fila son los títulos reales
-            setColumns(headers); // Guardamos las columnas exactas del Excel
+            const headers = data[0]; 
+            setColumns(headers); 
 
             const rows = data.slice(1).map((r, i) => {
                 let obj = { id: i };
                 headers.forEach((h, index) => {
-                    // Guardamos el valor o guión si está vacío
                     obj[h] = r[index] !== undefined ? r[index] : "";
                 });
-                // Crear string para el buscador
                 obj.searchStr = Object.values(obj).join(" ").toUpperCase();
                 return obj;
             });
@@ -272,15 +266,13 @@ const CredFollowUpModal = ({ isOpen, onClose }) => {
             )}
         </div>
 
-        {/* TABLA DE DATOS CON SCROLL HORIZONTAL CORREGIDO */}
+        {/* TABLA DE DATOS */}
         <div className="flex-1 overflow-auto bg-slate-100 p-4">
             {credData.length > 0 ? (
-                // CAMBIO CLAVE: overflow-x-auto permite el scroll horizontal
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
                     <table className="w-full text-xs text-left border-collapse">
                         <thead className="bg-slate-50 text-slate-500 font-bold uppercase">
                             <tr>
-                                {/* Renderizamos usando las columnas reales del Excel */}
                                 {columns.map((col, i) => (
                                     <th key={i} className="px-4 py-3 border-b border-r border-slate-200 whitespace-nowrap min-w-[100px] bg-slate-50 sticky top-0 z-10">
                                         {col}
@@ -316,18 +308,15 @@ const CredFollowUpModal = ({ isOpen, onClose }) => {
   );
 };
 
-// --- COMPONENTE VISOR INTEGRADO (NO MODAL) ---
-// --- COMPONENTE VISOR INTEGRADO (CORREGIDO PARA FECHAS) ---
-// --- COMPONENTE VISOR INTEGRADO (CON ALERTA ROJA EN TTO Y SELECCIÓN DE FILAS) ---
-const InlineFollowUpViewer = ({ type, data, onClose, onFileUpload }) => {
-  const [filter, setFilter] = useState("");
-  const [selectedRowIndex, setSelectedRowIndex] = useState(null); // Estado para la fila seleccionada
+// --- COMPONENTE VISOR INTEGRADO (CORREGIDO: COLOR RGB 122,0,0 + SCROLL SIEMPRE VISIBLE) ---
+const InlineFollowUpViewer = ({ type, data, onClose, onFileUpload, externalFilter }) => {
+  const [filter, setFilter] = useState(externalFilter || "");
+  const [selectedRowIndex, setSelectedRowIndex] = useState(null);
+  useEffect(() => {setFilter(externalFilter || "");}, [externalFilter]);
   
-  // Obtenemos las columnas dinámicamente
   const columns = data && data.length > 0 ? Object.keys(data[0]).filter(k => k !== 'id' && k !== 'searchStr') : [];
-  const filtered = data ? data.filter(row => !filter || row.searchStr.includes(filter.toUpperCase())).slice(0, 50) : [];
+  const filtered = data ? data.filter(row => !filter || row.searchStr.includes(filter.toUpperCase())).slice(0, 100) : []; 
 
-  // --- FUNCIÓN PARA CORREGIR FECHAS DE EXCEL ---
   const formatCell = (value) => {
       if (typeof value === 'number' && value > 20000 && value < 60000) {
           const date = new Date(Math.round((value - 25569) * 86400 * 1000));
@@ -339,32 +328,33 @@ const InlineFollowUpViewer = ({ type, data, onClose, onFileUpload }) => {
       return value;
   };
 
-  // --- LÓGICA DE ESTILOS DE CELDA ---
   const getCellStyle = (columnName, value) => {
-      // 1. Columnas de Tratamiento (TTO_1 a TTO_6)
-      const ttoColumns = ['TTO_1', 'TTO_2', 'TTO_3', 'TTO_4', 'TTO_5', 'TTO_6'];
+      // 1. LISTA EXACTA Y ESTRICTA DE COLUMNAS
+      const targetColumns = ['TTO_1', 'TTO_2', 'TTO_3', 'TTO_4', 'TTO_5', 'TTO_6'];
       
-      // Si es columna TTO y está vacía (null, undefined o string vacío)
-      if (ttoColumns.includes(columnName) && (!value || String(value).trim() === '')) {
-          return "bg-red-200 animate-pulse"; // ROJO SI FALTA EL DATO
-      }
-      
-      // Si es TTO y tiene dato, lo pintamos de verde suave para confirmar
-      if (ttoColumns.includes(columnName) && value) {
-          return "bg-green-100 font-bold text-green-800";
+      const isTarget = targetColumns.includes(columnName);
+
+      if (isTarget) {
+          // A) Si está vacío -> ROJO MÁS OSCURO (30% MÁS INTENSO)
+          if (!value || String(value).trim() === '') {
+              return "bg-red-300 animate-pulse text-red-900 font-bold border-red-400"; 
+          }
+          
+          // B) Si tiene dato -> VERDE SUAVE
+          return "bg-green-100 text-green-800 font-bold border-green-200";
       }
 
-      return ""; // Estilo normal
+      return ""; 
   };
 
   return (
-    <div className="mb-6 bg-white border-2 border-slate-200 rounded-xl overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300 shadow-inner">
+    <div className="mb-6 bg-white border-2 border-slate-200 rounded-xl overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300 shadow-xl">
       {/* CABECERA */}
       <div className="bg-slate-100 p-3 flex justify-between items-center border-b border-slate-200">
         <h3 className="font-black text-slate-700 uppercase flex items-center gap-2">
            <Database size={18}/> SEGUIMIENTO: <span className="text-blue-600">{type}</span>
         </h3>
-        <button onClick={onClose} className="text-xs font-bold bg-slate-200 hover:bg-red-100 text-slate-600 hover:text-red-600 px-3 py-1 rounded-lg transition-colors">
+        <button onClick={onClose} className="text-xs font-bold bg-slate-200 hover:bg-red-100 text-slate-600 hover:text-red-600 px-3 py-1 rounded-lg transition-colors border border-slate-300">
             CERRAR VISOR
         </button>
       </div>
@@ -390,34 +380,36 @@ const InlineFollowUpViewer = ({ type, data, onClose, onFileUpload }) => {
                         onChange={e => setFilter(e.target.value)}
                     />
                 </div>
-                <div className="overflow-x-auto border border-slate-200 rounded-lg max-h-[300px]">
+
+                {/* SCROLLBAR SIEMPRE VISIBLE */}
+                <div className="border border-slate-300 rounded-lg overflow-auto w-full max-h-[60vh] relative shadow-inner bg-slate-50">
                     <table className="w-full text-[10px] text-left border-collapse">
-                        <thead className="bg-slate-50 text-slate-500 font-bold uppercase sticky top-0 z-10 shadow-sm">
+                        <thead className="bg-slate-100 text-slate-600 font-extrabold uppercase sticky top-0 z-20 shadow-sm">
                             <tr>
-                                {columns.map((c, i) => <th key={i} className="px-2 py-2 border-b border-r border-slate-200 whitespace-nowrap bg-slate-50">{c}</th>)}
+                                {columns.map((c, i) => (
+                                    <th key={i} className="px-3 py-3 border-b border-r border-slate-300 whitespace-nowrap min-w-[100px] bg-slate-100">
+                                        {c}
+                                    </th>
+                                ))}
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="bg-white">
                             {filtered.map((row, i) => (
                                 <tr 
                                     key={i} 
-                                    // LOGICA DE SELECCIÓN DE FILA
-                                    onClick={() => setSelectedRowIndex(i === selectedRowIndex ? null : i)} // Clic para seleccionar/deseleccionar
-                                    className={`transition-colors cursor-pointer border-b border-slate-100 
+                                    onClick={() => setSelectedRowIndex(i === selectedRowIndex ? null : i)}
+                                    className={`transition-colors cursor-pointer border-b border-slate-200 
                                         ${selectedRowIndex === i 
-                                            ? 'bg-blue-600 text-white hover:bg-blue-700' // Estilo SELECCIONADO (Azul fuerte)
-                                            : 'hover:bg-blue-50 text-slate-700 even:bg-slate-50' // Estilo NORMAL
+                                            ? 'bg-blue-600 text-white hover:bg-blue-700 z-10 relative' 
+                                            : 'hover:bg-blue-50 text-slate-700 even:bg-slate-50'
                                         }`}
                                 >
                                     {columns.map((c, j) => {
-                                        // Calculamos estilo especial para celdas TTO
                                         const specialStyle = getCellStyle(c, row[c]);
-                                        // Si la fila está seleccionada, ignoramos el rojo para que se lea el texto blanco, 
-                                        // a menos que quieras que el rojo persista. Aquí priorizo la selección azul.
-                                        const finalClass = (selectedRowIndex === i) ? "" : specialStyle;
+                                        const finalClass = (selectedRowIndex === i) ? "border-blue-500" : specialStyle;
 
                                         return (
-                                            <td key={j} className={`px-2 py-1 whitespace-nowrap border-r border-slate-100 ${finalClass}`}>
+                                            <td key={j} className={`px-3 py-2 whitespace-nowrap border-r border-slate-200 ${finalClass}`}>
                                                 {formatCell(row[c])}
                                             </td>
                                         );
@@ -427,8 +419,9 @@ const InlineFollowUpViewer = ({ type, data, onClose, onFileUpload }) => {
                         </tbody>
                     </table>
                 </div>
+                
                 <div className="mt-2 text-[10px] text-slate-400 font-bold text-right flex justify-between items-center">
-                    <span>💡 Tip: Haga clic en una fila para marcarla.</span>
+                    <span>💡 Tip: Use Shift + Rueda del mouse para desplazarse horizontalmente.</span>
                     <span>Mostrando {filtered.length} coincidencias.</span>
                 </div>
             </>
@@ -437,13 +430,16 @@ const InlineFollowUpViewer = ({ type, data, onClose, onFileUpload }) => {
     </div>
   );
 };
+
 export default function App() {
   const [showNutriModal, setShowNutriModal] = useState(false);
   const [showAnemiaModal, setShowAnemiaModal] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [lastClinicalData, setLastClinicalData] = useState({});
   const calendarRef = useRef(null);
   const handleDateSelect = (date) => setPatientData(prev => ({ ...prev, fecAtencion: date }));
-  const [showCredModal, setShowCredModal] = useState(false); // ESTADO DEL MODAL CRED
+  const [showCredModal, setShowCredModal] = useState(false); 
+  
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -486,38 +482,24 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loginDni, setLoginDni] = useState("");
   const [loginPass, setLoginPass] = useState("");
-  const [showPassword, setShowPassword] = useState(false); // <--- CONTROL VISIBILIDAD PASSWORD
+  const [showPassword, setShowPassword] = useState(false); 
   const [loginError, setLoginError] = useState("");
 
-  // --- FUNCIÓN DE LOGIN ---
   const handleLogin = (e) => {
     e.preventDefault();
-    
-    // 1. Buscar usuario en tu lista de personal cargada
     const user = dbPersonal.find(u => u.dni === loginDni);
-
-    // 2. Validar credenciales (DNI y la contraseña del JSON)
     if (user && user.password === loginPass) {
         setIsAuthenticated(true);
         setLoginError("");
-
-        // 3. COPIAR DNI AL CAMPO DE CONFIGURACIÓN AUTOMÁTICAMENTE
         if (typeof setAdminData === 'function') {
-            setAdminData(prev => ({
-                ...prev,
-                dniResp: user.dni,
-                nombreResp: user.nombre
-            }));
+            setAdminData(prev => ({ ...prev, dniResp: user.dni, nombreResp: user.nombre }));
         }
     } else {
         setLoginError("Credenciales incorrectas o usuario no encontrado");
     }
   };
-  // =========================================================
 
-  // --- ESTADO PARA LA ALERTA DE VALIDACIÓN ---
   const [validationAlert, setValidationAlert] = useState({ isOpen: false, type: '', title: '', message: '', details: '' });
-
   const [searchTerm, setSearchTerm] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -579,7 +561,6 @@ export default function App() {
   const [activeFollowUp, setActiveFollowUp] = useState(null); 
   const [followUpData, setFollowUpData] = useState({});
 
-  // --- CARGA DE BD ---
   useEffect(() => {
     const initDB = async () => {
         try {
@@ -639,7 +620,8 @@ export default function App() {
             const procesados = rawData.slice(1).map(r => {
                 if (!r[0] && !r[1]) return null;
                 const historyRange = [];
-                for(let i=9; i<=20; i++) { if(r[i]) historyRange.push(String(r[i]).trim().toUpperCase()); }
+                for(let i=9; i<=13; i++) { if(r[i]) historyRange.push(String(r[i]).trim().toUpperCase()); }
+
                 return {
                     dni: r[0] ? String(r[0]).trim().padStart(8, '0') : "", 
                     nombre: r[1] ? String(r[1]).trim() : "", 
@@ -651,6 +633,15 @@ export default function App() {
                     direccion: r[7] ? String(r[7]).trim() : "", 
                     estOrigen: r[8] ? String(r[8]).trim() : "", 
                     historialEst: historyRange,
+                    
+                    last_fec_talla: r[14], last_talla: r[15],
+                    last_fec_peso:  r[16], last_peso:  r[17],
+                    last_fec_pabd:  r[18], last_pabd:  r[19],
+                    last_fec_pcef:  r[20], last_pcef:  r[21],
+                    last_fec_hb:    r[22], last_hb:    r[23],
+                    last_fur:       r[24],
+                    last_fec_ppreg: r[25], last_ppreg: r[26],
+
                     busqueda: ((r[0] ? String(r[0]).trim().padStart(8, '0') : "") + " " + String(r[1]||"")).toUpperCase()
                 };
             }).filter(p => p !== null);
@@ -658,7 +649,7 @@ export default function App() {
             await idb.savePatients(procesados);
             setDbPacientes(procesados);
             setDbStatus('ready');
-            alert(`✅ ${procesados.length} pacientes guardados en la Base de Datos Local.`);
+            alert(`✅ BASE DE DATOS ACTUALIZADA: ${procesados.length} pacientes cargados con sus históricos.`);
 
           } else if (type === 'cie10') {
             const procesados = rawData.slice(1).map(r => ({ CODIGO: r[0] ? String(r[0]).trim() : "", DESCRIPCION: r[1] ? String(r[1]).trim() : "", BUSQUEDA: (String(r[0]||"") + " " + String(r[1]||"")).toUpperCase() })).filter(d => d.CODIGO);
@@ -674,6 +665,7 @@ export default function App() {
       reader.readAsBinaryString(file);
     } catch (error) { alert("Error subiendo el archivo: " + error.message); }
   };
+
   const handleFollowUpUpload = (e, type) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -682,7 +674,7 @@ export default function App() {
       try {
         const wb = XLSX.read(evt.target.result, { type: 'binary' });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        const data = XLSX.utils.sheet_to_json(ws, { header: 1 }); // Array de arrays
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
         if (data.length > 0) {
             const headers = data[0];
             const rows = data.slice(1).map((r, i) => {
@@ -691,7 +683,6 @@ export default function App() {
                 obj.searchStr = Object.values(obj).join(" ").toUpperCase();
                 return obj;
             });
-            // Guardamos en el estado general
             setFollowUpData(prev => ({ ...prev, [type]: rows }));
         }
       } catch (err) { alert("Error al leer Excel: " + err.message); }
@@ -729,9 +720,9 @@ export default function App() {
   const cleanStr = (str) => { if (!str) return ""; return str.replace(/[^A-Z0-9]/g, ''); };
 
   const selectPatient = (p) => {
-      setShowSuggestions(false); setSuggestions([]); 
+      setShowSuggestions(false); 
+      setSuggestions([]); 
       
-      // 1. Lógica de coincidencia de Establecimiento
       let estConfigRaw = adminData.establecimiento.trim().toUpperCase();
       let estPatientRaw = p.estOrigen ? p.estOrigen.trim().toUpperCase() : "";
 
@@ -745,42 +736,51 @@ export default function App() {
       const cleanConfig = cleanStr(keywordConfig);
       const cleanPatient = cleanStr(estPatientRaw);
       
-      // Verificamos si el establecimiento de origen coincide (para la alerta de jurisdicción)
       const match = cleanPatient.includes(cleanConfig) || cleanConfig.includes(cleanPatient);
 
-      // Si NO coincide el origen, mostramos la alerta (pero permitimos continuar)
       if (!match) {
-          // NOTA: Si el paciente fue creado con el botón azul, su 'estOrigen' quizás sea otro,
-          // pero si ya lo guardamos con historialEst conteniendo el actual, lo trataremos bien abajo.
           setJurisdictionErrorMsg(`El paciente seleccionado pertenece a: "${p.estOrigen || 'DESCONOCIDO'}"\nPero usted está registrando en: "${adminData.establecimiento}"`);
           setShowJurisdictionModal(true); 
-          // Quitamos el return para que seleccione los datos de fondo de todas formas
       }
 
       setSearchTerm(p.nombre || "");
       const safeFecNac = parseExcelDate(p.fecNac);
 
-      // Alerta Adolescente
       const currentAgeObj = getAgeComponents(safeFecNac, patientData.fecAtencion);
       if (currentAgeObj.y >= 12 && currentAgeObj.y <= 17) {
           setShowAdolescentModal(true);
       }
 
-      // --- LÓGICA DE CONTINUADOR MEJORADA ---
-      // Verificamos si el establecimiento ACTUAL está en el historial del paciente
       const esContinuador = p.historialEst.some(historialItem => { 
           const itemLimpio = cleanStr(historialItem); 
           return itemLimpio.includes(cleanConfig); 
       });
-      
-      // Si está en el historial -> es CONTINUADOR (C)
-      // Si NO está en el historial -> es REINGRESANTE (R) (Asumiendo que ya existe en BD pero viene de otro lado)
       const condicionCalculada = esContinuador ? "C" : "R";
+
+      const formatLastDate = (val) => {
+          if(!val) return "-";
+          const isoDate = parseExcelDate(val); 
+          if (!isoDate || isoDate === '2000-01-01') return "-";
+          const partes = isoDate.split('-'); 
+          if(partes.length === 3) {
+              return `${partes[2]}/${partes[1]}/${partes[0]}`; 
+          }
+          return isoDate;
+      };
+
+      setLastClinicalData({
+          talla: { val: p.last_talla, date: formatLastDate(p.last_fec_talla) },
+          peso:  { val: p.last_peso,  date: formatLastDate(p.last_fec_peso) },
+          pAbd:  { val: p.last_pabd,  date: formatLastDate(p.last_fec_pabd) },
+          pCef:  { val: p.last_pcef,  date: formatLastDate(p.last_fec_pcef) },
+          hb:    { val: p.last_hb,    date: formatLastDate(p.last_fec_hb) },
+          pPreg: { val: p.last_ppreg, date: formatLastDate(p.last_fec_ppreg) }
+      });
 
       setTimeout(() => { 
           setPatientData(prev => ({ 
               ...prev,
-	      id: p.id, 
+              id: p.id, 
               dni: p.dni || "", 
               paciente: p.nombre || "", 
               hc: p.hc || "", 
@@ -790,9 +790,9 @@ export default function App() {
               direccion: p.direccion || '', 
               distrito: p.distrito || '', 
               estOrigen: p.estOrigen || '', 
-              // AQUI LA MAGIA:
-              condEst: condicionCalculada, // Se pone C o R automáticamente
-              condServ: '' // <--- SE DEJA VACÍO PARA QUE EL USUARIO ELIJA (N, C o R)
+              fur: p.last_fur ? parseExcelDate(p.last_fur) : prev.fur,
+              condEst: condicionCalculada, 
+              condServ: '' 
           })); 
           setIsPatientDataLocked(true); 
       }, 10);
@@ -823,7 +823,7 @@ export default function App() {
       setTempDx(prev => ({ 
           ...prev, 
           desc: item.DESCRIPCION, 
-          codigo: item.CODIGO,
+          codigo: item.CODIGO, 
           lab1: item.LAB1 || '', 
           lab2: item.LAB2 || '',
           tipo: item.TIPO || prev.tipo || 'D'
@@ -860,10 +860,8 @@ export default function App() {
   };
 
   const handleSaveManualPatient = async () => {
-      // 1. Validaciones básicas
       if(!manualData.dni || !manualData.nombres) return alert("Debe completar al menos DNI y Nombres");
 
-      // 2. Preparamos el objeto COMPLETO para la base de datos
       const nuevoPacienteBD = {
           dni: manualData.dni.trim(),
           nombre: manualData.nombres.trim().toUpperCase(),
@@ -874,22 +872,15 @@ export default function App() {
           distrito: manualData.distrito.trim().toUpperCase(),
           direccion: manualData.direccion.trim().toUpperCase(),
           estOrigen: manualData.estOrigen.trim().toUpperCase(),
-          // --- CAMBIO CLAVE AQUÍ ---
-          // En lugar de historial vacío [], le ponemos el establecimiento actual.
-          // Así, la próxima vez que lo busques, el sistema sabrá que ya se atendió aquí.
           historialEst: [adminData.establecimiento], 
-          // -------------------------
           busqueda: (manualData.dni.trim() + " " + manualData.nombres.trim()).toUpperCase()
       };
 
       try {
-          // 3. Guardar en BD Local
           await idb.addPatient(nuevoPacienteBD);
-	  markAsContinuadorOnSave(patientData);
-          // 4. Actualizar memoria
+          markAsContinuadorOnSave(patientData);
           setDbPacientes(prev => [...prev, nuevoPacienteBD]);
 
-          // 5. Rellenar formulario (AQUÍ SÍ LO DEJAMOS COMO 'N' PORQUE ES LA PRIMERA VEZ)
           setPatientData(prev => ({ 
               ...prev, 
               dni: manualData.dni, 
@@ -901,8 +892,8 @@ export default function App() {
               direccion: manualData.direccion.toUpperCase(), 
               distrito: manualData.distrito.toUpperCase(), 
               estOrigen: manualData.estOrigen.toUpperCase(), 
-              condEst: 'N', // Visualmente ahora es Nuevo (correcto)
-              condServ: 'N' // Visualmente ahora es Nuevo (correcto)
+              condEst: 'N', 
+              condServ: 'N' 
           }));
 
           setSearchTerm(manualData.nombres.toUpperCase());
@@ -953,22 +944,10 @@ export default function App() {
   const addDx = () => { setDiagnoses([...diagnoses, { desc: '', tipo: '-', lab1: '', lab2: '', lab3: '', codigo: '' }]); setTimeout(() => { if (dxBottomRef.current) { dxBottomRef.current.scrollIntoView({ behavior: 'smooth' }); } }, 100); };
   const removeDx = (i) => setDiagnoses(diagnoses.filter((_, idx) => idx !== i));
 
-  
-  // --- FUNCIÓN FUERTE: MARCAR COMO CONTINUADOR (CORREGIDA) ---
-  // --- FUNCIÓN MAESTRA: ACTUALIZAR A CONTINUADOR (EN MEMORIA Y BD) ---
-  // --- FUNCIÓN DE ACTUALIZACIÓN (VERSIÓN A PRUEBA DE FALLOS) ---
-  // --- FUNCIÓN HÍBRIDA: ACTUALIZAR A CONTINUADOR (ID O DNI) ---
-  // --- FUNCIÓN: ACTUALIZAR A CONTINUADOR (AL GUARDAR) ---
-  // --- FUNCIÓN: ACTUALIZAR A CONTINUADOR (MOTOR DEFINITIVO) ---
   const updateToContinuador = (idPaciente) => {
       if (!idPaciente) return;
-
-      console.log(`🔄 Convirtiendo a CONTINUADOR al ID: ${idPaciente}`);
-
-      // 1. ACTUALIZAR EN MEMORIA (Para que el buscador se entere YA)
       setDbPacientes(prev => prev.map(p => {
           if (p.id === idPaciente) {
-              // Agregamos el establecimiento actual al historial en memoria
               const nuevoHistorial = p.historialEst ? [...p.historialEst] : [];
               if (!nuevoHistorial.includes(adminData.establecimiento)) {
                   nuevoHistorial.push(adminData.establecimiento);
@@ -977,73 +956,52 @@ export default function App() {
           }
           return p;
       }));
-
-      // 2. ACTUALIZAR EN BASE DE DATOS (Para que se guarde mañana)
       const request = indexedDB.open(DB_NAME, 1);
       request.onsuccess = (e) => {
           const db = e.target.result;
           const tx = db.transaction([STORE_PACIENTES], 'readwrite');
           const store = tx.objectStore(STORE_PACIENTES);
           const getReq = store.get(idPaciente);
-
           getReq.onsuccess = () => {
               const record = getReq.result;
               if (record) {
-                  // Cambiamos a Continuador
                   record.condEst = 'C';
-                  
-                  // AGREGAMOS AL HISTORIAL FÍSICO (CRÍTICO para tu lógica de selectPatient)
                   if (!record.historialEst) record.historialEst = [];
                   if (!record.historialEst.includes(adminData.establecimiento)) {
                       record.historialEst.push(adminData.establecimiento);
                   }
-
                   store.put(record);
-                  console.log("✅ Paciente actualizado en BD: Ahora es CONTINUADOR.");
               }
           };
       };
   };
 
-
   const markAsContinuadorOnSave = (datosPaciente) => {
-      // Si no hay ID ni DNI, no hacemos nada (es un paciente sin registro previo)
       if (!datosPaciente.id && !datosPaciente.dni) return;
-
-      console.log("💾 Guardando cambio de estado a CONTINUADOR...");
-
-      // 1. ACTUALIZAR MEMORIA (Buscador)
-      // Esto hace que si buscas al paciente dentro de 5 minutos, ya salga como 'C'
       setAllPatients(prevLista => prevLista.map(p => {
-          // Coincidencia por ID o por DNI
           if ((p.id && p.id === datosPaciente.id) || (p.dni && p.dni === datosPaciente.dni)) {
               return { ...p, condEst: 'C' }; 
           }
           return p;
       }));
-
-      // 2. ACTUALIZAR BASE DE DATOS (IndexedDB)
-      // Esto hace que el cambio persista aunque cierres el navegador
       const request = indexedDB.open(DB_NAME, 1);
       request.onsuccess = (e) => {
           const db = e.target.result;
           const tx = db.transaction([STORE_PACIENTES], 'readwrite');
           const store = tx.objectStore(STORE_PACIENTES);
-          
-          // Intentamos buscar por ID primero
           if (datosPaciente.id) {
               const getReq = store.get(datosPaciente.id);
               getReq.onsuccess = () => {
                   const record = getReq.result;
                   if (record && (record.condEst === 'N' || record.condEst === 'R')) {
                       record.condEst = 'C'; 
-                      store.put(record); // Guardar cambio
+                      store.put(record); 
                   }
               };
           }
       };
   };
-  // --- NUEVA FUNCIÓN DE VALIDACIÓN DE DIAGNÓSTICOS (HIS 1.12) ---
+
   const validateDiagnoses = () => {
     if (!patientData.paciente || patientData.paciente.trim() === "") return true;
     for (let i = 0; i < diagnoses.length; i++) {
@@ -1051,7 +1009,6 @@ export default function App() {
         if(!d.codigo) continue; 
         const code = d.codigo.trim().toUpperCase();
 
-        // 1. Validación Anemia D509
         if (code === 'D509') {
             const validLabs = ['LEV', 'MOD', 'SEV'];
             if (!validLabs.includes(d.lab1)) {
@@ -1064,27 +1021,22 @@ export default function App() {
                 });
                 return false;
             }
-        } // <--- ¡AQUÍ SE CIERRA EL BLOQUE DEL D509!
+        } 
 
-        // 2. Validación Dosaje Hb (85018, 85018.01) - AHORA ESTÁ AFUERA
-        
         if (['85018', '85018.01'].includes(code)) {
             const valorHb = clinicalData.hb;
-            // Si está vacío, nulo o es 0
             if (!valorHb || valorHb === '' || parseFloat(valorHb) === 0) {
                  setValidationAlert({
                     isOpen: true,
                     type: 'LAB_MISSING', 
                     title: 'Falta Resultado de Hemoglobina',
                     message: `En la fila ${i + 1}, ha registrado el procedimiento de Dosaje (${code}), pero no ingresó el resultado.`,
-                    // --- TEXTO ACTUALIZADO AQUÍ ABAJO ---
                     details: 'El sistema detectó que el campo "Hemoglobina" en los Datos Clínicos (Paso 2) está vacío.\n\nRECUERDA QUE EL VALOR DE HEMOGLOBINA SE DEBE REGISTRAR SIN DESCUENTO.'
                 });
                 return false; 
             }
         }
 
-        // 3. Validación Gestantes (Z3591, etc) - TUS OTRAS VALIDACIONES...
         if (['Z3591', 'Z3592', 'Z3593'].includes(code)) {
             if (!d.lab1 || !d.lab2) {
                  setValidationAlert({
@@ -1097,13 +1049,10 @@ export default function App() {
                 return false;
             }
         }
-	// 5. VALIDACIÓN DE CONSISTENCIA DE SEXO
-        // Lista de prefijos exclusivos para sexo FEMENINO (O=Embarazo/Parto, Z34/Z35=Control Emb, N7=Ginecológico)
+
         const femalePrefixes = ['O', 'Z34', 'Z35', 'N70', 'N71', 'N72', 'N73', 'N75', 'N76', 'Z32', 'Z39']; 
-        // Lista de prefijos exclusivos para sexo MASCULINO (N4=Próstata, N5=Testículo)
         const malePrefixes = ['N40', 'N41', 'N42', 'N43', 'N44', 'N45', 'N49', 'N50'];
 
-        // Si el paciente es MASCULINO pero usa código FEMENINO
         if (patientData.sexo === 'M') {
             if (femalePrefixes.some(pre => code.startsWith(pre))) {
                 setValidationAlert({
@@ -1117,7 +1066,6 @@ export default function App() {
             }
         }
 
-        // Si el paciente es FEMENINO pero usa código MASCULINO
         if (patientData.sexo === 'F') {
             if (malePrefixes.some(pre => code.startsWith(pre))) {
                 setValidationAlert({
@@ -1136,8 +1084,6 @@ export default function App() {
   
   const handleNextStep = () => { 
       if (step === 1) { 
-          // --- NUEVA LÓGICA: VALIDACIÓN CONDICIONAL (HIS 1.18) ---
-          // Solo validar si se ha seleccionado un paciente (nombre no vacío)
           if (patientData.paciente && patientData.paciente.trim() !== "") {
               if (!patientData.fecAtencion) { alert("¡ATENCIÓN! DEBE INGRESAR LA FECHA DE ATENCIÓN."); return; } 
               if (!patientData.condEst || !patientData.condServ) { alert("ERROR: DEBE SELECCIONAR LA CONDICIÓN DE ESTABLECIMIENTO Y SERVICIO."); return; } 
@@ -1145,43 +1091,36 @@ export default function App() {
               if ( (condEst === 'R' && condServ === 'C') || (condEst === 'N' && condServ === 'C') || (condEst === 'N' && condServ === 'R') ) { alert("COMBINACIÓN IMPOSIBLE EN CONDICIÓN DEL PACIENTE."); return; } 
               if (patientData.condicion === 'GESTANTE' && !patientData.fur) { alert("¡ATENCIÓN!\n\nHa seleccionado que la paciente es GESTANTE.\nDebe ingresar obligatoriamente la Fecha de Última Regla (FUR) para continuar."); return; }
           }
-          // Si no hay paciente, pasa directamente sin validar nada
       }
 
        if (step === 2) { 
-          // --- NUEVA LÓGICA MAESTRA: Solo validar si hay paciente seleccionado ---
           const hasPatient = patientData.paciente && patientData.paciente.trim() !== "";
 
-          // 1. VALIDACIÓN PRE-GESTACIONAL (Solo si hay paciente)
           if (hasPatient && patientData.condicion === 'GESTANTE' && !clinicalData.pPreGest && !ignorePreGestValidation) {
               setShowPreGestError(true);
               alert("¡ATENCIÓN!\n\nLa paciente es GESTANTE. Es obligatorio ingresar el PESO PRE-GESTACIONAL.\n\nSi no cuenta con esa información, haga clic en el botón 'NO TENGO ESE DATO' para continuar.");
               return; 
           }
 
-          // 2. VALIDACIÓN PERÍMETRO ABDOMINAL (12 años a más - Solo si hay paciente)
           if (hasPatient && ageObj.y >= 12 && !clinicalData.pAbd && !ignorePAbdValidation) {
               setShowPAbdError(true);
               alert(`¡ATENCIÓN!\n\nEl paciente tiene ${ageObj.y} años.\nPara mayores de 12 años es necesario registrar el PERÍMETRO ABDOMINAL.\n\nSi no tiene el dato, presione el botón "NO TENGO ESE DATO" para continuar.`);
               return; 
           }
 
-          // 3. VALIDACIÓN PERÍMETRO CEFÁLICO (0 a 5 años - Solo si hay paciente)
           if (hasPatient && ageObj.y <= 5 && !clinicalData.pCef && !ignorePCefValidation) {
               setShowPCefError(true);
               alert(`¡ATENCIÓN!\n\nEl paciente es menor de 5 años (${ageObj.y} años).\nEs necesario registrar el PERÍMETRO CEFÁLICO.\n\nSi no tiene el dato, presione el botón "NO TENGO ESE DATO" para continuar.`);
               return; 
           }
-      }     
+      }      
       if (step === 3) { 
           const newErrors = {}; let hasError = false; 
           diagnoses.forEach((d, i) => { if (!checkRowValidity(d)) { newErrors[i] = true; hasError = true; } }); 
           setDxErrors(newErrors); 
           if (hasError) { alert("ERROR: Complete todos los diagnósticos o elimine las filas vacías."); return; } 
 
-          // --- LLAMADA A LA NUEVA VALIDACIÓN ---
-          if (!validateDiagnoses()) return; // Si falla, detiene el avance
-          // ------------------------------------
+          if (!validateDiagnoses()) return; 
       } 
       setStep(s => s + 1); 
   };
@@ -1204,14 +1143,14 @@ export default function App() {
       setShowPAbdError(false);
       setIgnorePCefValidation(false);
       setShowPCefError(false);
+      setLastClinicalData({});
   };
 
   const handleSavePatient = () => { if (window.confirm("¿Desea guardar la información de este paciente en la lista?")) { const patientRecord = { patient: { ...patientData }, clinical: { ...clinicalData }, diagnoses: [...diagnoses], ageObj: { ...ageObj } }; setSavedPatients([...savedPatients, patientRecord]); 
-if (patientData.id) {updateToContinuador(patientData.id);} resetForm(); alert("Paciente guardado. Puede agregar otro o exportar el Excel."); } };
+  if (patientData.id) {updateToContinuador(patientData.id);} resetForm(); alert("Paciente guardado. Puede agregar otro o exportar el Excel."); } };
 
 const generatePDF = () => {
     try {
-        // 1. PREPARACIÓN DE DATOS
         const allPatients = [...savedPatients];
         if (patientData.paciente) { 
             allPatients.push({ patient: patientData, clinical: clinicalData, diagnoses: diagnoses, ageObj: ageObj });
@@ -1244,12 +1183,10 @@ const generatePDF = () => {
 
         const doc = new jsPDF('p', 'mm', 'a4'); 
         
-        // --- ESTILOS GENERALES ---
         doc.setFont("helvetica", "normal"); 
         doc.setDrawColor(50, 50, 50); 
-        doc.setLineWidth(0.15);       
+        doc.setLineWidth(0.15);        
 
-        // --- DIMENSIONES ---
         const mx = 5; 
         const my = 5; 
         
@@ -1264,40 +1201,31 @@ const generatePDF = () => {
             est: 5,   serv: 5,
             dx: 55,   tipo: 6,  lab: 5,   cie: 13
         };
-        // Ancho total de la tabla = Suma de todas las columnas (excepto idx que va fuera a veces o dentro)
-        // idx(6)+dia(6)+dni(14)+fin(5)+dist(28)+edad(8)+sex(5)+ant(30)+est(5)+serv(5)+dx(55)+tipo(6)+lab(15)+cie(13) = ~201mm
 
         const hHeaderSmall = 4; 
         
-        // --- HELPER CELDAS ---
         const cell = (txt, x, y, cw, ch, styles = {}) => {
             const { fill, bold, align, fontSize, border, rotate, vAlign, textColor, wrap, drawColor } = styles;
             
-            // GUARDAR COLOR DE BORDE ACTUAL
             const originalDrawColor = doc.getDrawColor(); 
 
-            // APLICAR COLOR DE BORDE PERSONALIZADO (SI EXISTE)
             if (drawColor) {
                 doc.setDrawColor(drawColor[0], drawColor[1], drawColor[2]);
             }
 
-            // FONDO
             if (fill) { 
                 doc.setFillColor(fill[0], fill[1], fill[2]); 
                 if (border === false) doc.rect(x, y, cw, ch, 'F'); 
                 else doc.rect(x, y, cw, ch, 'FD');
             } 
-            // BORDE
             else if (border !== false) { 
                 doc.rect(x, y, cw, ch); 
             }
 
-            // RESTAURAR COLOR DE BORDE ORIGINAL (Para no afectar siguientes celdas)
             if (drawColor) {
-                doc.setDrawColor(originalDrawColor); // Volver al gris oscuro por defecto
+                doc.setDrawColor(originalDrawColor); 
             }
 
-            // TEXTO
             if (txt !== undefined && txt !== null && txt !== "") { 
                 if(textColor) doc.setTextColor(textColor[0], textColor[1], textColor[2]);
                 else doc.setTextColor(0,0,0);
@@ -1314,7 +1242,7 @@ const generatePDF = () => {
 
                 if (rotate) {
                     const xPos = x + (cw / 2); 
-                    const yPos = y + ch - 1.5;   
+                    const yPos = y + ch - 1.5;    
                     doc.text(text, xPos, yPos, { angle: 90, align: 'left' }); 
                 } 
                 else if (wrap) {
@@ -1350,7 +1278,6 @@ const generatePDF = () => {
             }
         };
 
-        // --- ENCABEZADO ---
         const drawHeader = (currY) => {
             let y = currY;
             const fullW = 201; 
@@ -1360,18 +1287,14 @@ const generatePDF = () => {
             cell("Lote:", xContent, y, 20, hHeaderSmall, {bold:true, border:false, align:'left'});
             cell("MINISTERIO DE SALUD", mx, y, fullW, hHeaderSmall, {bold:true, align:'center', fontSize:8, border:false});
             
-            // --- FIRMA Y SELLO (ALINEADO A LA DERECHA Y GRIS CLARO) ---
-            // El ancho total es 201 + mx(5) = 206 (Borde derecho pagina)
-            // Queremos que termine en 206.
-            // X = mx + fullW - 40 = 5 + 201 - 40 = 166.
-            const grayColor = [180, 180, 180]; // Gris Claro
+            const grayColor = [180, 180, 180]; 
             
             cell("FIRMA Y SELLO", mx + 161, y, 40, hHeaderSmall, {
                 align:'center', 
                 border:false, 
                 fontSize:5, 
                 textColor: grayColor,
-                keepCase: true // No forzar mayúsculas si no quieres, o dejarlo
+                keepCase: true 
             });
             y += hHeaderSmall;
 
@@ -1381,7 +1304,7 @@ const generatePDF = () => {
             cell("DEL PERSONAL DE SALUD", mx + 161, y, 40, hHeaderSmall, {
                 align:'center', 
                 border:false, 
-                fontSize:5,
+                fontSize:5, 
                 textColor: grayColor
             });
             y += hHeaderSmall;
@@ -1389,10 +1312,9 @@ const generatePDF = () => {
             cell("Reg:", xContent, y, 20, hHeaderSmall, {bold:true, border:false, align:'left'});
             cell("Registro Diario de Atención y Otras Actividades de Salud", mx, y, fullW, hHeaderSmall, {align:'center', fontSize:7, border:false});
             
-            // RECUADRO FIRMA: Color de Borde GRIS CLARO
             doc.setDrawColor(180, 180, 180); 
             doc.rect(mx + 161, y - (hHeaderSmall*2), 40, hHeaderSmall*4); 
-            doc.setDrawColor(50, 50, 50); // Restaurar color oscuro
+            doc.setDrawColor(50, 50, 50); 
             
             y += hHeaderSmall + 1;
 
@@ -1420,7 +1342,7 @@ const generatePDF = () => {
             y += hMeta + 2;
 
             const hTable = 12; 
-            cx = mx;
+            cx = mx; 
             
             cell("", cx, y, w.idx, hTable, {border:false}); cx+=w.idx;
             cell("F.A", cx, y, w.dia, hTable, {fill:bgHead, bold:true, align:'center'}); cx+=w.dia;
@@ -1440,7 +1362,6 @@ const generatePDF = () => {
             return y + hTable;
         };
 
-        // --- BUCLE PRINCIPAL ---
         const BLOCKS_PER_PAGE = 11;
         const totalPages = Math.ceil(visualBlocks.length / BLOCKS_PER_PAGE) || 1;
 
@@ -1464,7 +1385,6 @@ const generatePDF = () => {
                 
                 let cx = mx;
                 
-                // --- FILA 1 ---
                 const idxText = (block && isFirst) ? block.index : "";
                 cell(idxText, cx, y, w.idx, hBlock, {align:'center', bold:true, vAlign:'middle', border:false, fontSize:8}); 
                 cx += w.idx;
@@ -1488,7 +1408,6 @@ const generatePDF = () => {
                     const wFURVal = w.lab + w.cie;
                     cell(p.fur, cx, y, wFURVal, hRowName, {align:'center', fill:[240,240,240], border:true, bold:true, fontSize:7}); 
                 } else {
-                    // CONTINUACIÓN: AHORA CON BORDES (border: true) PARA MANTENER LA REJILLA
                     let cxEmpty = cx;
                     cell("", cxEmpty, y, w.dia + w.dni + w.fin + w.dist, hRowName, {border: true}); cxEmpty += (w.dia + w.dni + w.fin + w.dist);
                     cell("", cxEmpty, y, w.edad + w.sex, hRowName, {border: true}); cxEmpty += (w.edad + w.sex);
@@ -1501,7 +1420,6 @@ const generatePDF = () => {
                 const yData = y + hRowName; 
                 const hDataBlock = hRowData * 3; 
 
-                // --- FILAS 2, 3, 4 ---
                 cx = mx + w.idx; 
 
                 cell(p.fecAtencion ? p.fecAtencion.split('-')[2] : "", cx, yData, w.dia, hDataBlock, {align:'center', vAlign:'middle', fontSize:7, bold:false}); 
@@ -1588,7 +1506,7 @@ const generatePDF = () => {
         }
 
         doc.save(`HIS_${adminData.mes}_${allPatients.length}_PACIENTES_OFICIAL.pdf`);
-	    } catch(err) { 
+    } catch(err) { 
         alert("Error al generar PDF: " + err.message);
         console.error(err);
     }
@@ -1643,7 +1561,6 @@ const generatePDF = () => {
         
         let currentRow = 9; let globalBlockIndex = 1; let blocksOnCurrentPage = 0; let patientHeaderIndices = []; let pageStartRows = [0]; const rowBreaks = [];
 
-        // --- FUNCIÓN PARA AGREGAR BLOQUES (CON DATOS O VACÍOS) ---
         const addBlockToSheet = (rec = null) => {
              const isEmpty = !rec;
              const p = rec ? rec.patient : {};
@@ -1657,21 +1574,19 @@ const generatePDF = () => {
                  for (let i = 0; i < totalDxs; i += 3) { chunks.push(dxs.slice(i, i + 3)); } 
                  if (chunks.length === 0) chunks.push([{},{},{}]);
              } else {
-                 chunks.push([{},{},{}]); // Un solo chunk de 3 filas vacías
+                 chunks.push([{},{},{}]); 
              }
 
              for(let k = 0; k < chunks.length; k++) {
                 const chunkDxs = chunks[k];
                 while(chunkDxs.length < 3) chunkDxs.push({});
 
-                // Control de Paginación
                 if (blocksOnCurrentPage === 11) {
                     ws_data.push([""]); merges.push({ s: {r:currentRow, c:0}, e: {r:currentRow, c:18} });
                     rowBreaks.push(currentRow); currentRow++; pageStartRows.push(currentRow);
                     insertHeaderBlock(currentRow); currentRow += 9; blocksOnCurrentPage = 0;
                 }
 
-                // FILA DEL PACIENTE (Nombre, FN, FUR)
                 const patientRow = new Array(19).fill("");
                 patientRow[0] = globalBlockIndex;
                 if (k === 0) {
@@ -1681,25 +1596,22 @@ const generatePDF = () => {
                         if (c.dosaje) patientRow[10] = `F.U.DOSAJE: ${c.dosaje}`; 
                         if (p.fur) patientRow[16] = p.fur;
                     }
-                    // ETIQUETAS SIEMPRE VISIBLES (HIS 1.6)
                     patientRow[6] = "F.N:"; 
                     patientRow[14] = "FUR:";
                 }
                 ws_data.push(patientRow);
                 patientHeaderIndices.push(currentRow);
 
-                // Merges de la fila de paciente
-                merges.push({ s: {r:currentRow, c:1}, e: {r:currentRow, c:5} }); // B:F
-                merges.push({ s: {r:currentRow, c:6}, e: {r:currentRow, c:7} }); // G:H
-                merges.push({ s: {r:currentRow, c:8}, e: {r:currentRow, c:9} }); // I:J
-                merges.push({ s: {r:currentRow, c:10}, e: {r:currentRow, c:13} }); // K:N
-                merges.push({ s: {r:currentRow, c:14}, e: {r:currentRow, c:15} }); // O:P
-                merges.push({ s: {r:currentRow, c:16}, e: {r:currentRow, c:18} }); // Q:S
-                merges.push({ s: {r:currentRow, c:0}, e: {r:currentRow+3, c:0} }); // Col A
+                merges.push({ s: {r:currentRow, c:1}, e: {r:currentRow, c:5} }); 
+                merges.push({ s: {r:currentRow, c:6}, e: {r:currentRow, c:7} }); 
+                merges.push({ s: {r:currentRow, c:8}, e: {r:currentRow, c:9} }); 
+                merges.push({ s: {r:currentRow, c:10}, e: {r:currentRow, c:13} }); 
+                merges.push({ s: {r:currentRow, c:14}, e: {r:currentRow, c:15} }); 
+                merges.push({ s: {r:currentRow, c:16}, e: {r:currentRow, c:18} }); 
+                merges.push({ s: {r:currentRow, c:0}, e: {r:currentRow+3, c:0} }); 
 
                 currentRow++;
 
-                // 3 FILAS DE DIAGNÓSTICOS
                 for(let i = 0; i < 3; i++) {
                     const d = chunkDxs[i] || {}; 
                     const row = new Array(19).fill(""); 
@@ -1709,7 +1621,6 @@ const generatePDF = () => {
                         else if (i === 1) { row[2] = p.hc; row[4] = p.direccion; row[5] = (age.m || age.m === 0) ? `${age.m} meses` : ''; row[7] = "Peso"; row[8] = (k===0 ? parseFloat(c.peso)||'' : ''); row[9] = "P.Abd"; row[10] = (k===0 ? parseFloat(c.pAbd)||'' : ''); } 
                         else if (i === 2) { row[2] = p.condicion || "-"; row[4] = "CENTRO POBLADO"; row[5] = (age.d || age.d === 0) ? `${age.d} días` : ''; row[7] = "HB"; row[8] = (k===0 ? parseFloat(c.hb)||'' : ''); row[9] = "P.Preg"; }
                     } else {
-                        // Etiquetas fijas en bloques vacíos
                         if (i === 0) { row[7] = "Talla"; row[9] = "P.C."; }
                         else if (i === 1) { row[7] = "Peso"; row[9] = "P.Abd"; }
                         else if (i === 2) { row[7] = "HB"; row[9] = "P.Preg"; }
@@ -1722,10 +1633,8 @@ const generatePDF = () => {
              }
         };
 
-        // 1. Renderizar pacientes reales
         allPatients.forEach(rec => addBlockToSheet(rec));
 
-        // 2. Rellenar con bloques vacíos hasta completar la página (múltiplo de 11)
         while (blocksOnCurrentPage > 0 && blocksOnCurrentPage < 11) {
             addBlockToSheet(null);
         }
@@ -1783,23 +1692,21 @@ const generatePDF = () => {
                 if (currentPh !== -1) { 
                     const offset = R - currentPh; 
                     if (offset === 0) { 
-                        // --- ESTILOS DE LA FILA DEL NOMBRE (HIS 1.6) ---
-                        // Sin color de fondo general, sin bordes (solo alineación)
                         ws[cell_ref].s = { alignment: { vertical: "center" } }; 
                         
-                        if (C === 1) { // Nombre Paciente (B:F)
+                        if (C === 1) { 
                              ws[cell_ref].s = { ...ws[cell_ref].s, font: { name: "Bahnschrift SemiBold", sz: 11, bold: true }, alignment: { horizontal: "left", vertical: "center" } }; 
                         } 
-                        if (C === 6) { // Etiqueta F.N: (G:H)
+                        if (C === 6) { 
                              ws[cell_ref].s = { ...ws[cell_ref].s, font: { name: "Arial", sz: 9, bold: true }, alignment: { horizontal: "right", vertical: "center" } };
                         }
-                        if (C === 8) { // Valor F.N (I:J) -> FONDO GRIS
+                        if (C === 8) { 
                              ws[cell_ref].s = { ...ws[cell_ref].s, font: { name: "Arial", sz: 10, bold: false }, alignment: { horizontal: "center", vertical: "center" }, fill: { fgColor: { rgb: "F2F2F2" } }, border: thinBorder };
                         }
-                        if (C === 14) { // Etiqueta FUR (O:P)
+                        if (C === 14) { 
                              ws[cell_ref].s = { ...ws[cell_ref].s, font: { name: "Arial", sz: 9, bold: true }, alignment: { horizontal: "right", vertical: "center" } };
                         }
-                        if (C === 16) { // Valor FUR (Q:S) -> FONDO GRIS
+                        if (C === 16) { 
                              ws[cell_ref].s = { ...ws[cell_ref].s, font: { name: "Arial", sz: 10 }, alignment: { horizontal: "center", vertical: "center" }, fill: { fgColor: { rgb: "F2F2F2" } }, border: thinBorder };
                         }
 
@@ -1820,19 +1727,18 @@ const generatePDF = () => {
         }
         XLSX.utils.book_append_sheet(wb, ws, "HIS_Export");
         XLSX.writeFile(wb, `HIS_${adminData.mes}_${allPatients.length}_PACIENTES.xlsx`);
-	
+    
         setTimeout(() => {
             if(window.confirm("✅ Excel generado con éxito.\n\n¿Desea LIMPIAR la lista para ingresar un nuevo lote de pacientes?")) {
                 setSavedPatients([]); 
                 resetForm();            
                 setStep(1);
-                setIsCalendarOpen(true); // Abre calendario tras reset            
+                setIsCalendarOpen(true);            
             }
         }, 1000); 
     } catch(err) { alert("Error al exportar Excel: " + err.message); }  
   };
 
-// --- PANTALLA DE LOGIN (PRIMERA CAPA DE SEGURIDAD) ---
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen w-full bg-slate-900 flex items-center justify-center p-4">
@@ -1841,8 +1747,8 @@ const generatePDF = () => {
             <div className="bg-blue-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg text-white">
               <Siren size={32} />
             </div>
-            <h1 className="text-2xl font-black text-slate-800">HIS 2025</h1>
-            <p className="text-slate-400 text-xs font-bold uppercase">Acceso Profesional de Salud</p>
+            <h1 className="text-2xl font-black text-slate-800">SMART HIS</h1>
+            <p className="text-slate-400 text-xs font-bold uppercase">Acceso Personal de Salud</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
@@ -1857,12 +1763,10 @@ const generatePDF = () => {
                 autoFocus
               />
             </div>
-            {/* --- NUEVO CAMPO CONTRASEÑA CON OJITO --- */}
             <div>
               <label className="block text-xs font-bold text-slate-500 ml-1 mb-1">CONTRASEÑA</label>
               <div className="relative">
                 <input 
-                  /* Aquí cambiamos dinámicamente entre 'text' y 'password' */
                   type={showPassword ? "text" : "password"} 
                   className="w-full h-12 px-4 pr-12 rounded-xl border-2 border-slate-200 font-bold text-slate-700 focus:border-blue-500 outline-none transition-all"
                   placeholder="••••••••"
@@ -1873,7 +1777,7 @@ const generatePDF = () => {
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition-colors p-1"
-                  tabIndex="-1" // Para que no moleste al navegar con Tab
+                  tabIndex="-1" 
                 >
                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
@@ -1906,12 +1810,10 @@ const generatePDF = () => {
           <div className="bg-[#0F172A] px-10 py-6 flex justify-between items-end">
             <div><h1 className="text-2xl font-bold text-white tracking-wide">REGISTRO HIS</h1><p className="text-slate-400 text-xs mt-1">Configuración de Sesión</p></div>
             <div className="flex gap-2">
-              {/* Botones de carga para Pacientes, CIE y Personal */}
               <div className="relative group"><input type="file" id="filePac" className="hidden" onChange={(e) => handleFileUpload(e, 'pacientes')} /><label htmlFor="filePac" className={`cursor-pointer px-5 py-2.5 rounded-xl border ${dbPacientes.length ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-xs font-bold transition-all shadow-lg`}><Database size={16}/> {dbPacientes.length ? `BD OK (${dbPacientes.length})` : "Cargar Pacientes"}</label></div>
               <div className="relative group"><input type="file" id="fileCie" className="hidden" onChange={(e) => handleFileUpload(e, 'cie10')} /><label htmlFor="fileCie" className={`cursor-pointer px-5 py-2.5 rounded-xl border ${dbCie10.length ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-xs font-bold transition-all shadow-lg`}><FileSpreadsheet size={16}/> {dbCie10.length ? `BD OK (${dbCie10.length})` : "Cargar CIE-10"}</label></div>
               <div className="relative group"><input type="file" id="filePersonal" className="hidden" onChange={(e) => handleFileUpload(e, 'personal')} /><label htmlFor="filePersonal" className={`cursor-pointer px-5 py-2.5 rounded-xl border ${dbPersonal.length ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-xs font-bold transition-all shadow-lg`}><Users size={16}/> {dbPersonal.length ? `Personal OK` : "Cargar Personal"}</label></div>
               
-              {/* NUEVO: Botón para limpiar IndexedDB */}
               {dbStatus === 'ready' && (
                   <button onClick={clearDatabase} className="bg-red-500 hover:bg-red-600 text-white px-3 py-2.5 rounded-xl border border-red-400 flex items-center gap-2 text-xs font-bold transition-all shadow-lg ml-2" title="Borrar Base de Datos Local de Pacientes">
                       <Trash2 size={16}/> Borrar BD
@@ -1919,7 +1821,6 @@ const generatePDF = () => {
               )}
             </div>
           </div>
-      {/* --- INICIO DEL NUEVO FORMULARIO CON CAMPOS BLOQUEADOS --- */}
           <div className="p-10 grid grid-cols-1 md:grid-cols-4 gap-6 bg-white">
             <div className="flex flex-col gap-1"><label className={cfgLabelStyle}>Año</label><select name="anio" className={cfgInputStyle} value={adminData.anio} onChange={handleAdmin}><option>2025</option><option>2026</option></select></div>
             <div className="flex flex-col gap-1"><label className={cfgLabelStyle}>Mes</label><select name="mes" className={cfgInputStyle} value={adminData.mes} onChange={handleAdmin}>{MESES.map(m=><option key={m}>{m}</option>)}</select></div>
@@ -1927,29 +1828,25 @@ const generatePDF = () => {
             <div className="flex flex-col gap-1"><label className={cfgLabelStyle}>Turno</label><select name="turno" className={cfgInputStyle} value={adminData.turno} onChange={handleAdmin}><option>MAÑANA</option><option>TARDE</option><option>NOCHE</option></select></div>
             <div className="flex flex-col gap-1"><label className={cfgLabelStyle}>UPS</label><select name="ups" className={cfgInputStyle} value={adminData.ups} onChange={handleAdmin}>{UPS_LIST.map(u=><option key={u}>{u}</option>)}</select></div>
             
-            {/* AQUI ESTAN LOS CAMBIOS: DNI Y NOMBRE BLOQUEADOS */}
             <div className="flex flex-col gap-1">
                 <label className={cfgLabelStyle}>DNI Responsable</label>
                 <input 
                     name="dniResp" 
-                    // Se agrega fondo gris (bg-slate-200), cursor de prohibido y bordes
                     className={cfgInputStyle + " bg-slate-200 text-slate-600 cursor-not-allowed border-slate-300 shadow-inner"} 
                     value={adminData.dniResp} 
-                    readOnly={true} // ESTO HACE QUE NO SE PUEDA ESCRIBIR
+                    readOnly={true} 
                 />
             </div>
             <div className="md:col-span-2 flex flex-col gap-1">
                 <label className={cfgLabelStyle}>Nombre Responsable</label>
                 <input 
                     name="nombreResp" 
-                    // Se agrega fondo gris, cursor de prohibido y bordes
                     className={cfgInputStyle + " uppercase bg-slate-200 text-slate-600 cursor-not-allowed border-slate-300 shadow-inner"} 
                     value={adminData.nombreResp} 
-                    readOnly={true} // ESTO HACE QUE NO SE PUEDA ESCRIBIR
+                    readOnly={true} 
                 />
             </div>
           </div>
-          {/* --- FIN DEL FORMULARIO --- */}
           <div className="bg-slate-50 px-10 py-6 flex justify-end border-t border-slate-100">
             <button onClick={() => setAdminData({...adminData, isConfigured: true})} className="bg-[#0F172A] hover:bg-slate-800 text-white px-8 py-3 rounded-xl shadow-xl font-bold flex items-center gap-3 transition-transform hover:scale-[1.02] text-sm">INGRESAR AL SISTEMA <ArrowRight size={18}/></button>
           </div>
@@ -1970,10 +1867,7 @@ const generatePDF = () => {
 
   return (
     <div className="h-screen w-full bg-slate-100 font-sans flex flex-col overflow-hidden">
-      {/* --- CINTILLO SUPERIOR MEJORADO --- */}
       <div className="h-16 bg-[#0F172A] text-white flex justify-between items-center px-6 shadow-md z-20 shrink-0 border-b border-slate-800">
-        
-        {/* PARTE IZQUIERDA: LOGO + ESTABLECIMIENTO + TURNO */}
         <div className="flex items-center gap-4">
             <div className="bg-blue-600 p-2 rounded-xl shadow-lg shadow-blue-900/50">
                 <Activity size={20} className="text-white" />
@@ -1988,7 +1882,6 @@ const generatePDF = () => {
             </div>
         </div>
 
-        {/* PARTE DERECHA: USUARIO GRANDE + BOTÓN SALIR */}
         <div className="flex items-center gap-6">
             <div className="flex flex-col items-end">
                 <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">USUARIO ACTIVO</span>
@@ -2022,7 +1915,6 @@ const generatePDF = () => {
             </div>
 
             <div className="flex-grow overflow-y-auto p-6 bg-[#FAFAFA] no-scrollbar relative" ref={dxListRef}>
-              {/* --- MODAL DE ALERTA DE VALIDACIÓN (BONITO, SIN IMAGEN) --- */}
               {validationAlert.isOpen && (
                 <div className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-300">
                     <div className={`rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border-2 animate-in zoom-in duration-300 bg-white ${validationAlert.type === 'GESTANTE' ? 'border-pink-200' : 'border-orange-200'}`}>
@@ -2047,14 +1939,10 @@ const generatePDF = () => {
                         <div className="px-8 py-5 bg-slate-50 border-t border-slate-100 flex justify-end">
                             <button 
                                 onClick={() => {
-                                    // 1. Primero cerramos la alerta (lo que ya hacías)
                                     setValidationAlert({ ...validationAlert, isOpen: false });
-                                    
-                                    // 2. AQUÍ ESTÁ EL CÓDIGO DEL PASO 3:
-                                    // Si el error es "LAB_MISSING" (el que definimos para la Hb), redirigimos.
                                     if (validationAlert.type === 'LAB_MISSING') {
-                                        setStep(2);           // Nos lleva a la ventana "Datos Clínicos"
-                                        setShowHbError(true); // Pone el input en ROJO
+                                        setStep(2);           
+                                        setShowHbError(true); 
                                     }
                                 }} 
                                 className={`px-8 py-3 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-sm tracking-wide text-white ${validationAlert.type === 'GESTANTE' ? 'bg-pink-500 hover:bg-pink-600' : 'bg-orange-500 hover:bg-orange-600'}`}
@@ -2065,7 +1953,6 @@ const generatePDF = () => {
                     </div>
                 </div>
               )}
-              {/* --------------------------------------------------------- */}
 
               {isCalendarOpen && step === 1 && (<div className="absolute top-0 left-0 w-full h-full bg-black/10 flex items-center justify-center z-50 p-4" onClick={() => setIsCalendarOpen(false)}><div ref={calendarRef} onClick={(e) => e.stopPropagation()}><SimpleCalendar selectedDate={patientData.fecAtencion} onSelectDate={handleDateSelect} onClose={() => setIsCalendarOpen(false)} themeColor={stepColors[0]} /></div></div>)}
               
@@ -2097,7 +1984,6 @@ const generatePDF = () => {
                   </div>
               )}
 
-              {/* --- MODAL ALERTA ADOLESCENTE (12-17 AÑOS) --- */}
               {showAdolescentModal && (
                 <div className="absolute inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-300">
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-amber-200 animate-in zoom-in duration-300">
@@ -2129,7 +2015,6 @@ const generatePDF = () => {
                 </div>
               )}
 
-              {/* --- MODAL DE ADVERTENCIA DE JURISDICCIÓN --- */}
               {showJurisdictionModal && (
                 <div className="absolute inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-300">
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-red-100 animate-in zoom-in duration-300">
@@ -2159,10 +2044,8 @@ const generatePDF = () => {
                                     {showSuggestions && (<div className="absolute z-50 w-full bg-white mt-2 border border-slate-100 rounded-xl shadow-2xl max-h-64 overflow-y-auto p-2 no-scrollbar">{suggestions.map((p, idx) => (<div key={idx} onMouseDown={() => selectPatient(p)} className={`px-4 py-3 cursor-pointer rounded-xl group transition-colors mb-1 ${getTheme(1).bgHover}`}><div className={`font-bold text-sm group-hover:${getTheme(1).text}`}>{p.nombre}</div><div className="text-[10px] text-slate-400 flex gap-2 mt-1 font-bold"><span className="bg-slate-100 px-2 py-0.5 rounded text-slate-500">DNI: {p.dni}</span><span className="bg-slate-100 px-2 py-0.5 rounded text-slate-500">HC: {p.hc}</span><span className="bg-slate-100 px-2 py-0.5 rounded text-slate-500">Est: {p.estOrigen}</span></div></div>))}</div>)}
                                 </div>
                                 <div className="flex gap-2">
-                                    {/* Botón existente de Nuevo Paciente */}
                                     <button onClick={() => setIsManualModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white w-12 h-12 rounded-xl flex items-center justify-center shadow-lg transition-transform active:scale-95" title="Registrar Paciente Nuevo"><UserPlus size={24}/></button>
                                     
-                                    {/* --- NUEVO BOTÓN SEGUIMIENTO CRED --- */}
                                     <button onClick={() => setShowCredModal(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 h-12 rounded-xl flex items-center justify-center shadow-lg transition-transform active:scale-95 font-bold text-xs gap-2" title="Ver Excel CRED">
                                         <FileSpreadsheet size={20}/> VER SEGUIMIENTO CRED
                                     </button>
@@ -2172,8 +2055,6 @@ const generatePDF = () => {
                         <div className="w-48 shrink-0"><label className={getLabelStyle(1)}>F. Atención</label><div className="relative"><input type="date" name="fecAtencion" className={getDateInputStyle(1) + ` h-12 ${getTheme(1).bgLight} text-center`} value={patientData.fecAtencion} onChange={handlePatient} /></div></div>
                     </div>
                   </div>
-                   {/* --- BARRA DE BOTONES DE SEGUIMIENTO (SCROLL HORIZONTAL) --- */}
-		   {/* --- BARRA DE BOTONES DE SEGUIMIENTO (ACTUALIZADA CON DIENTE 🦷) --- */}
                   <div className="mb-4">
                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 ml-1">Paneles de Seguimiento</p>
                       <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
@@ -2185,7 +2066,6 @@ const generatePDF = () => {
                               { id: 'HIPER', label: 'HIPERTENSOS', icon: <Heart size={16}/>, color: 'orange' },
                               { id: 'DIABETES', label: 'DIABETES', icon: <Droplets size={16}/>, color: 'blue' },
                               { id: 'PSICOLOGIA', label: 'PSICOLOGÍA', icon: <Brain size={16}/>, color: 'indigo' },
-                              // AQUÍ ESTÁ EL CAMBIO: Usamos un emoji de diente dentro de un span
                               { id: 'BUCAL', label: 'ODONTO', icon: <span className="text-base leading-none grayscale">🦷</span>, color: 'cyan' },
                               { id: 'VACUNAS', label: 'VACUNAS', icon: <Syringe size={16}/>, color: 'purple' },
                           ].map((item) => (
@@ -2204,19 +2084,18 @@ const generatePDF = () => {
                           ))}
                       </div>
                   </div>
-		   
-                  {/* --- VISOR DESPLEGABLE (SE MUESTRA SOLO SI HAY UNO ACTIVO) --- */}
+           
                   {activeFollowUp && (
                       <InlineFollowUpViewer 
                           type={activeFollowUp} 
                           data={followUpData[activeFollowUp]} 
                           onClose={() => setActiveFollowUp(null)}
                           onFileUpload={handleFollowUpUpload}
+                          externalFilter={searchTerm}
                       />
                   )}
 
                   <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
-                    <div className="flex justify-end mb-2">{isPatientDataLocked ? (<button onClick={() => setIsPatientDataLocked(false)} className={`bg-slate-100 hover:bg-slate-200 text-${stepColors[0]}-600 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors`}><Edit size={16}/> EDITAR DATOS (Desbloquear)</button>) : (<button onClick={() => setIsPatientDataLocked(true)} className={`bg-red-100 hover:bg-red-200 text-red-600 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors`}><X size={16}/> BLOQUEAR</button>)}</div>
                     
                     <div className="grid grid-cols-12 gap-2 items-end border-b pb-4 border-slate-100 mb-2 bg-slate-50/50 p-2 rounded-xl">
                         <div className="col-span-3 flex flex-col gap-1">
@@ -2230,7 +2109,6 @@ const generatePDF = () => {
                         </div>
                         <div className="col-span-3 flex flex-col gap-1">
                             <label className={getLabelStyle(1)}>Cond. Servicio</label>
-                            {/* AQUI SE APLICA LA NUEVA VALIDACIÓN VISUAL (isInvalidCombo) */}
                             <select name="condServ" className={getSelectStyle(patientData.condServ, isInvalidCombo)} value={patientData.condServ} onChange={handlePatient}>
                                 <option value="">SELECCIONE...</option>
                                 <option value="N">NUEVO</option>
@@ -2238,10 +2116,18 @@ const generatePDF = () => {
                                 <option value="R">REINGRESANTE</option>
                             </select>
                         </div>
-                        <div className="col-span-6 text-[10px] text-slate-400 italic flex items-center h-10 px-2">
-                            * Estos campos son obligatorios para continuar. (Rojo=Falta, Verde=OK)
-                        </div>
+                    <div className="col-span-6 flex justify-end pb-[2px]">
+                        {isPatientDataLocked ? (
+                            <button onClick={() => setIsPatientDataLocked(false)} className={`bg-white border-2 border-slate-200 hover:border-blue-400 text-blue-600 hover:bg-blue-50 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-sm h-[38px]`}>
+                                <Edit size={16}/> EDITAR DATOS (Desbloquear)
+                            </button>
+                        ) : (
+                            <button onClick={() => setIsPatientDataLocked(true)} className={`bg-white border-2 border-red-200 hover:border-red-400 text-red-600 hover:bg-red-50 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-sm h-[38px]`}>
+                                <X size={16}/> BLOQUEAR DATOS
+                            </button>
+                        )}
                     </div>
+                   </div>
 
                     <div className="grid grid-cols-12 gap-2 items-end">
                       <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>DNI</label><input name="dni" className={getLockedInputStyle(1)} value={patientData.dni} onChange={handlePatient} readOnly={true} /></div>
@@ -2267,223 +2153,105 @@ const generatePDF = () => {
               )}
               
               {step === 2 && (
-                <div className="w-full max-w-[98%] mx-auto">
+                <div className="w-full lg:max-w-[65%] mx-auto transition-all duration-300">
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                    
-                    {/* COLUMNA 1: ANTROPOMETRÍA */}
-                    <div className={`bg-white p-4 rounded-2xl shadow-sm border border-slate-200`}>
-                      <h3 className={`font-extrabold mb-4 flex items-center gap-2 text-lg ${getTheme(2).text}`}><Activity size={24}/> Antropometría</h3>
-                      <div className="space-y-4">
-                        {/* TALLA (MOVIDO AL INICIO) */}
-                        <div className="flex flex-col gap-1"><label className={getLabelStyle(2)}>Talla (30 - 200 cm)</label><input name="talla" type="text" className={borderlessInputStyle} value={clinicalData.talla} onChange={(e) => handleNumericInput(e, 30, 200)} /></div>
-                        {/* PESO (MOVIDO AL SEGUNDO LUGAR) */}
-                        <div className="flex flex-col gap-1"><label className={getLabelStyle(2)}>Peso (0.8 - 180 kg)</label><input name="peso" type="text" className={borderlessInputStyle} value={clinicalData.peso} onChange={(e) => handleNumericInput(e, 0.8, 180)} /></div>
-                        
-			{/* --- CAMPO P. ABDOMINAL (Bloqueado si < 12 años) --- */}
-                        <div className="flex flex-col gap-1">
-                            <div className="flex justify-between items-center">
-                                <label className={getLabelStyle(2)}>P. Abd (30 - 200 cm)</label>
-                                {/* Botón: Solo aparece si tiene 12+ años (campo habilitado) */}
-                                {ageObj.y >= 12 && !clinicalData.pAbd && !ignorePAbdValidation && (
-                                    <button 
-                                        onClick={() => { setIgnorePAbdValidation(true); setShowPAbdError(false); }}
-                                        className="text-[9px] font-black bg-slate-200 text-slate-600 px-2 py-0.5 rounded hover:bg-slate-300 hover:text-slate-800 transition-colors uppercase tracking-tighter"
-                                    >
-                                        No tengo ese dato
-                                    </button>
-                                )}
-                            </div>
-                            <input 
-                                name="pAbd" 
-                                type="text" 
-                                // PROPIEDAD PARA BLOQUEAR REALMENTE EL CAMPO
-                                disabled={ageObj.y < 12} 
-                                
-                                className={`${borderlessInputStyle} transition-all duration-300 
-                                    ${ageObj.y < 12 
-                                        ? 'bg-slate-200 cursor-not-allowed text-slate-400 border-slate-200 shadow-none' // ESTILO BLOQUEADO (Gris oscuro)
-                                        : ignorePAbdValidation 
-                                            ? 'bg-emerald-50 border-2 border-emerald-500 text-emerald-700 font-bold' 
-                                            : showPAbdError && !clinicalData.pAbd
-                                                ? 'bg-red-50 border-2 border-red-500 text-red-900 animate-pulse' 
-                                                : 'bg-white'
-                                    }`
-                                } 
-                                value={clinicalData.pAbd} 
-                                onChange={(e) => {
-                                    handleNumericInput(e, 30, 200);
-                                    if(e.target.value) { setShowPAbdError(false); setIgnorePAbdValidation(false); }
-                                }} 
-                                placeholder={ageObj.y < 12 ? "NO APLICA POR EDAD" : (ignorePAbdValidation ? "OMITIDO" : "")}
-                            />
-                        </div>
-			
-                        {/* --- CAMPO P. CEFÁLICO (Bloqueado si > 5 años) --- */}
-                        <div className="flex flex-col gap-1">
-                            <div className="flex justify-between items-center">
-                                <label className={getLabelStyle(2)}>P. Cefálico (20 - 60 cm)</label>
-                                {/* Botón: Solo aparece si tiene 0-5 años (campo habilitado) */}
-                                {ageObj.y <= 5 && !clinicalData.pCef && !ignorePCefValidation && (
-                                    <button 
-                                        onClick={() => { setIgnorePCefValidation(true); setShowPCefError(false); }}
-                                        className="text-[9px] font-black bg-slate-200 text-slate-600 px-2 py-0.5 rounded hover:bg-slate-300 hover:text-slate-800 transition-colors uppercase tracking-tighter"
-                                    >
-                                        No tengo ese dato
-                                    </button>
-                                )}
-                            </div>
-                            <input 
-                                name="pCef" 
-                                type="text"
-                                // PROPIEDAD PARA BLOQUEAR REALMENTE EL CAMPO
-                                disabled={ageObj.y > 5} 
-
-                                className={`${borderlessInputStyle} transition-all duration-300 
-                                    ${ageObj.y > 5 
-                                        ? 'bg-slate-200 cursor-not-allowed text-slate-400 border-slate-200 shadow-none' // ESTILO BLOQUEADO (Gris oscuro)
-                                        : ignorePCefValidation 
-                                            ? 'bg-emerald-50 border-2 border-emerald-500 text-emerald-700 font-bold' 
-                                            : showPCefError && !clinicalData.pCef
-                                                ? 'bg-red-50 border-2 border-red-500 text-red-900 animate-pulse' 
-                                                : 'bg-white'
-                                    }`
-                                } 
-                                value={clinicalData.pCef} 
-                                onChange={(e) => {
-                                    handleNumericInput(e, 20, 60);
-                                    if(e.target.value) { setShowPCefError(false); setIgnorePCefValidation(false); }
-                                }} 
-                                placeholder={ageObj.y > 5 ? "NO APLICA POR EDAD" : (ignorePCefValidation ? "OMITIDO" : "")}
-                            />
-                        </div>
-			                        
-                        {/* CAMPO HEMOGLOBINA AGREGADO */}
-                        {/* --- CAMPO HEMOGLOBINA INTELIGENTE (PASO 4) --- */}
-<div className="flex flex-col gap-1">
-     <label className={getLabelStyle(2)}>Hemoglobina (0 - 21 g/dL)</label>
-     <input 
-        name="hb" 
-        type="text" 
-        // LÓGICA DE COLORES:
-        // 1. ROJO: Si hay error activado y el campo está vacío.
-        // 2. VERDE: Si tiene algún dato escrito.
-        // 3. BLANCO: Estado normal.
-        className={`${borderlessInputStyle} transition-all duration-300
-            ${showHbError && !clinicalData.hb 
-                ? 'bg-red-50 border-2 border-red-500 text-red-900 animate-pulse placeholder-red-300' 
-                : clinicalData.hb 
-                    ? 'bg-emerald-50 border-2 border-emerald-500 text-emerald-700 font-bold' 
-                    : ''
-            }`
-        } 
-        value={clinicalData.hb} 
-        onChange={(e) => {
-            handleNumericInput(e, 0, 21); // Mantiene tu validación de números
-        }}
-        placeholder={showHbError ? "¡REQUERIDO!" : ""}
-    />
-    {/* Mensaje de error rojo debajo si hace falta */}
-    {showHbError && !clinicalData.hb && (
-        <span className="text-[9px] font-bold text-red-500 mt-1 animate-bounce">
-            * Ingrese valor SIN DESCUENTO
-        </span>
-    )}
-</div>
-{/* ----------------------------------------------- */}
-			
-			{/* --- CAMPO PESO PRE-GESTACIONAL CON VALIDACIÓN --- */}
-                        <div className="flex flex-col gap-1">
-                            <div className="flex justify-between items-center">
-                                <label className={getLabelStyle(2)}>Peso Pre-Gest. (Solo Gestante)</label>
-                                {/* Botón pequeño para omitir validación */}
-                                {patientData.condicion === 'GESTANTE' && !clinicalData.pPreGest && !ignorePreGestValidation && (
-                                    <button 
-                                        onClick={() => {
-                                            setIgnorePreGestValidation(true);
-                                            setShowPreGestError(false);
-                                        }}
-                                        className="text-[9px] font-black bg-slate-200 text-slate-600 px-2 py-0.5 rounded hover:bg-slate-300 hover:text-slate-800 transition-colors uppercase tracking-tighter"
-                                        title="Clic para omitir este dato y continuar"
-                                    >
-                                        No tengo ese dato
-                                    </button>
-                                )}
-                            </div>
-                            
-                            <input 
-                                name="pPreGest" 
-                                type="text" 
-                                className={`${borderlessInputStyle} transition-all duration-300 
-                                    ${patientData.condicion !== 'GESTANTE' 
-                                        ? 'bg-slate-100 cursor-not-allowed opacity-50' 
-                                        : ignorePreGestValidation 
-                                            ? 'bg-emerald-50 border-2 border-emerald-500 text-emerald-700 shadow-emerald-100' // Estilo VERDE (Validado/Omitido)
-                                            : showPreGestError && !clinicalData.pPreGest
-                                                ? 'bg-red-50 border-2 border-red-500 text-red-900 animate-pulse' // Estilo ROJO (Error)
-                                                : 'bg-white' // Estilo Normal
-                                    }`
-                                } 
-                                value={clinicalData.pPreGest || ''} 
-                                onChange={(e) => {
-                                    handleNumericInput(e, 30, 150);
-                                    if(e.target.value) {
-                                        setShowPreGestError(false); // Quitar error si escribe
-                                        setIgnorePreGestValidation(false); // Resetear ignorar si escribe
-                                    }
-                                }} 
-                                disabled={patientData.condicion !== 'GESTANTE'} 
-                                placeholder={patientData.condicion === 'GESTANTE' && ignorePreGestValidation ? "DATO OMITIDO" : ""}
-                            />
-                            {/* Mensaje de error pequeño debajo si aplica */}
-                            {showPreGestError && !clinicalData.pPreGest && !ignorePreGestValidation && (
-                                <span className="text-[9px] font-bold text-red-500 animate-bounce mt-1">
-                                    * Dato requerido para Gestantes
-                                </span>
-                            )}
-                        </div>
-                        {/* ------------------------------------------------- */}
-                      </div>
-                    </div>
-                    
-                    {/* COLUMNA 2: BOTÓN PARA ABRIR LA CALCULADORA MODAL (Reemplaza la columna central anterior) */}
-                    <div className="bg-purple-50/50 p-6 rounded-2xl border border-purple-100 flex flex-col justify-center items-center h-full min-h-[300px]">
-                        <Calculator size={48} className="text-purple-600 mb-4" />
-                        <h3 className="text-purple-800 font-extrabold text-xl mb-2 text-center">Evaluación de Anemia</h3>
-                        <p className="text-purple-600 text-xs mb-6 text-center max-w-[200px] font-medium">
-                            Use la herramienta especializada para ajuste de hemoglobina por altitud y diagnóstico.
-                        </p>
-                        <button 
-                             onClick={() => setShowAnemiaModal(true)} 
-                             className="w-full max-w-[250px] bg-purple-600 hover:bg-purple-700 text-white font-bold h-12 rounded-xl shadow-lg hover:shadow-xl active:scale-95 transition-all flex justify-center items-center gap-2 text-sm uppercase tracking-wide"
-                        >
-                             <Activity size={18}/> ABRIR CALCULADORA
-                        </button>
-                    </div>
-                    
-                    {/* COLUMNA 3: RESULTADOS Y EXTRAS (DERECHA) */}
-                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 h-fit">
-                      <h3 className="text-slate-700 font-extrabold mb-4 text-lg">Resultados</h3>
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-2 items-center gap-2">
-                            <label className={`text-xs font-bold text-slate-500 uppercase`}>IMC</label>
-                            <input name="imc" className={borderlessInputStyle + ` text-center font-black bg-slate-50`} readOnly value={clinicalData.imc} />
-                        </div>
-                        <div className="grid grid-cols-2 items-center gap-2">
-                            <label className={`text-xs font-bold text-slate-500 uppercase`}>Riesgo</label>
-                            <input name="riesgo" className={borderlessInputStyle} value={clinicalData.riesgo} onChange={handleClinical} />
-                        </div>
-                      </div>
+                    <div className="lg:col-span-2 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                      <h3 className="font-extrabold mb-5 flex items-center gap-2 text-lg text-teal-800">
+                        <Activity size={24}/> Antropometría y Funciones Vitales
+                      </h3>
                       
-                      <div className="mt-8 pt-6 border-t border-slate-100">
-                           <button onClick={() => setShowNutriModal(true)} className="w-full py-3 text-xs font-bold text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors flex justify-center gap-2 items-center border-2 border-dashed border-slate-200 hover:border-blue-200">
-                               <Calculator size={16}/> Calculadora OMS (Z-Score)
-                           </button>
+                      <div className="space-y-5">
+                        {[
+                            { label: "Talla (cm)", name: "talla", min: 30, max: 200, hist: lastClinicalData.talla },
+                            { label: "Peso (kg)", name: "peso", min: 0.5, max: 180, hist: lastClinicalData.peso },
+                            { label: "P. Abdominal", name: "pAbd", min: 30, max: 200, hist: lastClinicalData.pAbd, checkAge: ageObj.y >= 12, specialBtn: true },
+                            { label: "P. Cefálico", name: "pCef", min: 20, max: 60, hist: lastClinicalData.pCef, checkAge: ageObj.y <= 5, specialBtn: true },
+                            { label: "Hemoglobina", name: "hb", min: 0, max: 21, hist: lastClinicalData.hb, isHb: true },
+                            { label: "P. Pre-Gest.", name: "pPreGest", min: 30, max: 150, hist: lastClinicalData.pPreg, checkCond: patientData.condicion === 'GESTANTE', specialBtn: true }
+                        ].map((item, idx) => {
+                            if (item.checkAge === false) return null;
+                            const isLocked = item.checkCond === false || (item.name === 'pAbd' && ageObj.y < 12) || (item.name === 'pCef' && ageObj.y > 5);
+                            const hasHist = item.hist && item.hist.val;
+
+                            return (
+                                <div key={idx} className="grid grid-cols-12 gap-4 items-center border-b border-slate-50 pb-4 last:border-0 last:pb-0">
+                                    <div className="col-span-5">
+                                        <div className="flex justify-between items-center mb-1">
+                                            <label className="text-[11px] font-bold text-teal-700 uppercase tracking-wider">{item.label}</label>
+                                            {item.specialBtn && !clinicalData[item.name] && !isLocked && (
+                                                <button onClick={() => {
+                                                    if(item.name==='pAbd') { setIgnorePAbdValidation(true); setShowPAbdError(false); }
+                                                    if(item.name==='pCef') { setIgnorePCefValidation(true); setShowPCefError(false); }
+                                                    if(item.name==='pPreGest') { setIgnorePreGestValidation(true); setShowPreGestError(false); }
+                                                }} className="text-[9px] font-bold bg-slate-100 text-slate-500 hover:bg-slate-200 px-2 py-0.5 rounded transition-colors">OMITIR</button>
+                                            )}
+                                        </div>
+                                        <input 
+                                            name={item.name}
+                                            disabled={isLocked}
+                                            value={clinicalData[item.name] || ''}
+                                            onChange={(e) => handleNumericInput(e, item.min, item.max)}
+                                            placeholder={isLocked ? "NO APLICA" : ""}
+                                            className={`${borderlessInputStyle} border-2 border-slate-200 focus:border-teal-500 h-10 text-center text-lg font-bold text-slate-700
+                                                ${(item.isHb && showHbError && !clinicalData.hb) ? 'bg-red-50 border-red-500 animate-pulse placeholder-red-300' : ''}
+                                                ${(item.name === 'pPreGest' && showPreGestError) ? 'bg-red-50 border-red-500 animate-pulse' : ''}
+                                                ${isLocked ? 'bg-slate-100 text-slate-400 shadow-none' : ''}
+                                                ${!isLocked && clinicalData[item.name] ? 'bg-teal-50 border-teal-500 text-teal-800' : ''}
+                                            `}
+                                        />
+                                    </div>
+                                    <div className="col-span-7 flex flex-col justify-end h-full pt-6">
+                                        <div className="flex w-full h-10 rounded-lg overflow-hidden text-xs font-bold shadow-sm border border-slate-200">
+                                            <div className="w-1/2 bg-rose-100 text-rose-800 flex items-center justify-center border-r border-rose-200">
+                                                {hasHist ? (
+                                                    <div className="flex items-center gap-1 truncate px-1">
+                                                        <Calendar size={12} className="shrink-0"/> {item.hist.date}
+                                                    </div>
+                                                ) : <span className="text-rose-300 select-none">SIN FECHA</span>}
+                                            </div>
+                                            <div className="w-1/2 bg-teal-600 text-white flex items-center justify-center text-sm tracking-wider truncate px-1">
+                                                {hasHist ? (
+                                                    <span>{item.hist.val} <span className="text-[9px] opacity-70">Ant.</span></span>
+                                                ) : <span className="opacity-60 text-[10px] select-none font-medium">SIN DATO PREVIO</span>}
+                                            </div>
+                                        </div>
+                                        <p className="text-[9px] text-slate-400 text-center mt-1 uppercase tracking-wider select-none">
+                                            {hasHist ? "Último registro" : "No registrado"}
+                                        </p>
+                                    </div>
+                                </div>
+                            );
+                        })}
                       </div>
                     </div>
-
+                    <div className="flex flex-col gap-4">
+                        <div className="bg-white p-6 rounded-2xl border border-slate-200 flex flex-col items-center text-center shadow-sm">
+                            <div className="bg-purple-50 p-3 rounded-full shadow-sm mb-3 text-purple-600"><Calculator size={28}/></div>
+                            <h4 className="text-slate-800 font-bold text-sm mb-1">Evaluación de Anemia</h4>
+                            <p className="text-slate-500 text-[10px] mb-4">Ajuste por altitud y diagnóstico</p>
+                            <button onClick={() => setShowAnemiaModal(true)} className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 rounded-xl text-xs shadow-md transition-all active:scale-95">ABRIR CALCULADORA</button>
+                        </div>
+                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                            <h4 className="text-teal-800 font-bold text-sm mb-4 border-b border-slate-100 pb-2">Diagnóstico Nutricional</h4>
+                            <div className="flex gap-2 mb-3">
+                                <div className="flex-1">
+                                    <label className="text-[10px] font-bold text-slate-400 block mb-1 uppercase">IMC</label>
+                                    <div className="h-10 bg-slate-100 rounded-lg flex items-center justify-center font-black text-slate-700 border border-slate-200">{clinicalData.imc || '--'}</div>
+                                </div>
+                                <div className="flex-[1.5]">
+                                    <label className="text-[10px] font-bold text-slate-400 block mb-1 uppercase">Diagnóstico / Riesgo</label>
+                                    <input name="riesgo" value={clinicalData.riesgo} onChange={handleClinical} className="w-full h-10 bg-white border-2 border-slate-200 rounded-lg px-2 text-xs font-bold outline-none focus:border-teal-500 uppercase text-center" placeholder="NORMAL..." />
+                                </div>
+                            </div>
+                            <button onClick={() => setShowNutriModal(true)} className="w-full border-2 border-dashed border-slate-300 text-slate-500 hover:border-teal-400 hover:text-teal-700 hover:bg-teal-50 font-bold py-2 rounded-xl text-xs transition-all">
+                                Ver Tabla Z-Score (OMS)
+                            </button>
+                        </div>
+                    </div>
                   </div>
                 </div>
               )}
+
               {step === 3 && (
                 <div className="animate-in fade-in slide-in-from-right-8 duration-300 w-full max-w-[95%] mx-auto">
                   <div className={`flex justify-between items-end mb-6 p-5 rounded-2xl border ${getTheme(3).bgLight} ${getTheme(3).border}`}>
@@ -2626,7 +2394,7 @@ const generatePDF = () => {
                                 <input autoFocus value={modalSearchTerm} onChange={(e) => handleModalSearch(e.target.value)} placeholder="Escribe código o descripción..." className="w-full h-12 pl-4 pr-4 rounded-xl border-2 border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none font-bold text-slate-700 uppercase transition-all" />
                                 {modalSuggestions.length > 0 && (
                                     <div className="absolute top-14 left-0 w-full bg-white rounded-2xl shadow-2xl border border-slate-200 max-h-64 overflow-y-auto z-50 p-2 no-scrollbar">
-                                            {modalSuggestions.map((item, i) => ( <div key={i} onClick={() => selectModalDx(item)} className="p-3 hover:bg-blue-50 rounded-xl cursor-pointer flex flex-col group border-b border-slate-50 last:border-0"> <div className="font-black text-blue-600 text-sm">{item.CODIGO}</div> <div className="text-xs font-bold text-slate-600 group-hover:text-blue-800">{item.DESCRIPCION}</div> </div> ))}
+                                                {modalSuggestions.map((item, i) => ( <div key={i} onClick={() => selectModalDx(item)} className="p-3 hover:bg-blue-50 rounded-xl cursor-pointer flex flex-col group border-b border-slate-50 last:border-0"> <div className="font-black text-blue-600 text-sm">{item.CODIGO}</div> <div className="text-xs font-bold text-slate-600 group-hover:text-blue-800">{item.DESCRIPCION}</div> </div> ))}
                                     </div>
                                 )}
                             </div>
