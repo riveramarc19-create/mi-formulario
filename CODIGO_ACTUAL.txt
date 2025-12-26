@@ -434,12 +434,17 @@ const InlineFollowUpViewer = ({ type, data, onClose, onFileUpload, externalFilte
 export default function App() {
   const [showNutriModal, setShowNutriModal] = useState(false);
   const [showAnemiaModal, setShowAnemiaModal] = useState(false);
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [lastClinicalData, setLastClinicalData] = useState({});
   const [isDataVerified, setIsDataVerified] = useState(false);
+  const hcInputRef = useRef(null);
+  // LISTA DE CASERÍOS (SOLO NOMBRES)
+  const listaCaserios = useMemo(() => Object.keys(LOCALIDADES_ALTITUD).sort(), []);
   const calendarRef = useRef(null);
   const handleDateSelect = (date) => setPatientData(prev => ({ ...prev, fecAtencion: date }));
-  const [showCredModal, setShowCredModal] = useState(false); 
+  const [showCredModal, setShowCredModal] = useState(false);
+
   
 
   useEffect(() => {
@@ -719,7 +724,14 @@ export default function App() {
   };
 
   const cleanStr = (str) => { if (!str) return ""; return str.replace(/[^A-Z0-9]/g, ''); };
-
+  const getHighlightedText = (text, highlight) => {
+      if (!highlight || !text) return text;
+      const parts = text.toString().split(new RegExp(`(${highlight})`, 'gi'));
+      return parts.map((part, i) => 
+          part.toLowerCase() === highlight.toLowerCase() ? 
+          <span key={i} className="text-blue-600 font-black bg-blue-50/50 rounded px-0.5">{part}</span> : part
+      );
+  };
   const selectPatient = (p) => {
       setShowSuggestions(false); 
       setSuggestions([]); 
@@ -779,6 +791,9 @@ export default function App() {
       });
 
       setTimeout(() => { 
+          // 1. Verificamos si tiene dirección
+          const tieneDireccion = p.direccion && p.direccion.trim() !== "";
+
           setPatientData(prev => ({ 
               ...prev,
               id: p.id, 
@@ -795,7 +810,11 @@ export default function App() {
               condEst: condicionCalculada, 
               condServ: '' 
           })); 
-          setIsPatientDataLocked(true); 
+          
+          // LÓGICA: Si NO tiene dirección, NO bloqueamos (dejamos editar). Si TIENE, bloqueamos.
+          setIsPatientDataLocked(tieneDireccion); 
+          
+          setIsDataVerified(false); 
       }, 10);
   };
 
@@ -1083,49 +1102,78 @@ export default function App() {
     return true;
   };
   
-  const handleNextStep = () => { 
+const handleNextStep = () => { 
       if (step === 1) { 
+          // Validación de campos vacíos existente...
           if (patientData.paciente && patientData.paciente.trim() !== "") {
               if (!patientData.fecAtencion) { alert("¡ATENCIÓN! DEBE INGRESAR LA FECHA DE ATENCIÓN."); return; } 
               if (!patientData.condEst || !patientData.condServ) { alert("ERROR: DEBE SELECCIONAR LA CONDICIÓN DE ESTABLECIMIENTO Y SERVICIO."); return; } 
-              if (patientData.id && !isDataVerified) {alert("⚠️ REVISIÓN OBLIGATORIA\n\nPor seguridad del paciente, debe confirmar que ha verificado:\n1. La HISTORIA CLÍNICA\n2. La DIRECCIÓN\n\nPor favor, marque la casilla de confirmación al final del formulario para continuar.");
+              
+              // --- VALIDACIÓN DE DIRECCIÓN VACÍA ---
+              if (!patientData.direccion || patientData.direccion.trim() === "") {
+                  setIsPatientDataLocked(false); // Desbloquear para editar
+                  alert("⚠️ CAMPO OBLIGATORIO VACÍO\n\nEl paciente no tiene una DIRECCIÓN registrada.\nPor favor, escriba la dirección o seleccione un CASERÍO del listado.");
                   return;
               }
-              const { condEst, condServ } = patientData; 
-              if ( (condEst === 'R' && condServ === 'C') || (condEst === 'N' && condServ === 'C') || (condEst === 'N' && condServ === 'R') ) { alert("COMBINACIÓN IMPOSIBLE EN CONDICIÓN DEL PACIENTE."); return; } 
-              if (patientData.condicion === 'GESTANTE' && !patientData.fur) { alert("¡ATENCIÓN!\n\nHa seleccionado que la paciente es GESTANTE.\nDebe ingresar obligatoriamente la Fecha de Última Regla (FUR) para continuar."); return; }
+
+              // --- VALIDACIÓN FUERTE DE HISTORIA CLÍNICA (HC vs DNI) ---
+              const hc = patientData.hc ? patientData.hc.trim() : "";
+              const dni = patientData.dni ? patientData.dni.trim() : "";
+              
+              // Verifica si son idénticos O si la HC contiene al DNI (ej. 12345678 vs 1234567800) O viceversa
+              const esCopiaDNI = (hc === dni) || (hc.length >= 7 && dni.includes(hc)) || (dni.length >= 7 && hc.includes(dni));
+
+              if (esCopiaDNI) {
+                  setIsPatientDataLocked(false); // 1. Activar botón "Editar Datos" (Desbloquear)
+                  alert("⛔ ERROR DE HISTORIA CLÍNICA\n\nSe ha detectado que el número de H.C. es IGUAL o MUY PARECIDO al DNI.\n\nEsto es incorrecto. Debe ingresar el número de Historia Clínica real del folder físico.\n\nEl campo se ha marcado en rojo para que lo corrija.");
+                  
+                  // 2. Poner el foco (cursor) en el campo HC
+                  setTimeout(() => {
+                      if(hcInputRef.current) hcInputRef.current.focus();
+                  }, 100);
+                  return; // Impide pasar al siguiente paso
+              }
+
+              // Validación de checkbox
+   
           }
       }
 
-       if (step === 2) { 
+      if (step === 2) { 
           const hasPatient = patientData.paciente && patientData.paciente.trim() !== "";
 
+          // 1. VALIDACIÓN PRE-GESTACIONAL
           if (hasPatient && patientData.condicion === 'GESTANTE' && !clinicalData.pPreGest && !ignorePreGestValidation) {
               setShowPreGestError(true);
-              alert("¡ATENCIÓN!\n\nLa paciente es GESTANTE. Es obligatorio ingresar el PESO PRE-GESTACIONAL.\n\nSi no cuenta con esa información, haga clic en el botón 'NO TENGO ESE DATO' para continuar.");
+              alert("¡ATENCIÓN!\n\nLa paciente es GESTANTE. Es obligatorio ingresar el PESO PRE-GESTACIONAL.\n\nSi no cuenta con esa información, haga clic en el botón 'OMITIR' para continuar.");
               return; 
           }
 
+          // 2. VALIDACIÓN PERÍMETRO ABDOMINAL
           if (hasPatient && ageObj.y >= 12 && !clinicalData.pAbd && !ignorePAbdValidation) {
               setShowPAbdError(true);
-              alert(`¡ATENCIÓN!\n\nEl paciente tiene ${ageObj.y} años.\nPara mayores de 12 años es necesario registrar el PERÍMETRO ABDOMINAL.\n\nSi no tiene el dato, presione el botón "NO TENGO ESE DATO" para continuar.`);
+              alert(`¡ATENCIÓN!\n\nEl paciente tiene ${ageObj.y} años.\nPara mayores de 12 años es necesario registrar el PERÍMETRO ABDOMINAL.\n\nSi no tiene el dato, presione el botón "OMITIR" para continuar.`);
               return; 
           }
 
+          // 3. VALIDACIÓN PERÍMETRO CEFÁLICO
           if (hasPatient && ageObj.y <= 5 && !clinicalData.pCef && !ignorePCefValidation) {
               setShowPCefError(true);
-              alert(`¡ATENCIÓN!\n\nEl paciente es menor de 5 años (${ageObj.y} años).\nEs necesario registrar el PERÍMETRO CEFÁLICO.\n\nSi no tiene el dato, presione el botón "NO TENGO ESE DATO" para continuar.`);
+              alert(`¡ATENCIÓN!\n\nEl paciente es menor de 5 años (${ageObj.y} años).\nEs necesario registrar el PERÍMETRO CEFÁLICO.\n\nSi no tiene el dato, presione el botón "OMITIR" para continuar.`);
               return; 
           }
       }      
+
       if (step === 3) { 
           const newErrors = {}; let hasError = false; 
           diagnoses.forEach((d, i) => { if (!checkRowValidity(d)) { newErrors[i] = true; hasError = true; } }); 
           setDxErrors(newErrors); 
           if (hasError) { alert("ERROR: Complete todos los diagnósticos o elimine las filas vacías."); return; } 
 
+          // LLAMADA A LA NUEVA VALIDACIÓN DE DIAGNÓSTICOS
           if (!validateDiagnoses()) return; 
       } 
+
       setStep(s => s + 1); 
   };
   
@@ -1151,8 +1199,34 @@ export default function App() {
       setIsDataVerified(false);
   };
 
-  const handleSavePatient = () => { if (window.confirm("¿Desea guardar la información de este paciente en la lista?")) { const patientRecord = { patient: { ...patientData }, clinical: { ...clinicalData }, diagnoses: [...diagnoses], ageObj: { ...ageObj } }; setSavedPatients([...savedPatients, patientRecord]); 
-  if (patientData.id) {updateToContinuador(patientData.id);} resetForm(); alert("Paciente guardado. Puede agregar otro o exportar el Excel."); } };
+     // 1. FUNCIÓN PARA EL BOTÓN "REVISAR LA INFORMACIÓN"
+  const handleReviewInfo = () => {
+      setShowSaveConfirm(false); // Cierra la alerta
+      setStep(1); // Regresa al paso 1 (Paciente)
+      setIsCalendarOpen(false); // IMPORTANTE: Asegura que el calendario NO se abra
+      // Nota: No llamamos a resetForm(), por lo que los datos se mantienen intactos.
+  };
+
+  // 2. FUNCIÓN PARA EL BOTÓN "SÍ, DESEO GUARDAR"
+  const confirmSavePatient = () => {
+      // Lógica de guardado (La que tenías antes en handleSavePatient)
+      const patientRecord = { 
+          patient: { ...patientData }, 
+          clinical: { ...clinicalData }, 
+          diagnoses: [...diagnoses], 
+          ageObj: { ...ageObj } 
+      }; 
+      
+      setSavedPatients([...savedPatients, patientRecord]);
+      
+      if (patientData.id) {
+          updateToContinuador(patientData.id);
+      } 
+      
+      resetForm(); 
+      setShowSaveConfirm(false); // Cierra la alerta
+      alert("✅ Paciente guardado exitosamente."); 
+  };
 
 const generatePDF = () => {
     try {
@@ -1903,20 +1977,135 @@ const generatePDF = () => {
         </div>
       </div>
       <div className="flex-1 w-full flex items-center justify-center p-4 relative bg-slate-100">
-        {!isModalOpen ? (
-          <div className="bg-white rounded-[30px] shadow-2xl border border-white p-12 text-center max-w-xl w-full animate-in fade-in zoom-in duration-300 m-auto">
-            <div className="bg-blue-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 text-blue-600 shadow-inner"><Plus size={48}/></div>
-            <h3 className="text-2xl font-extrabold text-slate-800 mb-2">Nueva Atención</h3>
-            <p className="text-slate-500 mb-8 text-sm font-medium">Estado de Base de datos: {dbPacientes.length > 0 ? <span className="text-emerald-600 font-bold bg-emerald-50 px-3 py-1 rounded-xl">Conectada ({dbPacientes.length})</span> : <span className="text-orange-500 font-bold bg-orange-50 px-3 py-1 rounded-xl">Sin datos</span>}</p>
-            <button onClick={() => {resetForm(); setIsCalendarOpen(true); setIsModalOpen(true);}} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-xl font-bold shadow-xl shadow-blue-600/20 text-lg transition-all hover:-translate-y-1 active:scale-[0.98]">REGISTRAR PACIENTE</button>
+        {!isModalOpen ? (<div className="w-full h-full flex flex-col items-center overflow-y-auto py-6 gap-6 animate-in fade-in zoom-in duration-300">
+            
+            {/* 1. PANELES DE SEGUIMIENTO (ARRIBA) */}
+            <div className="w-full max-w-6xl bg-white p-4 rounded-2xl shadow-sm border border-slate-200 shrink-0 relative z-20">
+                <p className="text-[10px] font-bold text-slate-400 uppercase mb-3 tracking-widest text-center">ACCESO RÁPIDO A SEGUIMIENTOS</p>
+                <div className="flex flex-wrap gap-2 justify-center">
+                    {[
+                        { id: 'CRED', label: 'CRED', icon: <Baby size={16}/>, color: 'emerald' },
+                        { id: 'GESTANTE', label: 'GESTANTES', icon: <UserPlus size={16}/>, color: 'pink' },
+                        { id: 'ANEMIA', label: 'ANEMIA', icon: <Activity size={16}/>, color: 'red' },
+                        { id: 'ANEMIA_GEST', label: 'ANEMIA GEST.', icon: <Activity size={16}/>, color: 'rose' },
+                        { id: 'HIPER', label: 'HIPERTENSOS', icon: <Heart size={16}/>, color: 'orange' },
+                        { id: 'DIABETES', label: 'DIABETES', icon: <Droplets size={16}/>, color: 'blue' },
+                        { id: 'PSICOLOGIA', label: 'PSICOLOGÍA', icon: <Brain size={16}/>, color: 'indigo' },
+                        { id: 'BUCAL', label: 'ODONTO', icon: <span className="text-base leading-none grayscale">🦷</span>, color: 'cyan' },
+                        { id: 'VACUNAS', label: 'VACUNAS', icon: <Syringe size={16}/>, color: 'purple' },
+                    ].map((item) => (
+                        <button 
+                            key={item.id}
+                            onClick={() => setActiveFollowUp(activeFollowUp === item.id ? null : item.id)} 
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg font-bold text-[11px] whitespace-nowrap transition-all border shadow-sm
+                                ${activeFollowUp === item.id 
+                                    ? `bg-${item.color}-100 border-${item.color}-500 text-${item.color}-700 ring-2 ring-${item.color}-200` 
+                                    : `bg-slate-50 border-slate-200 text-slate-600 hover:bg-white hover:border-${item.color}-300 hover:text-${item.color}-600`
+                                }`}
+                        >
+                            {item.icon} {item.label}
+                            {followUpData[item.id] && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ml-1"></span>}
+                        </button>
+                    ))}
+                </div>
+            </div>
+            {/* --- SECCIÓN NUEVA: BIBLIOTECA DE NORMAS TÉCNICAS (PDFs) --- */}
+            <div className="w-full max-w-6xl bg-white p-6 rounded-2xl shadow-sm border border-slate-200 shrink-0 relative z-20">
+                <p className="text-[10px] font-bold text-slate-400 uppercase mb-4 tracking-widest text-center flex items-center justify-center gap-2">
+                    <FileText size={14}/> BIBLIOTECA NORMATIVA (LECTURA RÁPIDA)
+                </p>
+                
+                <div className="flex flex-wrap gap-4 justify-center">
+                    {/* LISTA DE TUS PDFs - AGREGA AQUÍ LOS TUYOS */}
+                    {[
+                        { titulo: 'NORMA TÉCNICA CRED', archivo: '/normas/cred.pdf' },
+                        { titulo: 'GUÍA DE ANEMIA 2025', archivo: '/normas/anemia.pdf' },
+                        { titulo: 'MANUAL GESTANTES', archivo: '/normas/gestante.pdf' },
+                        { titulo: 'CALENDARIO VACUNAS', archivo: '/normas/vacunas.pdf' },
+                    ].map((pdf, idx) => (
+                        <a 
+                            key={idx}
+                            href={pdf.archivo} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="group flex flex-col items-center justify-center w-32 h-32 bg-slate-50 border-2 border-slate-100 rounded-2xl hover:bg-red-50 hover:border-red-200 transition-all cursor-pointer shadow-sm hover:shadow-md hover:-translate-y-1 text-center p-2 no-underline"
+                            title="Clic para leer documento"
+                        >
+                            {/* Icono PDF Grande */}
+                            <div className="mb-2 text-slate-400 group-hover:text-red-500 transition-colors">
+                                <FileText size={40} strokeWidth={1.5} />
+                            </div>
+                            
+                            {/* Título del PDF */}
+                            <span className="text-[9px] font-bold text-slate-600 group-hover:text-red-700 uppercase leading-tight">
+                                {pdf.titulo}
+                            </span>
+                        </a>
+                    ))}
+                </div>
+            </div>
+
+            {/* 2. VISOR DE TABLA (MEDIO) */}
+            {activeFollowUp && (
+                <div className="w-full max-w-6xl animate-in slide-in-from-top-5 fade-in duration-300 z-10 shrink-0">
+                    <InlineFollowUpViewer 
+                        type={activeFollowUp} 
+                        data={followUpData[activeFollowUp]} 
+                        onClose={() => setActiveFollowUp(null)}
+                        onFileUpload={handleFollowUpUpload}
+                        externalFilter={""} 
+                    />
+                </div>
+            )}
+
+            {/* 3. TARJETA PRINCIPAL CON BOTÓN AZUL (ABAJO) */}
+            <div className="bg-white rounded-[30px] shadow-xl border border-white p-8 text-center max-w-xl w-full relative z-0 shrink-0 mb-10">
+              <div className="bg-blue-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600 shadow-inner">
+                <Plus size={32}/>
+              </div>
+              
+              <h3 className="text-xl font-extrabold text-slate-800 mb-2">Nueva Atención</h3>
+              
+              <p className="text-slate-500 mb-6 text-xs font-medium">
+                Estado de Base de datos: {dbPacientes.length > 0 ? <span className="text-emerald-600 font-bold bg-emerald-50 px-3 py-1 rounded-xl">Conectada ({dbPacientes.length})</span> : <span className="text-orange-500 font-bold bg-orange-50 px-3 py-1 rounded-xl">Sin datos</span>}
+              </p>
+              
+              <button 
+                onClick={() => {resetForm(); setIsCalendarOpen(true); setIsModalOpen(true);}} 
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold shadow-xl shadow-blue-600/20 text-sm transition-all hover:-translate-y-1 active:scale-[0.98]"
+              >
+                REGISTRAR PACIENTE
+              </button>
+            </div>
+
           </div>
         ) : (
-          <div className="bg-white rounded-[30px] shadow-2xl border border-slate-200 overflow-hidden flex flex-col w-full max-w-[95%] h-[90vh] animate-in zoom-in-95 duration-200 ring-1 ring-black/5 m-auto">
-            <div className="flex border-b border-slate-100 bg-white px-6 shrink-0">
-              {['Paciente', 'Datos Clínicos', 'Diagnósticos', 'Finalizar'].map((label, idx) => (
-                  <div key={idx} className={`flex-1 text-center py-4 text-xs font-bold border-b-[3px] transition-colors ${step === idx + 1 ? `border-${stepColors[idx]}-600 text-${stepColors[idx]}-700` : 'border-transparent text-slate-300'}`}><span className="mr-2 opacity-40">{idx + 1}.</span>{label}</div>
-              ))}
-              <button onClick={() => setIsModalOpen(false)} className="px-4 ml-2 hover:bg-slate-50 text-slate-300 hover:text-red-500 transition-colors"><X size={20}/></button>
+	  <div className="bg-white rounded-[30px] shadow-2xl border border-slate-200 overflow-hidden flex flex-col w-full max-w-[95%] h-[90vh] animate-in zoom-in-95 duration-200 ring-1 ring-black/5 m-auto">
+            {/* CABECERA DEL MODAL */}
+            <div className="flex border-b border-slate-100 bg-white px-6 shrink-0 justify-between items-center">
+              
+              {/* PASOS (1, 2, 3...) */}
+              <div className="flex-1 flex">
+                  {['Paciente', 'Datos Clínicos', 'Diagnósticos', 'Finalizar'].map((label, idx) => (
+                      <div key={idx} className={`flex-1 text-center py-4 text-xs font-bold border-b-[3px] transition-colors ${step === idx + 1 ? `border-${stepColors[idx]}-600 text-${stepColors[idx]}-700` : 'border-transparent text-slate-300'}`}>
+                          <span className="mr-2 opacity-40">{idx + 1}.</span>{label}
+                      </div>
+                  ))}
+              </div>
+
+              {/* BOTÓN X PARA CERRAR Y VOLVER AL MENU AZUL */}
+              <button 
+                  onClick={() => {
+                      if(window.confirm("¿Estás seguro de salir? Se perderán los datos no guardados.")) {
+                          setIsModalOpen(false); // ESTO CIERRA EL MODAL Y VUELVE AL DASHBOARD
+                          resetForm();
+                      }
+                  }} 
+                  className="px-4 py-4 hover:bg-slate-50 text-slate-300 hover:text-red-500 transition-colors border-l border-slate-100 ml-4"
+                  title="Cerrar y volver al menú principal"
+              >
+                  <X size={24}/>
+              </button>
             </div>
 
             <div className="flex-grow overflow-y-auto p-6 bg-[#FAFAFA] no-scrollbar relative" ref={dxListRef}>
@@ -1959,7 +2148,7 @@ const generatePDF = () => {
                 </div>
               )}
 
-              {isCalendarOpen && step === 1 && (<div className="absolute top-0 left-0 w-full h-full bg-black/10 flex items-center justify-center z-50 p-4" onClick={() => setIsCalendarOpen(false)}><div ref={calendarRef} onClick={(e) => e.stopPropagation()}><SimpleCalendar selectedDate={patientData.fecAtencion} onSelectDate={handleDateSelect} onClose={() => setIsCalendarOpen(false)} themeColor={stepColors[0]} /></div></div>)}
+
               
               {isManualModalOpen && (
                   <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
@@ -2037,16 +2226,69 @@ const generatePDF = () => {
               )}
 
               {step === 1 && (
-                <div className="animate-in fade-in slide-in-from-right-8 duration-300 min-w-[800px] mx-auto max-w-5xl"> 
-                  <div className={`border rounded-xl p-4 mb-4 shadow-sm ${getTheme(1).border} ${getTheme(1).bgLight}`} ref={searchRef}>
+                <div className="animate-in fade-in slide-in-from-right-8 duration-300 min-w-[800px] mx-auto max-w-5xl relative"> 
+                  
+                  {/* --- BUSCADOR PRINCIPAL --- */}
+                  <div className={`border rounded-xl p-4 mb-4 shadow-sm relative z-50 transition-all duration-300 ${showSuggestions ? 'bg-white ring-4 ring-blue-50 border-blue-200 shadow-xl' : getTheme(1).bgLight + ' ' + getTheme(1).border}`} ref={searchRef}>
                     <div className="flex gap-4 items-end">
                         <div className="flex-1 relative">
                             <label className={`text-[10px] font-bold uppercase block mb-1.5 ml-2 ${getTheme(1).labelText}`}>Buscar Paciente (DNI o Nombre)</label>
                             <div className="relative flex gap-2">
                                 <div className="relative flex-1">
-                                    <input className={`w-full pl-12 pr-4 h-12 rounded-xl bg-white border-2 outline-none text-lg font-bold placeholder-slate-300 shadow-sm transition-all ${getTheme(1).border} ${getTheme(1).text} ${getTheme(1).focusBorder} focus:ring-4 ${getTheme(1).focusRing}`} placeholder="Ej. 12345678 o JUAN PEREZ" autoFocus value={searchTerm} onChange={handleSearchInput} onFocus={() => { if(suggestions.length > 0) setShowSuggestions(true); }} />
+                                    <input 
+                                        className={`w-full pl-12 pr-4 h-12 rounded-xl bg-white border-2 outline-none text-lg font-bold placeholder-slate-300 shadow-sm transition-all ${getTheme(1).border} ${getTheme(1).text} ${getTheme(1).focusBorder} focus:ring-4 ${getTheme(1).focusRing}`} 
+                                        placeholder="Ej. 12345678 o JUAN PEREZ" 
+                                        autoFocus 
+                                        value={searchTerm} 
+                                        onChange={handleSearchInput} 
+                                        onFocus={() => { if(suggestions.length > 0) setShowSuggestions(true); }} 
+                                    />
                                     <Search className={`absolute left-4 top-3.5 ${getTheme(1).labelText}`} size={22}/>
-                                    {showSuggestions && (<div className="absolute z-50 w-full bg-white mt-2 border border-slate-100 rounded-xl shadow-2xl max-h-64 overflow-y-auto p-2 no-scrollbar">{suggestions.map((p, idx) => (<div key={idx} onMouseDown={() => selectPatient(p)} className={`px-4 py-3 cursor-pointer rounded-xl group transition-colors mb-1 ${getTheme(1).bgHover}`}><div className={`font-bold text-sm group-hover:${getTheme(1).text}`}>{p.nombre}</div><div className="text-[10px] text-slate-400 flex gap-2 mt-1 font-bold"><span className="bg-slate-100 px-2 py-0.5 rounded text-slate-500">DNI: {p.dni}</span><span className="bg-slate-100 px-2 py-0.5 rounded text-slate-500">HC: {p.hc}</span><span className="bg-slate-100 px-2 py-0.5 rounded text-slate-500">Est: {p.estOrigen}</span></div></div>))}</div>)}
+                                    
+                                    {/* --- MEJORA 1: LISTA DESPLEGABLE INTELIGENTE --- */}
+                                    {showSuggestions && (
+                                        <div className="absolute top-14 left-0 w-full bg-white rounded-2xl shadow-2xl border border-slate-200 max-h-[350px] overflow-y-auto p-2 no-scrollbar animate-in zoom-in-95 duration-200">
+                                            {suggestions.map((p, idx) => {
+                                                // Lógica rápida para validar jurisdicción visualmente en la lista
+                                                const estConfigRaw = adminData.establecimiento.trim().toUpperCase();
+                                                const estPatientRaw = p.estOrigen ? p.estOrigen.trim().toUpperCase() : "";
+                                                // Usamos una lógica simple de inclusión para la alerta visual
+                                                const isMatch = estPatientRaw.includes(cleanStr(estConfigRaw)) || cleanStr(estConfigRaw).includes(cleanStr(estPatientRaw));
+                                                
+                                                return (
+                                                    <div key={idx} onMouseDown={() => selectPatient(p)} className="p-3 cursor-pointer rounded-xl group hover:bg-blue-50 transition-all border-b border-slate-50 last:border-0 flex items-start gap-3">
+                                                        {/* Icono de Avatar */}
+                                                        <div className={`mt-1 p-2 rounded-full ${isMatch ? 'bg-slate-100 text-slate-400' : 'bg-amber-100 text-amber-500'}`}>
+                                                            <Users size={18} />
+                                                        </div>
+                                                        
+                                                        <div className="flex-1">
+                                                            {/* Nombre con Resaltado */}
+                                                            <div className="font-bold text-sm text-slate-700 group-hover:text-blue-700 uppercase">
+                                                                {getHighlightedText(p.nombre, searchTerm)}
+                                                            </div>
+                                                            
+                                                            {/* Datos Secundarios */}
+                                                            <div className="flex flex-wrap gap-2 mt-1.5 text-[10px] font-bold uppercase">
+                                                                <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded border border-slate-200">
+                                                                    DNI: <span className="text-slate-700">{getHighlightedText(p.dni, searchTerm)}</span>
+                                                                </span>
+                                                                <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded border border-slate-200">
+                                                                    HC: {p.hc}
+                                                                </span>
+                                                                
+                                                                {/* MEJORA 4: Alerta visual de Establecimiento */}
+                                                                <span className={`px-2 py-0.5 rounded border flex items-center gap-1 ${isMatch ? 'bg-slate-100 text-slate-500 border-slate-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                                                                    {!isMatch && <AlertTriangle size={10} className="text-amber-500"/>}
+                                                                    Est: {p.estOrigen || 'NO REGISTRADO'}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="flex gap-2">
                                     <button onClick={() => setIsManualModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white w-12 h-12 rounded-xl flex items-center justify-center shadow-lg transition-transform active:scale-95" title="Registrar Paciente Nuevo"><UserPlus size={24}/></button>
@@ -2060,114 +2302,149 @@ const generatePDF = () => {
                         <div className="w-48 shrink-0"><label className={getLabelStyle(1)}>F. Atención</label><div className="relative"><input type="date" name="fecAtencion" className={getDateInputStyle(1) + ` h-12 ${getTheme(1).bgLight} text-center`} value={patientData.fecAtencion} onChange={handlePatient} /></div></div>
                     </div>
                   </div>
-                  <div className="mb-4">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 ml-1">Paneles de Seguimiento</p>
-                      <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-                          {[
-                              { id: 'CRED', label: 'CRED', icon: <Baby size={16}/>, color: 'emerald' },
-                              { id: 'GESTANTE', label: 'GESTANTES', icon: <UserPlus size={16}/>, color: 'pink' },
-                              { id: 'ANEMIA', label: 'ANEMIA', icon: <Activity size={16}/>, color: 'red' },
-                              { id: 'ANEMIA_GEST', label: 'ANEMIA GEST.', icon: <Activity size={16}/>, color: 'rose' },
-                              { id: 'HIPER', label: 'HIPERTENSOS', icon: <Heart size={16}/>, color: 'orange' },
-                              { id: 'DIABETES', label: 'DIABETES', icon: <Droplets size={16}/>, color: 'blue' },
-                              { id: 'PSICOLOGIA', label: 'PSICOLOGÍA', icon: <Brain size={16}/>, color: 'indigo' },
-                              { id: 'BUCAL', label: 'ODONTO', icon: <span className="text-base leading-none grayscale">🦷</span>, color: 'cyan' },
-                              { id: 'VACUNAS', label: 'VACUNAS', icon: <Syringe size={16}/>, color: 'purple' },
-                          ].map((item) => (
-                              <button 
-                                  key={item.id}
-                                  onClick={() => setActiveFollowUp(activeFollowUp === item.id ? null : item.id)} 
-                                  className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs whitespace-nowrap transition-all border-2 shadow-sm
-                                      ${activeFollowUp === item.id 
-                                          ? `bg-${item.color}-100 border-${item.color}-500 text-${item.color}-700` 
-                                          : `bg-white border-slate-200 text-slate-600 hover:border-${item.color}-300 hover:text-${item.color}-600`
-                                      }`}
-                              >
-                                  {item.icon} {item.label}
-                                  {followUpData[item.id] && <span className="w-2 h-2 rounded-full bg-green-500 ml-1"></span>}
-                              </button>
-                          ))}
-                      </div>
-                  </div>
-           
-                  {activeFollowUp && (
-                      <InlineFollowUpViewer 
-                          type={activeFollowUp} 
-                          data={followUpData[activeFollowUp]} 
-                          onClose={() => setActiveFollowUp(null)}
-                          onFileUpload={handleFollowUpUpload}
-                          externalFilter={searchTerm}
-                      />
-                  )}
 
-                  <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
-                    
+                  {/* --- CONTENEDOR DEL FORMULARIO (SE PONE BORROSO SI HAY SUGERENCIAS) --- */}
+                  {/* MEJORA 2: Focus Mode aplicado aquí con clases condicionales */}
+                  <div className={`transition-all duration-500 ease-in-out ${showSuggestions ? 'opacity-40 blur-sm pointer-events-none grayscale-[0.5]' : 'opacity-100 blur-0'}`}>
+                      
+                      <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+                        
+                        {/* FILA 1 REORGANIZADA: SELECTORES + CONDICIÓN + FUR + BOTÓN */}
                     <div className="grid grid-cols-12 gap-2 items-end border-b pb-4 border-slate-100 mb-2 bg-slate-50/50 p-2 rounded-xl">
-                        <div className="col-span-3 flex flex-col gap-1">
-                            <label className={getLabelStyle(1)}>Cond. Establec.</label>
+                        
+                        {/* 1. Cond. Establec (2 columnas) */}
+                        <div className="col-span-2 flex flex-col gap-1">
+                            <label className={getLabelStyle(1)}>Cond. Est.</label>
                             <select name="condEst" className={getSelectStyle(patientData.condEst)} value={patientData.condEst} onChange={handlePatient}>
-                                <option value="">SELECCIONE...</option>
+                                <option value="">...</option>
                                 <option value="N">NUEVO</option>
                                 <option value="C">CONTINUADOR</option>
                                 <option value="R">REINGRESANTE</option>
                             </select>
                         </div>
-                        <div className="col-span-3 flex flex-col gap-1">
-                            <label className={getLabelStyle(1)}>Cond. Servicio</label>
-                            <select name="condServ" className={getSelectStyle(patientData.condServ, isInvalidCombo)} value={patientData.condServ} onChange={handlePatient}>
-                                <option value="">SELECCIONE...</option>
-                                <option value="N">NUEVO</option>
-                                <option value="C">CONTINUADOR</option>
-                                <option value="R">REINGRESANTE</option>
-                            </select>
-                        </div>
-                    <div className="col-span-6 flex justify-end pb-[2px]">
-                        {isPatientDataLocked ? (
-                            <button onClick={() => setIsPatientDataLocked(false)} className={`bg-white border-2 border-slate-200 hover:border-blue-400 text-blue-600 hover:bg-blue-50 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-sm h-[38px]`}>
-                                <Edit size={16}/> EDITAR DATOS (Desbloquear)
-                            </button>
-                        ) : (
-                            <button onClick={() => setIsPatientDataLocked(true)} className={`bg-white border-2 border-red-200 hover:border-red-400 text-red-600 hover:bg-red-50 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-sm h-[38px]`}>
-                                <X size={16}/> BLOQUEAR DATOS
-                            </button>
-                        )}
-                    </div>
-                   </div>
 
-                    <div className="grid grid-cols-12 gap-2 items-end">
-                      <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>DNI</label><input name="dni" className={getLockedInputStyle(1)} value={patientData.dni} onChange={handlePatient} readOnly={true} /></div>
-                      <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>H. Clínica</label><input name="hc" className={isPatientDataLocked ? getLockedInputStyle(1) : getInputStyle(1)} value={patientData.hc} onChange={handlePatient} readOnly={isPatientDataLocked} /></div>
-                      <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>Fecha Nac.</label><input type="date" name="fecNac" className={getLockedDateInputStyle(1)} value={patientData.fecNac} onChange={handlePatient} readOnly={true} /></div>
-                      <div className="col-span-1 flex flex-col gap-1"><label className={getLabelStyle(1)}>Sexo</label><input name="sexo" className={getLockedInputStyle(1)} value={patientData.sexo} onChange={handlePatient} readOnly={true} /></div>
-                      <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>Edad (A/M/D)</label><input className={`${baseInputStyle} border-orange-200 text-orange-800 bg-orange-50 cursor-default text-center tracking-wide`} value={ageString} readOnly={true} /></div>
-                      <div className="col-span-1 flex flex-col gap-1"><label className={getLabelStyle(1)}>Edad Meses</label><input className={`${baseInputStyle} border-orange-200 text-orange-800 bg-orange-50 cursor-default text-center font-black`} value={ageInMonths} readOnly={true} /></div>
-                      <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>Financiador</label><input name="financiador" className={isPatientDataLocked ? getLockedInputStyle(1) : getInputStyle(1)} value={patientData.financiador} onChange={handlePatient} readOnly={isPatientDataLocked} /></div>
+                        {/* 2. Cond. Servicio (2 columnas) */}
+                        <div className="col-span-2 flex flex-col gap-1">
+                            <label className={getLabelStyle(1)}>Cond. Serv.</label>
+                            <select name="condServ" className={getSelectStyle(patientData.condServ, isInvalidCombo)} value={patientData.condServ} onChange={handlePatient}>
+                                <option value="">...</option>
+                                <option value="N">NUEVO</option>
+                                <option value="C">CONTINUADOR</option>
+                                <option value="R">REINGRESANTE</option>
+                            </select>
+                        </div>
+
+                        {/* 3. Condición (MOVIDO AQUÍ - 2 columnas) */}
+                        <div className="col-span-2 flex flex-col gap-1">
+                            <label className={getLabelStyle(1)}>Condición</label>
+                            <select name="condicion" className={getInputStyle(1) + " text-xs"} value={patientData.condicion} onChange={handlePatient}>
+                                <option value="">NINGUNA</option>
+                                <option value="GESTANTE">GESTANTE</option>
+                                <option value="PUERPERA">PUERPERA</option>
+                            </select>
+                        </div>
+
+                        {/* 4. FUR (MOVIDO AQUÍ - 2 columnas) */}
+                        <div className="col-span-2 flex flex-col gap-1">
+                            <label className={getLabelStyle(1)}>FUR</label>
+                            <div className="relative">
+                                <input 
+                                    type="date" 
+                                    name="fur" 
+                                    className={(patientData.condicion !== 'GESTANTE' ? 'bg-slate-100 opacity-50 cursor-not-allowed' : 'bg-white cursor-pointer') + " " + getDateInputStyle(1) + " text-center text-xs px-1"} 
+                                    value={patientData.fur} 
+                                    onChange={handlePatient} 
+                                    disabled={patientData.condicion !== 'GESTANTE'} 
+                                />
+                            </div>
+                        </div>
+
+                        {/* 5. BOTÓN EDITAR/BLOQUEAR (4 columnas restantes) */}
+                        <div className="col-span-4 flex justify-end pb-[2px]">
+                            {isPatientDataLocked ? (
+                                <button onClick={() => setIsPatientDataLocked(false)} className={`w-full justify-center bg-white border-2 border-slate-200 hover:border-blue-400 text-blue-600 hover:bg-blue-50 px-2 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-sm h-[38px]`}>
+                                    <Edit size={16}/> EDITAR
+                                </button>
+                            ) : (
+                                <button onClick={() => setIsPatientDataLocked(true)} className={`w-full justify-center bg-white border-2 border-red-200 hover:border-red-400 text-red-600 hover:bg-red-50 px-2 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-sm h-[38px]`}>
+                                    <X size={16}/> BLOQUEAR
+                                </button>
+                            )}
+                        </div>
                     </div>
-                    <div className="grid grid-cols-12 gap-2 items-end">
-                      <div className="col-span-8 flex flex-col gap-1"><label className={getLabelStyle(1)}>Paciente</label><input name="paciente" className={isPatientDataLocked ? getLockedInputStyle(1) + " font-black" : getInputStyle(1) + " font-black"} value={patientData.paciente} onChange={handlePatient} readOnly={isPatientDataLocked} /></div>
-                      <div className="col-span-4 flex flex-col gap-1"><label className={getLabelStyle(1)}>Distrito</label><input name="distrito" className={isPatientDataLocked ? getLockedInputStyle(1) : getInputStyle(1)} value={patientData.distrito} onChange={handlePatient} readOnly={isPatientDataLocked} /></div>
-                    </div>
-                    <div className="grid grid-cols-12 gap-2 items-end">
-                        <div className="col-span-4 flex flex-col gap-1"><label className={getLabelStyle(1)}>Dirección</label><input name="direccion" className={isPatientDataLocked ? getLockedInputStyle(1) : getInputStyle(1)} value={patientData.direccion} onChange={handlePatient} readOnly={isPatientDataLocked} /></div>
-                        <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>Condición</label><select name="condicion" className={getInputStyle(1)} value={patientData.condicion} onChange={handlePatient}><option value="">NINGUNA</option><option value="GESTANTE">GESTANTE</option><option value="PUERPERA">PUERPERA</option></select></div>
-                        <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>FUR</label><div className="relative"><input type="date" name="fur" className={(patientData.condicion !== 'GESTANTE' ? 'bg-slate-100 opacity-50 cursor-not-allowed' : 'bg-white cursor-pointer') + " " + getDateInputStyle(1) + " text-center"} value={patientData.fur} onChange={handlePatient} disabled={patientData.condicion !== 'GESTANTE'} /></div></div>
-                        <div className="col-span-4 flex flex-col gap-1"><label className={getLabelStyle(1)}>ESTABLECIMIENTO DE ATENCIÓN</label><input name="estOrigen" className={isPatientDataLocked ? getLockedInputStyle(1) : getInputStyle(1)} value={patientData.estOrigen} onChange={handlePatient} readOnly={isPatientDataLocked} /></div>
-                    </div>
-                    {/* --- CASILLA DE VERIFICACIÓN OBLIGATORIA (SOLO SI HAY ID) --- */}
-              {patientData.id && (
-                  <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-xl flex items-center gap-3 animate-in slide-in-from-bottom-2">
-                      <input 
-                          type="checkbox" 
-                          id="verifyCheck" 
-                          className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500 cursor-pointer"
-                          checked={isDataVerified}
-                          onChange={(e) => setIsDataVerified(e.target.checked)}
-                      />
-                      <label htmlFor="verifyCheck" className="text-xs font-bold text-orange-800 cursor-pointer select-none">
-                          CONFIRMO QUE HE REVISADO LA <span className="underline">HISTORIA CLÍNICA ({patientData.hc})</span> Y LA <span className="underline">DIRECCIÓN</span> DEL PACIENTE.
-                      </label>
-                  </div>
-              )}
+
+                        <div className="grid grid-cols-12 gap-2 items-end">
+                          <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>DNI</label><input name="dni" className={getLockedInputStyle(1)} value={patientData.dni} onChange={handlePatient} readOnly={true} /></div>
+                          
+                          {/* CAMPO H. CLÍNICA CON REFERENCIA Y VALIDACIÓN VISUAL ROJA */}
+                          <div className="col-span-2 flex flex-col gap-1">
+                              <label className={getLabelStyle(1)}>H. Clínica</label>
+                              <input 
+                                  ref={hcInputRef} // <--- Referencia para el foco automático
+                                  name="hc" 
+                                  className={`${isPatientDataLocked ? getLockedInputStyle(1) : getInputStyle(1)} ${(!patientData.hc || patientData.hc === patientData.dni) && !isPatientDataLocked ? 'border-red-500 bg-red-50 focus:border-red-600 focus:ring-red-100' : ''}`}
+                                  value={patientData.hc} 
+                                  onChange={handlePatient} 
+                                  readOnly={isPatientDataLocked} 
+                              />
+                          </div>
+
+                          <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>Fecha Nac.</label><input type="date" name="fecNac" className={getLockedDateInputStyle(1)} value={patientData.fecNac} onChange={handlePatient} readOnly={true} /></div>
+                          <div className="col-span-1 flex flex-col gap-1"><label className={getLabelStyle(1)}>Sexo</label><input name="sexo" className={getLockedInputStyle(1)} value={patientData.sexo} onChange={handlePatient} readOnly={true} /></div>
+                          <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>Edad (A/M/D)</label><input className={`${baseInputStyle} border-orange-200 text-orange-800 bg-orange-50 cursor-default text-center tracking-wide`} value={ageString} readOnly={true} /></div>
+                          <div className="col-span-1 flex flex-col gap-1"><label className={getLabelStyle(1)}>Edad Meses</label><input className={`${baseInputStyle} border-orange-200 text-orange-800 bg-orange-50 cursor-default text-center font-black`} value={ageInMonths} readOnly={true} /></div>
+                          <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>Financiador</label><input name="financiador" className={isPatientDataLocked ? getLockedInputStyle(1) : getInputStyle(1)} value={patientData.financiador} onChange={handlePatient} readOnly={isPatientDataLocked} /></div>
+                        </div>
+
+                        {/* ... (Fila de Paciente y Distrito se queda igual) ... */}
+                        <div className="grid grid-cols-12 gap-2 items-end">
+                          <div className="col-span-8 flex flex-col gap-1"><label className={getLabelStyle(1)}>Paciente</label><input name="paciente" className={isPatientDataLocked ? getLockedInputStyle(1) + " font-black" : getInputStyle(1) + " font-black"} value={patientData.paciente} onChange={handlePatient} readOnly={isPatientDataLocked} /></div>
+                          <div className="col-span-4 flex flex-col gap-1"><label className={getLabelStyle(1)}>Distrito</label><input name="distrito" className={isPatientDataLocked ? getLockedInputStyle(1) : getInputStyle(1)} value={patientData.distrito} onChange={handlePatient} readOnly={isPatientDataLocked} /></div>
+                        </div>
+
+                        {/* FILA DE DIRECCIÓN MODIFICADA CON COMBOBOX CASERÍOS */}
+			{/* FILA DE DIRECCIÓN AMPLIADA (SOLO DIRECCION + COMBO + ESTABLECIMIENTO) */}
+                        <div className="grid grid-cols-12 gap-2 items-end">
+                            
+                            {/* Input Dirección (5 COLUMNAS) */}
+                            <div className="col-span-5 flex flex-col gap-1">
+                                <label className={getLabelStyle(1)}>Dirección</label>
+                                <input 
+                                    name="direccion" 
+                                    className={`${isPatientDataLocked ? getLockedInputStyle(1) : getInputStyle(1)} ${!patientData.direccion ? 'border-red-400 bg-red-50' : ''}`} 
+                                    value={patientData.direccion} 
+                                    onChange={handlePatient} 
+                                    readOnly={isPatientDataLocked}
+                                    placeholder={!patientData.direccion ? "¡VACÍO!" : ""} 
+                                />
+                            </div>
+
+                            {/* Selector de Caseríos (3 COLUMNAS) */}
+                            <div className="col-span-3 flex flex-col gap-1">
+                                <label className="text-[9px] font-bold text-blue-500 uppercase ml-1 mb-0.5">Seleccionar Caserío</label>
+                                <select 
+                                    className={`w-full h-9 px-2 rounded-xl border-2 outline-none text-xs font-bold transition-all ${isPatientDataLocked ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-white border-blue-300 text-blue-700 cursor-pointer hover:border-blue-500 focus:ring-2 focus:ring-blue-100'}`}
+                                    disabled={isPatientDataLocked}
+                                    onChange={(e) => {
+                                        if(e.target.value) {
+                                            setPatientData(prev => ({...prev, direccion: e.target.value}));
+                                        }
+                                    }}
+                                    value="" 
+                                >
+                                    <option value="">▼ LISTA CASERÍOS</option>
+                                    {listaCaserios.map(caserio => (
+                                        <option key={caserio} value={caserio}>{caserio}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Establecimiento Origen (4 COLUMNAS) */}
+                            <div className="col-span-4 flex flex-col gap-1"><label className={getLabelStyle(1)}>ESTABLECIMIENTO DE ATENCIÓN</label><input name="estOrigen" className={isPatientDataLocked ? getLockedInputStyle(1) : getInputStyle(1)} value={patientData.estOrigen} onChange={handlePatient} readOnly={isPatientDataLocked} /></div>
+                        </div> 
+                           
+
+                      </div>
                   </div>
                 </div>
               )}
@@ -2385,16 +2662,37 @@ const generatePDF = () => {
               )}
             </div>
             <div className="bg-white p-6 border-t border-slate-100 flex justify-between items-center shrink-0">
-               {step > 1 ? (<button onClick={handleBack} className="px-6 py-2 rounded-xl hover:bg-slate-50 text-slate-500 font-bold flex gap-2 transition-all hover:text-slate-800 text-xs h-10 items-center"><ArrowLeft size={18}/> Atrás</button>) : (<div></div>)}
+               
+               {/* LADO IZQUIERDO: Botón Atrás (Pasos > 1) O Botón Salir (Paso 1) */}
+               {step > 1 ? (
+                   <button onClick={handleBack} className="px-6 py-2 rounded-xl hover:bg-slate-50 text-slate-500 font-bold flex gap-2 transition-all hover:text-slate-800 text-xs h-10 items-center">
+                       <ArrowLeft size={18}/> Atrás
+                   </button>
+               ) : (
+                   /* --- AQUÍ ESTÁ EL NUEVO BOTÓN QUE PEDISTE --- */
+                   <button 
+                       onClick={() => {
+                           if(window.confirm("¿Está seguro de volver al menú principal? Se perderán los datos actuales.")) {
+                               setIsModalOpen(false); 
+                               resetForm();
+                           }
+                       }} 
+                       className="px-6 py-2 rounded-xl hover:bg-red-50 text-slate-400 hover:text-red-600 font-bold flex gap-2 transition-all text-xs h-10 items-center border border-transparent hover:border-red-100"
+                   >
+                       <LogOut size={18}/> SALIR AL MENÚ
+                   </button>
+               )}
+
+               {/* LADO DERECHO: Botones de Acción (Siguiente / Guardar) */}
                <div className="flex gap-3">
                    {step === 4 && ( <> <button onClick={() => { setStep(1); resetForm(); setTimeout(() => setIsCalendarOpen(true), 100); }} className={`px-6 py-2 rounded-xl font-bold shadow-lg flex gap-2 items-center transition-all text-xs h-10 bg-slate-100 hover:bg-slate-200 text-slate-700`}><UserPlus size={18}/> NUEVO PACIENTE</button> <button onClick={handleSavePatient} className={`px-6 py-2 rounded-xl font-bold shadow-lg flex gap-2 items-center transition-all text-xs h-10 bg-blue-600 hover:bg-blue-700 text-white`}><SaveIcon size={18}/> GUARDAR PACIENTE</button> </> )}
                    {step < 4 ? (<button onClick={handleNextStep} className="bg-[#0F172A] hover:bg-slate-800 text-white px-8 py-2 rounded-xl font-bold shadow-xl flex gap-2 items-center transition-all hover:translate-x-1 hover:shadow-2xl text-xs h-10">Siguiente <ArrowRight size={18}/></button>) : ( <> <button onClick={generateExcel} className={`px-10 py-2 rounded-xl font-bold shadow-xl flex gap-2 items-center transition-all text-xs h-10 bg-emerald-600 hover:bg-emerald-700 text-white hover:-translate-y-1`}><Download size={20}/> EXPORTAR EXCEL ({savedPatients.length})</button> <button onClick={generatePDF} className={`px-6 py-2 rounded-xl font-bold shadow-xl flex gap-2 items-center transition-all text-xs h-10 bg-red-600 hover:bg-red-700 text-white hover:-translate-y-1 ml-2`}><FileText size={20}/> EXPORTAR PDF</button> </> )}
                </div>
             </div>
           </div>
+         
         )}
       </div>
-
       {isDxModalOpen && (
         <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-7xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
@@ -2437,7 +2735,19 @@ const generatePDF = () => {
             </div>
         </div>
       )}
-      
+      {/* --- CALENDARIO FLOTANTE (FIXED) --- */}
+      {isCalendarOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setIsCalendarOpen(false)}>
+            <div ref={calendarRef} onClick={(e) => e.stopPropagation()}>
+                <SimpleCalendar 
+                    selectedDate={patientData.fecAtencion} 
+                    onSelectDate={handleDateSelect} 
+                    onClose={() => setIsCalendarOpen(false)} 
+                    themeColor="blue" 
+                />
+            </div>
+        </div>
+      )}
       {/* INSERCION DE LA NUEVA CALCULADORA MODAL */}
       <AnemiaCalculatorModal 
         isOpen={showAnemiaModal} 
