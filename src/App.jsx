@@ -1324,6 +1324,7 @@ export default function App() {
     if (step === 3) {
        if (diagnoses.length === 0) { alert("⚠️ FALTAN DIAGNÓSTICOS");
        return; }
+       if (!validateDiagnoses()) return;
        for (let d of diagnoses) {
            const code = d.codigo.toUpperCase();
            if (code.startsWith('O') && patientData.sexo !== 'F') { alert(`⛔ ERROR: Código ${code} es SOLO MUJERES.`); return;
@@ -2423,8 +2424,6 @@ const generatePDF = () => {
                                     <option value="I-1 CACHIACO">I-1 CACHIACO</option>
                                 </select>
                               </div>
-                          </div>
-                          
                           {/* COMBOBOX: FINANCIADOR */}
                           <div className="col-span-2 mt-4">
                             <label className={getLabelStyle(1)}>Financiador</label>
@@ -2439,11 +2438,12 @@ const generatePDF = () => {
                                 <option value="4-OTROS">4-OTROS</option>
                             </select>
                           </div>
-			<div className="mt-6 flex justify-end">
+                        </div>
+		      <div className="mt-6 flex justify-end">
                               <button onClick={handleSaveManualPatient} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 text-sm shadow-lg"><Save size={18}/> GUARDAR DATOS</button>
-                          </div>
-                      </div>
-                  </div>
+                     </div>
+                   </div>
+                 </div>
               )}
               {showAdolescentModal && (
                 <div className="absolute inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-300">
@@ -2576,9 +2576,9 @@ const generatePDF = () => {
               {step === 2 && (
                 <div className="w-full lg:max-w-[65%] mx-auto transition-all duration-300">
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                      <div className="lg:col-span-2 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-                      <h3 className="font-extrabold mb-5 flex items-center gap-2 text-lg text-teal-800"><Activity size={24}/> Antropometría y Funciones Vitales</h3>
-                      <div className="space-y-5">
+                      <div className="lg:col-span-2 bg-white p-3 rounded-2xl shadow-sm border border-slate-200">
+                      <h3 className="font-extrabold mb-2 flex items-center gap-2 text-lg text-teal-800"><Activity size={24}/> Antropometría y Funciones Vitales</h3>
+                      <div className="space-y-2">
                       {[
                             { label: "Talla (cm)", name: "talla", min: 30, max: 200, hist: lastClinicalData.talla },
                             { label: "Peso (kg)", name: "peso", min: 0.5, max: 180, hist: lastClinicalData.peso },
@@ -2591,7 +2591,7 @@ const generatePDF = () => {
                             const isLocked = item.checkCond === false || (item.name === 'pAbd' && ageObj.y < 12) || (item.name === 'pCef' && ageObj.y > 5);
                             const hasHist = item.hist && item.hist.val;
                             return (
-                                  <div key={idx} className="grid grid-cols-12 gap-4 items-center border-b border-slate-50 pb-4 last:border-0 last:pb-0">
+                                  <div key={idx} className="grid grid-cols-12 gap-4 items-center border-b border-slate-50 pb-2 last:border-0 last:pb-0">
                                     <div className="col-span-5">
                                         <div className="flex justify-between items-center mb-1">
                                             <label className="text-[11px] font-bold text-teal-700 uppercase tracking-wider">{item.label}</label>
@@ -2599,20 +2599,47 @@ const generatePDF = () => {
                                             } if(item.name==='pCef') { setIgnorePCefValidation(true); setShowPCefError(false); } if(item.name==='pPreGest') { setIgnorePreGestValidation(true); setShowPreGestError(false);
                                             } }} className="text-[9px] font-bold bg-slate-100 text-slate-500 hover:bg-slate-200 px-2 py-0.5 rounded transition-colors">OMITIR</button> )}
                                         </div>
-                                        <input name={item.name} disabled={isLocked} value={clinicalData[item.name] ||
-                                        ''} onChange={(e) => handleNumericInput(e, item.min, item.max)} placeholder={isLocked ? "NO APLICA" : ""} className={`${borderlessInputStyle} border-2 border-slate-200 focus:border-teal-500 h-10 text-center text-lg font-bold text-slate-700 ${(item.isHb && showHbError && !clinicalData.hb) ?
-                                        'bg-red-50 border-red-500 animate-pulse placeholder-red-300' : ''} ${(item.name === 'pPreGest' && showPreGestError) ? 'bg-red-50 border-red-500 animate-pulse' : ''} ${isLocked ?
-                                        'bg-slate-100 text-slate-400 shadow-none' : ''} ${!isLocked && clinicalData[item.name] ? 'bg-teal-50 border-teal-500 text-teal-800' : ''}`} />
+					 <input 
+    name={item.name} 
+    disabled={isLocked} 
+    value={clinicalData[item.name] || ''} 
+    onChange={(e) => handleNumericInput(e, item.min, item.max)} 
+    placeholder={isLocked ? "NO APLICA" : ""} 
+    className={`
+        ${borderlessInputStyle} 
+        border-2 h-8 text-center text-lg font-bold transition-all
+        
+        /* 1. ESTADO NORMAL (Si no hay alertas ni bloqueos) */
+        ${!isLocked && !showHbError && !showPreGestError ? 'border-slate-200 focus:border-teal-500 text-slate-700' : ''}
+        
+        /* 2. ESTADO BLOQUEADO */
+        ${isLocked ? 'bg-slate-100 text-slate-400 shadow-none border-slate-200' : ''}
+        
+        /* 3. LÓGICA DE HEMOGLOBINA (ROJO / VERDE) */
+        ${(item.isHb && showHbError) 
+            ? (!clinicalData.hb 
+                ? 'bg-red-50 border-red-600 animate-pulse shadow-[0_0_10px_rgba(220,38,38,0.3)]' /* ROJO SI ESTÁ VACÍO */
+                : 'bg-emerald-100 border-emerald-500 text-emerald-800 font-black shadow-sm'      /* VERDE SI YA ESCRIBIÓ */
+              ) 
+            : ''
+        }
+
+        /* 4. LÓGICA DE P. PRE-GEST (ROJO / NORMAL) */
+        ${(item.name === 'pPreGest' && showPreGestError) ? 'bg-red-50 border-red-500 animate-pulse' : ''}
+        
+        /* 5. SI YA TIENE DATO (Y NO ES EL CASO ESPECIAL DE ERROR DE HB) */
+        ${!isLocked && clinicalData[item.name] && !(item.isHb && showHbError) ? 'bg-teal-50 border-teal-500 text-teal-800' : ''}
+    `} 
+/>                                       
                                     </div>
-                                    <div className="col-span-7 flex flex-col justify-end h-full pt-6">
-                                            <div className="flex w-full h-10 rounded-lg overflow-hidden text-xs font-bold shadow-sm border border-slate-200">
+                                    <div className="col-span-7 flex flex-col justify-end h-full pt-4">
+                                            <div className="flex w-full h-8 rounded-lg overflow-hidden text-xs font-bold shadow-sm border border-slate-200">
                                                 <div className="w-1/2 bg-rose-100 text-rose-800 flex items-center justify-center border-r border-rose-200">{hasHist ?
                                                 (<div className="flex items-center gap-1 truncate px-1"><Calendar size={12} className="shrink-0"/> {item.hist.date}</div>) : <span className="text-rose-300 select-none">SIN FECHA</span>}</div>
                                                 <div className="w-1/2 bg-teal-600 text-white flex items-center justify-center text-sm tracking-wider truncate px-1">{hasHist ?
                                                 (<span>{item.hist.val} <span className="text-[9px] opacity-70">Ant.</span></span>) : <span className="opacity-60 text-[10px] select-none font-medium">SIN DATO PREVIO</span>}</div>
                                             </div>
-                                            <p className="text-[9px] text-slate-400 text-center mt-1 uppercase tracking-wider select-none">{hasHist ?
-                                            "Último registro" : "No registrado"}</p>
+                                            
                                     </div>
                                 </div>
                             );

@@ -980,8 +980,22 @@ export default function App() {
       setClinicalData(prev => ({...prev, nivHb: result, dosaje: realHb.toFixed(1)})); 
   };
 
-  const addDx = () => { setDiagnoses([...diagnoses, { desc: '', tipo: '-', lab1: '', lab2: '', lab3: '', codigo: '' }]);
-  setTimeout(() => { if (dxBottomRef.current) { dxBottomRef.current.scrollIntoView({ behavior: 'smooth' }); } }, 100); };
+  const addDx = () => { 
+      const newIndex = diagnoses.length; 
+      
+      // 1. Agregamos la fila a la lista con tipo 'D' por defecto
+      setDiagnoses([...diagnoses, { desc: '', tipo: 'D', lab1: '', lab2: '', lab3: '', codigo: '' }]);
+      
+      // 2. Preparamos el modal con tipo 'D' por defecto también
+      setCurrentDxRow(newIndex);
+      setTempDx({ desc: '', tipo: 'D', lab1: '', lab2: '', lab3: '', codigo: '' });
+      setModalSearchTerm(""); 
+      setModalSuggestions([]); 
+      
+      // 3. Abrimos el modal y hacemos scroll
+      setIsDxModalOpen(true);
+      setTimeout(() => { if (dxBottomRef.current) { dxBottomRef.current.scrollIntoView({ behavior: 'smooth' }); } }, 100); 
+  };
   const removeDx = (i) => setDiagnoses(diagnoses.filter((_, idx) => idx !== i));
   const updateToContinuador = (idPaciente) => {
       if (!idPaciente) return;
@@ -1310,6 +1324,7 @@ export default function App() {
     if (step === 3) {
        if (diagnoses.length === 0) { alert("⚠️ FALTAN DIAGNÓSTICOS");
        return; }
+       if (!validateDiagnoses()) return;
        for (let d of diagnoses) {
            const code = d.codigo.toUpperCase();
            if (code.startsWith('O') && patientData.sexo !== 'F') { alert(`⛔ ERROR: Código ${code} es SOLO MUJERES.`); return;
@@ -2104,7 +2119,7 @@ const generatePDF = () => {
           </form>
           
           <p className="text-center text-[10px] text-slate-300 mt-6">
-            Versión Sistema de Atención 2025
+            Versión 1.0
           </p>
         </div>
       </div>
@@ -2409,8 +2424,6 @@ const generatePDF = () => {
                                     <option value="I-1 CACHIACO">I-1 CACHIACO</option>
                                 </select>
                               </div>
-                          </div>
-                          
                           {/* COMBOBOX: FINANCIADOR */}
                           <div className="col-span-2 mt-4">
                             <label className={getLabelStyle(1)}>Financiador</label>
@@ -2425,12 +2438,12 @@ const generatePDF = () => {
                                 <option value="4-OTROS">4-OTROS</option>
                             </select>
                           </div>
-
-                          <div className="mt-6 flex justify-end">
+                        </div>
+		      <div className="mt-6 flex justify-end">
                               <button onClick={handleSaveManualPatient} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 text-sm shadow-lg"><Save size={18}/> GUARDAR DATOS</button>
-                          </div>
-                      </div>
-                  </div>
+                     </div>
+                   </div>
+                 </div>
               )}
               {showAdolescentModal && (
                 <div className="absolute inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-300">
@@ -2504,8 +2517,8 @@ const generatePDF = () => {
                                 </div>
                                 <div className="flex gap-2">
                                      <button onClick={() => setIsManualModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white w-12 h-12 rounded-xl flex items-center justify-center shadow-lg transition-transform active:scale-95" title="Registrar Paciente Nuevo"><UserPlus size={24}/></button>
-                                    <button onClick={() => setShowCredModal(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 h-12 rounded-xl flex items-center justify-center shadow-lg transition-transform active:scale-95 font-bold text-xs gap-2" title="Ver Excel CRED"><FileSpreadsheet size={20}/> VER SEGUIMIENTO CRED</button>
-                                </div>
+                                    
+                             </div>
                           </div>
                         </div>
                         <div className="w-48 shrink-0"><label className={getLabelStyle(1)}>F. Atención</label><div className="relative"><input type="date" name="fecAtencion" className={getDateInputStyle(1) + ` h-12 ${getTheme(1).bgLight} text-center`} value={patientData.fecAtencion} onChange={handlePatient} /></div></div>
@@ -2563,9 +2576,9 @@ const generatePDF = () => {
               {step === 2 && (
                 <div className="w-full lg:max-w-[65%] mx-auto transition-all duration-300">
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                      <div className="lg:col-span-2 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-                      <h3 className="font-extrabold mb-5 flex items-center gap-2 text-lg text-teal-800"><Activity size={24}/> Antropometría y Funciones Vitales</h3>
-                      <div className="space-y-5">
+                      <div className="lg:col-span-2 bg-white p-3 rounded-2xl shadow-sm border border-slate-200">
+                      <h3 className="font-extrabold mb-2 flex items-center gap-2 text-lg text-teal-800"><Activity size={24}/> Antropometría y Funciones Vitales</h3>
+                      <div className="space-y-2">
                       {[
                             { label: "Talla (cm)", name: "talla", min: 30, max: 200, hist: lastClinicalData.talla },
                             { label: "Peso (kg)", name: "peso", min: 0.5, max: 180, hist: lastClinicalData.peso },
@@ -2578,7 +2591,7 @@ const generatePDF = () => {
                             const isLocked = item.checkCond === false || (item.name === 'pAbd' && ageObj.y < 12) || (item.name === 'pCef' && ageObj.y > 5);
                             const hasHist = item.hist && item.hist.val;
                             return (
-                                  <div key={idx} className="grid grid-cols-12 gap-4 items-center border-b border-slate-50 pb-4 last:border-0 last:pb-0">
+                                  <div key={idx} className="grid grid-cols-12 gap-4 items-center border-b border-slate-50 pb-2 last:border-0 last:pb-0">
                                     <div className="col-span-5">
                                         <div className="flex justify-between items-center mb-1">
                                             <label className="text-[11px] font-bold text-teal-700 uppercase tracking-wider">{item.label}</label>
@@ -2591,15 +2604,14 @@ const generatePDF = () => {
                                         'bg-red-50 border-red-500 animate-pulse placeholder-red-300' : ''} ${(item.name === 'pPreGest' && showPreGestError) ? 'bg-red-50 border-red-500 animate-pulse' : ''} ${isLocked ?
                                         'bg-slate-100 text-slate-400 shadow-none' : ''} ${!isLocked && clinicalData[item.name] ? 'bg-teal-50 border-teal-500 text-teal-800' : ''}`} />
                                     </div>
-                                    <div className="col-span-7 flex flex-col justify-end h-full pt-6">
-                                            <div className="flex w-full h-10 rounded-lg overflow-hidden text-xs font-bold shadow-sm border border-slate-200">
+                                    <div className="col-span-7 flex flex-col justify-end h-full pt-4">
+                                            <div className="flex w-full h-8 rounded-lg overflow-hidden text-xs font-bold shadow-sm border border-slate-200">
                                                 <div className="w-1/2 bg-rose-100 text-rose-800 flex items-center justify-center border-r border-rose-200">{hasHist ?
                                                 (<div className="flex items-center gap-1 truncate px-1"><Calendar size={12} className="shrink-0"/> {item.hist.date}</div>) : <span className="text-rose-300 select-none">SIN FECHA</span>}</div>
                                                 <div className="w-1/2 bg-teal-600 text-white flex items-center justify-center text-sm tracking-wider truncate px-1">{hasHist ?
                                                 (<span>{item.hist.val} <span className="text-[9px] opacity-70">Ant.</span></span>) : <span className="opacity-60 text-[10px] select-none font-medium">SIN DATO PREVIO</span>}</div>
                                             </div>
-                                            <p className="text-[9px] text-slate-400 text-center mt-1 uppercase tracking-wider select-none">{hasHist ?
-                                            "Último registro" : "No registrado"}</p>
+                                            
                                     </div>
                                 </div>
                             );
@@ -2650,8 +2662,8 @@ const generatePDF = () => {
                             {showAddButton && ( <button onClick={addDx} title="Agregar siguiente fila" className="w-8 h-8 bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-full flex items-center justify-center transition-colors shadow-sm animate-in zoom-in"><Plus size={16} strokeWidth={3} /></button> )}
                             <button onClick={(e) => { e.stopPropagation();
                             removeDx(idx); }} className="absolute -right-2 top-2 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={16}/></button>
-                        </div>
-                      </div>
+                          </div>
+                       </div>
                     )})}
                     <div ref={dxBottomRef} className="h-24 w-full bg-transparent"></div>
                   </div>
@@ -2802,7 +2814,7 @@ const generatePDF = () => {
                                                     ))}
                                                 </div>
 
-                                            </div>
+                                          </div>
                                     );
                                 });
                             })
