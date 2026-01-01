@@ -2433,44 +2433,30 @@ const generatePDF = () => {
               } }} className="px-4 py-4 hover:bg-slate-50 text-slate-300 hover:text-red-500 transition-colors border-l border-slate-100 ml-4" title="Cerrar y volver al menú principal"><X size={24}/></button>
             </div>
              {/* --- BARRA FIJA DE DATOS DEL PACIENTE (VISIBLE EN PASOS 1, 2, 3) --- */}
-             {/* --- BARRA FIJA DE DATOS DEL PACIENTE (DISEÑO LIMPIO) --- */}
             {patientData.paciente && step < 4 && (
               <div className="bg-blue-50 border-b border-blue-100 px-6 py-2 flex justify-between items-center shrink-0 animate-in slide-in-from-top-2 z-30">
                  <div className="flex items-center gap-3">
-                    {/* ÍCONO */}
                     <div className="bg-blue-100 p-2 rounded-full text-blue-600 shadow-sm">
                         <Users size={16} strokeWidth={2.5}/>
                     </div>
-                    
-                    {/* DATOS DE TEXTO */}
                     <div>
-                       <h3 className="text-xs font-black text-blue-900 leading-none tracking-wide mb-1">{patientData.paciente}</h3>
-                       
-                       {/* FILA DE DATOS (SIN RECUADROS) */}
-                       <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400 uppercase tracking-wide">
-                           <span className="flex items-center gap-1">
-                              DNI: <span className="text-slate-700 text-xs">{patientData.dni}</span>
+                       <h3 className="text-xs font-black text-blue-900 leading-none tracking-wide">{patientData.paciente}</h3>
+                       <div className="flex items-center gap-2 mt-1">
+                           <span className="text-[10px] font-bold text-slate-500 bg-white px-1.5 py-0.5 rounded border border-blue-100">
+                              DNI: <span className="text-slate-800">{patientData.dni}</span>
                            </span>
-                           
-                           <span className="text-slate-300">|</span>
-                           
-                           <span className="flex items-center gap-1">
-                              EDAD: <span className="text-slate-700 text-xs">
-                                {ageObj.y} años, {ageObj.m} meses, {ageObj.d} días
-                              </span>
+                           <span className="text-[10px] font-bold text-slate-500 bg-white px-1.5 py-0.5 rounded border border-blue-100">
+                              EDAD: <span className="text-slate-800">{ageString}</span>
                            </span>
-                           
-                           <span className="text-slate-300">|</span>
-                           
-                           <span className="flex items-center gap-1">
-                              SEXO: <span className="text-slate-700 text-xs">{patientData.sexo}</span>
+                           <span className="text-[10px] font-bold text-slate-500 bg-white px-1.5 py-0.5 rounded border border-blue-100">
+                              SEXO: <span className="text-slate-800">{patientData.sexo}</span>
                            </span>
                        </div>
                     </div>
                  </div>
                  
                  <div className="flex items-center gap-4">
-                    {/* INDICADOR VISUAL DE ESTADO A LA DERECHA */}
+                    {/* INDICADOR VISUAL DE ESTADO */}
                     <div className="text-right hidden sm:block">
                         <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">H. Clínica</div>
                         <div className="text-sm font-black text-slate-700">{patientData.hc || "---"}</div>

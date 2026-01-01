@@ -712,16 +712,15 @@ export default function App() {
       setShowSuggestions(false); 
       setSuggestions([]); 
       
+      // 1. Validación de Jurisdicción (Tu lógica original)
       let estConfigRaw = adminData.establecimiento.trim().toUpperCase();
       let estPatientRaw = p.estOrigen ? p.estOrigen.trim().toUpperCase() : "";
-
       let keywordConfig = estConfigRaw;
       if(estConfigRaw.includes("LAGUNAS")) keywordConfig = "LAGUNAS";
       if(estConfigRaw.includes("PUERTO")) keywordConfig = "PUERTO";
       if(estConfigRaw.includes("CUMBICUS")) keywordConfig = "CUMBICUS";
       if(estConfigRaw.includes("CACHIACO")) keywordConfig = "CACHIACO";
       if(estConfigRaw.includes("PACAIPAMPA")) keywordConfig = "PACAIPAMPA";
-
       const cleanConfig = cleanStr(keywordConfig);
       const cleanPatient = cleanStr(estPatientRaw);
       const match = cleanPatient.includes(cleanConfig) || cleanConfig.includes(cleanPatient);
@@ -749,12 +748,13 @@ export default function App() {
           if(!val) return "-";
           const isoDate = parseExcelDate(val); 
           if (!isoDate || isoDate === '2000-01-01') return "-";
-          const partes = isoDate.split('-');
+          const partes = isoDate.split('-'); 
           if(partes.length === 3) {
-              return `${partes[2]}/${partes[1]}/${partes[0]}`;
+              return `${partes[2]}/${partes[1]}/${partes[0]}`; 
           }
           return isoDate;
       };
+
       setLastClinicalData({
           talla: { val: p.last_talla, date: formatLastDate(p.last_fec_talla) },
           peso:  { val: p.last_peso,  date: formatLastDate(p.last_fec_peso) },
@@ -763,34 +763,52 @@ export default function App() {
           hb:    { val: p.last_hb,    date: formatLastDate(p.last_fec_hb) },
           pPreg: { val: p.last_ppreg, date: formatLastDate(p.last_fec_ppreg) }
       });
+
+      // Cargamos los datos
+      setPatientData(prev => ({ 
+          ...prev,
+          id: p.id, 
+          dni: p.dni || "", 
+          paciente: p.nombre || "", 
+          hc: p.hc || "", 
+          fecNac: safeFecNac, 
+          sexo: p.sexo || 'M', 
+          financiador: p.financiador || 'SIS', 
+          direccion: p.direccion || '', 
+          distrito: p.distrito || '', 
+          estOrigen: p.estOrigen || '', 
+          fur: p.last_fur ? parseExcelDate(p.last_fur) : prev.fur,
+          condEst: condicionCalculada, 
+          condServ: '' 
+      })); 
+      
+      setIsDataVerified(false); 
+
+      // --- LÓGICA DE BLOQUEO Y VALIDACIÓN DE HC VACÍA ---
       setTimeout(() => { 
-          // 1. Verificamos si tiene dirección
+          const hcInput = document.querySelector('input[name="hc"]');
           const tieneDireccion = p.direccion && p.direccion.trim() !== "";
+          const tieneHC = p.hc && String(p.hc).trim() !== ""; // Verificamos si tiene HC
 
-          setPatientData(prev => ({ 
-              ...prev,
-              id: p.id, 
-              dni: p.dni || "", 
-              paciente: p.nombre || "", 
-              hc: p.hc || "", 
-              fecNac: safeFecNac, 
-              sexo: p.sexo || 'M', 
-              financiador: p.financiador || 'SIS', 
-              direccion: p.direccion || '', 
-              distrito: p.distrito || '', 
-              estOrigen: p.estOrigen || '', 
-              fur: p.last_fur ? parseExcelDate(p.last_fur) : prev.fur,
-              condEst: condicionCalculada, 
-              condServ: '' 
-          })); 
-          
-          // LÓGICA: Si NO tiene dirección, NO bloqueamos (dejamos editar). Si TIENE, bloqueamos.
-          setIsPatientDataLocked(tieneDireccion); 
-          
-          setIsDataVerified(false); 
-      }, 10);
+          // 1. Determinamos si bloqueamos o no
+          if (!tieneHC) {
+               // CASO A: NO TIENE HC -> OBLIGATORIO EDITAR (Desbloqueamos todo)
+               setIsPatientDataLocked(false);
+               
+               // Efecto visual ROJO
+               if (hcInput) {
+                   hcInput.focus();
+                   hcInput.style.borderColor = "red";
+                   hcInput.style.backgroundColor = "#fee2e2";
+                   hcInput.classList.add("animate-pulse");
+                   // alert("⚠️ PACIENTE SIN HISTORIA CLÍNICA\nPor favor ingrese el número de Historia Clínica.");
+               }
+          } else {
+               // CASO B: SÍ TIENE HC -> Comportamiento normal (Bloqueamos si tiene dirección)
+               setIsPatientDataLocked(tieneDireccion);
+          }
+      }, 100); // Pequeño retraso para asegurar que el input renderizó
   };
-
   const checkRowValidity = (row) => { return (row.desc && row.desc.trim() !== '' && row.tipo && row.tipo !== '-' && row.tipo !== '' && row.codigo && row.codigo.trim() !== '');
   };
   const openDxSearch = (index) => { setCurrentDxRow(index); const existing = diagnoses[index];
@@ -1178,97 +1196,106 @@ export default function App() {
     }
   }, [patientData.dni, patientData.hc, step]);
   const handleNextStep = () => {
+    // Función auxiliar visual para marcar errores
     const markError = (name) => {
         const input = document.querySelector(`[name="${name}"]`);
-        // Selector genérico para input y select
         if (input) {
             input.style.borderColor = "red";
             input.style.borderWidth = "2px";
             input.classList.add("animate-pulse");
-            input.addEventListener('input', () => {
+            const eventType = input.tagName === 'SELECT' ? 'change' : 'input';
+            input.addEventListener(eventType, () => {
                 input.style.borderColor = ""; 
-                input.style.borderWidth = "";
-                input.classList.remove("animate-pulse");
-            }, { once: true });
-            // Para selects también escuchamos el cambio
-            input.addEventListener('change', () => {
-                input.style.borderColor = ""; 
-                input.style.borderWidth = "";
+                input.style.borderWidth = ""; 
                 input.classList.remove("animate-pulse");
             }, { once: true });
         }
     };
 
     // ========================================================================
-    // PASO 1: VALIDACIONES ADMINISTRATIVAS (ESTRICTAS)
+    // PASO 1: LÓGICA INTELIGENTE (SOLO VALIDA SI HAY DATOS)
     // ========================================================================
     if (step === 1) {
+        // A. DETECCIÓN: ¿El usuario escribió algo en DNI o Nombre?
+        const hayDatos = (patientData.dni && patientData.dni.trim().length > 0) || 
+                         (patientData.paciente && patientData.paciente.trim().length > 0);
+
+        // B. SI NO HAY DATOS -> DEJAR PASAR (Navegación libre entre ventanas)
+        if (!hayDatos) {
+            setStep(prev => prev + 1);
+            return;
+        }
+
+        // C. SI HAY DATOS -> ENTONCES SÍ EXIGIMOS TODO (Modo estricto)
+        
         // 1. Identidad
-        if (!patientData.dni || !patientData.paciente) {
-            alert("⚠️ FALTAN DATOS\nComplete DNI y Nombre.");
-            markError("dni"); return;
+        if (!patientData.dni) { 
+            alert("⚠️ FALTAN DATOS\nComplete el DNI."); 
+            markError("dni"); return; 
+        }
+        if (!patientData.paciente) { 
+            alert("⚠️ FALTAN DATOS\nComplete el Nombre."); 
+            markError("paciente"); return; 
         }
         
         // 2. Fecha de Atención
-        if (!patientData.fecAtencion) {
-            alert("⚠️ FALTA FECHA DE ATENCIÓN");
-            return;
+        if (!patientData.fecAtencion) { 
+            alert("⚠️ FALTA FECHA DE ATENCIÓN"); return; 
         }
 
-        // 3. CONDICIÓN ESTABLECIMIENTO Y SERVICIO (RECUPERADO)
-        if (!patientData.condEst || patientData.condEst === "") {
-            alert("⚠️ FALTA CONDICIÓN ESTABLECIMIENTO\nSeleccione: Nuevo, Continuador o Reingresante.");
-            markError("condEst"); return;
+        // 3. Condiciones (Establecimiento y Servicio)
+        if (!patientData.condEst || patientData.condEst === "") { 
+            alert("⚠️ FALTA CONDICIÓN ESTABLECIMIENTO\nSeleccione: Nuevo, Continuador o Reingresante."); 
+            markError("condEst"); return; 
         }
-        if (!patientData.condServ || patientData.condServ === "") {
-            alert("⚠️ FALTA CONDICIÓN SERVICIO\nSeleccione: Nuevo, Continuador o Reingresante.");
+        if (!patientData.condServ || patientData.condServ === "") { 
+            alert("⚠️ FALTA CONDICIÓN SERVICIO\nSeleccione: Nuevo, Continuador o Reingresante."); 
+            markError("condServ"); return; 
+        }
+
+        // --- VALIDACIONES DE CONSISTENCIA (TUS REGLAS ESPECÍFICAS) ---
+        
+        // Caso 1: Si es NUEVO en Est., debe ser NUEVO en Serv.
+        if (patientData.condEst === 'N' && patientData.condServ !== 'N') {
+            alert("⛔ ERROR DE CONSISTENCIA\n\nSi el paciente es NUEVO en el establecimiento, obligatoriamente debe ser NUEVO en el servicio.\n\nCorrija 'Cond. Serv' a NUEVO.");
             markError("condServ"); return;
         }
 
-        // 4. HISTORIA CLÍNICA (NO PUEDE SER IGUAL AL DNI)
+        // Caso 2: Si es REINGRESANTE en Est., NO puede ser CONTINUADOR en Serv.
+        if (patientData.condEst === 'R' && patientData.condServ === 'C') {
+             alert("⛔ ERROR DE CONSISTENCIA\n\nUn paciente REINGRESANTE al establecimiento no puede ser CONTINUADOR en el servicio inmediatamente.\n\nSeleccione NUEVO o REINGRESANTE para el servicio.");
+             markError("condServ"); return;
+        }
+
+        // 4. Historia Clínica vs DNI
         const dniStr = String(patientData.dni).trim();
-        const hcStr = patientData.hc ? String(patientData.hc).trim() : "";
-        
-        // Comparación Numérica para detectar 00373661 == 373661
+        const hcStr = String(patientData.hc || '').trim();
         const dniNum = parseInt(dniStr, 10);
         const hcNum = parseInt(hcStr, 10);
 
-        if (!hcStr) {
-            alert("⚠️ FALTA HISTORIA CLÍNICA\nIngrese el N° de Carpeta.");
-            markError("hc"); return;
+        if (!hcStr) { 
+            alert("⚠️ FALTA HISTORIA CLÍNICA\nIngrese el N° de Historia clínica."); 
+            markError("hc"); return; 
         }
-
+        
+        // Si son iguales, bloqueamos (usando tu lógica original + numérica)
         if (dniStr === hcStr || (dniNum === hcNum && dniNum > 0)) {
-            alert(`⛔ ERROR DE HISTORIA CLÍNICA\nLa H.C. (${hcStr}) es igual al DNI del paciente.\nEsto es incorrecto. Ingrese el N° DE CARPETA.`);
-            markError("hc"); return;
+             alert(`⛔ ERROR DE HISTORIA CLÍNICA\nLa H.C. (${hcStr}) es igual al DNI.\nEsto es incorrecto. Ingrese el N° DE HISTORIA CLINICA.`); 
+             markError("hc"); setIsPatientDataLocked(false); return;
         }
 
-               // Caso 1: Si es NUEVO en Establecimiento, OBLIGATORIAMENTE debe ser NUEVO en Servicio.
-        if (patientData.condEst === 'N' && patientData.condServ !== 'N') {
-            alert("⛔ ERROR DE CONSISTENCIA\n\nSi el paciente es NUEVO en el establecimiento, obligatoriamente debe ser NUEVO en el servicio.\n\nCorrija 'Cond. Serv' a NUEVO.");
-            markError("condServ");
-            return;
+        // 5. Dirección
+        if (!patientData.direccion || patientData.direccion.trim().length < 2) { 
+            alert("⚠️ FALTA DIRECCIÓN\nEl campo dirección no puede estar vacío."); 
+            markError("direccion"); return; 
         }
-
-        // Caso 2: Si es REINGRESANTE en Establecimiento, NO puede ser CONTINUADOR en Servicio.
-        // (Un reingresante es alguien que vuelve después de tiempo, por lo que su cuenta en el servicio se reinicia o es Reingresante también, pero no Continuador inmediato).
-        if (patientData.condEst === 'R' && patientData.condServ === 'C') {
-             alert("⛔ ERROR DE CONSISTENCIA\n\nUn paciente REINGRESANTE al establecimiento no puede ser CONTINUADOR en el servicio inmediatamente.\n\nSeleccione NUEVO o REINGRESANTE para el servicio.");
-             markError("condServ");
-             return;
-        }
-
-        // 5. DIRECCIÓN (OBLIGATORIA)
-        if (!patientData.direccion || patientData.direccion.trim().length < 2) {
-            alert("⚠️ FALTA DIRECCIÓN\nEl campo dirección no puede estar vacío.");
-            markError("direccion"); return;
-        }
-
- 
     }
 
     // ========================================================================
-    // PASO 2: VALIDACIÓN MÉDICA INTELIGENTE (NO TOCADO - SE MANTIENE IGUAL)
+    // PASO 2: VALIDACIÓN MÉDICA INTELIGENTE (TU CÓDIGO ORIGINAL INTACTO)
+    // ========================================================================
+     // ========================================================================
+    // PASO 2: VALIDACIÓN MÉDICA INTELIGENTE (CON RANGOS DE AYUDA)
     // ========================================================================
     if (step === 2) {
       const { talla, peso, hb, pAbd } = clinicalData;
@@ -1276,65 +1303,104 @@ export default function App() {
       const p = peso ? parseFloat(peso) : null;
       const { y, m, d } = ageObj;
 
-      // RECIÉN NACIDO
+      // --- GRUPO 1: RECIÉN NACIDO (0 a 28 días) ---
       if (y === 0 && m === 0 && d >= 0) {
-          if (t && (t < 40 || t > 62)) { alert(`⛔ TALLA IRREAL (Neonato)\nRango: 40-62cm. Valor: ${t}`);
-          markError("talla"); return; }
-          if (p && (p < 1.5 || p > 6)) { alert(`⛔ PESO IRREAL (Neonato)\nRango: 1.5-6kg. Valor: ${p}`);
-          markError("peso"); return; }
-      }
-      // LACTANTE
-      else if (y === 0 && m > 0) {
-        if (t && (t < 45 || t > 85)) { alert(`⛔ TALLA IRREAL (Lactante)\nRango: 45-85cm. Valor: ${t}`);
-        markError("talla"); return; }
-        if (p && (p < 2.5 || p > 14)) { alert(`⛔ PESO IRREAL (Lactante)\nRango: 2.5-14kg. Valor: ${p}`);
-        markError("peso"); return; }
-      }
-      // NIÑO
-      else if (y >= 1 && y < 5) {
-        if (t && (t < 65 || t > 120)) { alert(`⛔ TALLA IRREAL (Niño ${y}a)\nRango: 65-120cm. Valor: ${t}`);
-        markError("talla"); return; }
-        if (p && (p < 7 || p > 28)) { alert(`⛔ PESO IRREAL (Niño ${y}a)\nRango: 7-28kg. Valor: ${p}`);
-        markError("peso"); return; }
-      }
-      // ESCOLAR/ADOLESCENTE
-      else if (y >= 5 && y < 18) {
-        if (t && (t < 95 || t > 210)) { alert(`⛔ TALLA IRREAL (${y} años)\nValor: ${t}cm`);
-        markError("talla"); return; }
-        if (p && (p < 12 || p > 130)) { alert(`⛔ PESO IRREAL (${y} años)\nMínimo ~12kg. Valor: ${p}`);
-        markError("peso"); return; }
-      }
-      // ADULTO
-      else if (y >= 18) {
-        if (t && (t < 130 || t > 250)) { alert(`⛔ TALLA INVÁLIDA (Adulto)\nValor: ${t} cm`);
-        markError("talla"); return; }
-        if (p && (p < 35 || p > 300)) { alert(`⛔ PESO INVÁLIDO (Adulto)\nValor: ${p} kg`);
-        markError("peso"); return; }
+          if (t && (t < 40 || t > 62)) { 
+              alert(`⛔ TALLA IRREAL (Neonato)\nPOR FAVOR DEBE REGISTRAR VALORES ENTRE: 40 - 62 cm`); 
+              markError("talla"); return; 
+          }
+          if (p && (p < 1.5 || p > 6)) { 
+              alert(`⛔ PESO IRREAL (Neonato)\nPOR FAVOR DEBE REGISTRAR VALORES ENTRE: 1.5 - 6.0 kg`); 
+              markError("peso"); return; 
+          }
       }
 
-      if (hb && (hb < 3 || hb > 24)) { alert("⛔ HEMOGLOBINA ERRÓNEA (3-24)");
-      markError("hb"); return; }
-      if (pAbd && (parseFloat(pAbd) < 10 || parseFloat(pAbd) > 200)) { alert("⛔ P. ABDOMINAL ERRÓNEO");
-      markError("pAbd"); return; }
+      // --- GRUPO 2: LACTANTE (1 mes a 11 meses) ---
+      else if (y === 0 && m > 0) {
+          if (t && (t < 45 || t > 85)) { 
+              alert(`⛔ TALLA IRREAL (Lactante)\nPOR FAVOR DEBE REGISTRAR VALORES ENTRE: 45 - 85 cm`); 
+              markError("talla"); return; 
+          }
+          if (p && (p < 2.5 || p > 14)) { 
+              alert(`⛔ PESO IRREAL (Lactante)\nPOR FAVOR DEBE REGISTRAR VALORES ENTRE: 2.5 - 14.0 kg`); 
+              markError("peso"); return; 
+          }
+      }
+
+      // --- GRUPO 3: NIÑO PEQUEÑO (1 a 4 años) ---
+      else if (y >= 1 && y < 5) {
+          if (t && (t < 65 || t > 120)) { 
+              alert(`⛔ TALLA IRREAL (Niño ${y} años)\nPOR FAVOR DEBE REGISTRAR VALORES ENTRE: 65 - 120 cm`); 
+              markError("talla"); return; 
+          }
+          if (p && (p < 7 || p > 28)) { 
+              alert(`⛔ PESO IRREAL (Niño ${y} años)\nPOR FAVOR DEBE REGISTRAR VALORES ENTRE: 7.0 - 28.0 kg`); 
+              markError("peso"); return; 
+          }
+      }
+
+      // --- GRUPO 4: ESCOLAR Y ADOLESCENTE (5 a 17 años) ---
+      else if (y >= 5 && y < 18) {
+          if (t && (t < 95 || t > 210)) { 
+              alert(`⛔ TALLA IRREAL (Paciente ${y} años)\nPOR FAVOR DEBE REGISTRAR VALORES ENTRE: 95 - 210 cm`); 
+              markError("talla"); return; 
+          }
+          if (p && (p < 12 || p > 130)) { 
+              alert(`⛔ PESO IRREAL (Paciente ${y} años)\nPOR FAVOR DEBE REGISTRAR VALORES ENTRE: 12.0 - 130.0 kg`); 
+              markError("peso"); return; 
+          }
+      }
+
+      // --- GRUPO 5: ADULTO (18 años a más) ---
+      else if (y >= 18) {
+          if (t && (t < 130 || t > 250)) { 
+              alert(`⛔ TALLA INVÁLIDA (Adulto)\nPOR FAVOR DEBE REGISTRAR VALORES ENTRE: 130 - 250 cm`); 
+              markError("talla"); return; 
+          }
+          if (p && (p < 35 || p > 300)) { 
+              alert(`⛔ PESO INVÁLIDO (Adulto)\nPOR FAVOR DEBE REGISTRAR VALORES ENTRE: 35.0 - 300.0 kg`); 
+              markError("peso"); return; 
+          }
+      }
+
+      // Validaciones Generales (Hemoglobina y Perímetro Abdominal)
+      if (hb && (hb < 3 || hb > 24)) { 
+          alert("⛔ HEMOGLOBINA ERRÓNEA\nPOR FAVOR DEBE REGISTRAR VALORES ENTRE: 3.0 - 24.0"); 
+          markError("hb"); return; 
+      }
+      if (pAbd && (parseFloat(pAbd) < 10 || parseFloat(pAbd) > 200)) { 
+          alert("⛔ P. ABDOMINAL ERRÓNEO\nPOR FAVOR DEBE REGISTRAR VALORES ENTRE: 10 - 200 cm"); 
+          markError("pAbd"); return; 
+      }
     }
 
     // ========================================================================
     // PASO 3: VALIDACIÓN CIE-10
     // ========================================================================
     if (step === 3) {
-       if (diagnoses.length === 0) { alert("⚠️ FALTAN DIAGNÓSTICOS");
-       return; }
-       if (!validateDiagnoses()) return;
+       // Si hay paciente pero no diagnósticos -> Alerta
+       if ((patientData.dni || patientData.paciente) && diagnoses.length === 0) { 
+           alert("⚠️ FALTAN DIAGNÓSTICOS"); return; 
+       }
+       
+       // Si hay diagnósticos, validamos reglas específicas (D509, Sexo, Lab)
+       if (diagnoses.length > 0) {
+           if (!validateDiagnoses()) return; // Llama a tu función externa
+       }
+       
+       // Validación extra de sexo por código (tu lógica original)
        for (let d of diagnoses) {
            const code = d.codigo.toUpperCase();
-           if (code.startsWith('O') && patientData.sexo !== 'F') { alert(`⛔ ERROR: Código ${code} es SOLO MUJERES.`); return;
+           if (code.startsWith('O') && patientData.sexo !== 'F') { 
+               alert(`⛔ ERROR: Código ${code} es SOLO MUJERES.`); return; 
            }
        }
     }
 
     // AVANZAR
     setStep(prev => prev + 1);
-  }; 
+  };
+  
   const handleBack = () => { setDxErrors({}); setStep(s => s - 1); };
   const resetForm = () => { 
       setPatientData({ ...initialPatient, fecAtencion: '', estAtencion: adminData.establecimiento, condEst: '', condServ: '' });
@@ -1701,7 +1767,21 @@ const generatePDF = () => {
                 cell(p.hc, cx, yData + hRowData, w.dni, hRowData, {align:'center', fontSize:7, bold:true});
                 cell(p.condicion, cx, yData + (hRowData*2), w.dni, hRowData, {align:'center', fontSize:5.5, bold:false});
                 cx += w.dni;
-                cell(p.financiador === 'SIS' ? '2' : '1', cx, yData, w.fin, hDataBlock, {align:'center', vAlign:'middle', fontSize:7, bold:false});
+                const fRaw = (p.financiador || '').toString().trim().toUpperCase();
+
+		// 1. Buscamos si el texto empieza con un número (Regex: ^ significa inicio, \d+ significa dígitos)
+		const numeroEncontrado = fRaw.match(/^(\d+)/);
+
+		let codigoFinanciador = '1'; // Valor por defecto (PAGANTE)
+
+		if (numeroEncontrado) {
+    		codigoFinanciador = numeroEncontrado[1]; // Usamos el número encontrado (ej: "2", "3")
+		} else if (fRaw === 'SIS') {
+    		codigoFinanciador = '2'; // Respaldo por si escriben solo "SIS"
+		}
+
+		// Dibujamos solo el número en el PDF
+		cell(codigoFinanciador, cx, yData, w.fin, hDataBlock, {align:'center', vAlign:'middle', fontSize:7, bold:false});
                 cx += w.fin;
                 cell(p.distrito, cx, yData, w.dist, hRowData, {align:'left', fontSize:5, bold:false});
                 let direccionTexto = p.direccion || "";
@@ -2349,40 +2429,54 @@ const generatePDF = () => {
             {/* CONTENIDO SCROLLABLE DEL FORMULARIO */}
             <div className="flex-grow overflow-y-auto p-6 bg-[#FAFAFA] no-scrollbar relative" ref={dxListRef}>
               
-              {/* ALERTAS VALIDACIÓN */}
-              {validationAlert.isOpen && (
-                <div className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-300">
-                    <div className={`rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border-2 animate-in zoom-in duration-300 bg-white ${validationAlert.type === 'GESTANTE' ? 'border-pink-200' : 'border-orange-200'}`}>
-                        <div className={`px-8 py-6 border-b flex items-center gap-4 ${validationAlert.type === 'GESTANTE' ? 'bg-pink-50 border-pink-100' : 'bg-orange-50 border-orange-100'}`}>
-                            <div className={`p-4 rounded-full shrink-0 shadow-sm ${validationAlert.type === 'GESTANTE' ?
-                            'bg-pink-200 text-pink-700' : 'bg-orange-200 text-orange-700'}`}>
-                                {validationAlert.type === 'GESTANTE' ?
-                                <Baby size={40} strokeWidth={2} /> : <Activity size={40} strokeWidth={2} />}
-                            </div>
-                            <div>
-                                <h3 className={`text-2xl font-black ${validationAlert.type === 'GESTANTE' ? 'text-pink-700' : 'text-orange-800'}`}>{validationAlert.title}</h3>
-                                <p className={`text-xs font-bold mt-1 uppercase ${validationAlert.type === 'GESTANTE' ?
-                                'text-pink-400' : 'text-orange-400'}`}>Corrección requerida</p>
-                            </div>
-                        </div>
-                        <div className="p-8">
-                            <p className="text-slate-700 font-bold text-lg mb-6 leading-snug">{validationAlert.message}</p>
-                            <div className={`p-5 rounded-2xl border flex items-start gap-4 shadow-sm ${validationAlert.type === 'GESTANTE' ?
-                            'bg-pink-50 border-pink-200' : 'bg-orange-50 border-orange-200'}`}>
-                                <div className={`mt-1 ${validationAlert.type === 'GESTANTE' ?
-                                'text-pink-500' : 'text-orange-500'}`}><AlertTriangle size={24}/></div>
-                                <div className="text-sm font-medium text-slate-600 whitespace-pre-line leading-relaxed">{validationAlert.details}</div>
-                            </div>
-                        </div>
-                        <div className="px-8 py-5 bg-slate-50 border-t border-slate-100 flex justify-end">
-                            <button onClick={() => { setValidationAlert({ ...validationAlert, isOpen: false });
-                            if (validationAlert.type === 'LAB_MISSING') { setStep(2); setShowHbError(true); } }} className={`px-8 py-3 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-sm tracking-wide text-white ${validationAlert.type === 'GESTANTE' ?
-                            'bg-pink-500 hover:bg-pink-600' : 'bg-orange-500 hover:bg-orange-600'}`}>ENTENDIDO, VOY A CORREGIR</button>
-                        </div>
-                    </div>
-                </div>
-              )}
+              {/* --- ALERTA DE VALIDACIÓN FLOTANTE (FIXED) --- */}
+{validationAlert.isOpen && (
+  <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
+    {/* CAPA DE FONDO OSCURO (BACKDROP) */}
+    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setValidationAlert({ ...validationAlert, isOpen: false })}></div>
 
+    {/* TARJETA DE ALERTA */}
+    <div className={`relative bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border-2 animate-in zoom-in duration-300 ${validationAlert.type === 'GESTANTE' ? 'border-pink-200' : 'border-orange-200'}`}>
+      
+      {/* CABECERA DE LA ALERTA */}
+      <div className={`px-8 py-6 border-b flex items-center gap-4 ${validationAlert.type === 'GESTANTE' ? 'bg-pink-50 border-pink-100' : 'bg-orange-50 border-orange-100'}`}>
+        <div className={`p-4 rounded-full shrink-0 shadow-sm ${validationAlert.type === 'GESTANTE' ? 'bg-pink-200 text-pink-700' : 'bg-orange-200 text-orange-700'}`}>
+          {validationAlert.type === 'GESTANTE' ? <Baby size={40} strokeWidth={2} /> : <Activity size={40} strokeWidth={2} />}
+        </div>
+        <div>
+          <h3 className={`text-2xl font-black ${validationAlert.type === 'GESTANTE' ? 'text-pink-700' : 'text-orange-800'}`}>{validationAlert.title}</h3>
+          <p className={`text-xs font-bold mt-1 uppercase ${validationAlert.type === 'GESTANTE' ? 'text-pink-400' : 'text-orange-400'}`}>Corrección requerida</p>
+        </div>
+      </div>
+
+      {/* CONTENIDO DEL MENSAJE */}
+      <div className="p-8 max-h-[60vh] overflow-y-auto">
+        <p className="text-slate-700 font-bold text-lg mb-6 leading-snug">{validationAlert.message}</p>
+        <div className={`p-5 rounded-2xl border flex items-start gap-4 shadow-sm ${validationAlert.type === 'GESTANTE' ? 'bg-pink-50 border-pink-200' : 'bg-orange-50 border-orange-200'}`}>
+          <div className={`mt-1 ${validationAlert.type === 'GESTANTE' ? 'text-pink-500' : 'text-orange-500'}`}><AlertTriangle size={24}/></div>
+          <div className="text-sm font-medium text-slate-600 whitespace-pre-line leading-relaxed">{validationAlert.details}</div>
+        </div>
+      </div>
+
+      {/* BOTÓN DE ACCIÓN */}
+      <div className="px-8 py-5 bg-slate-50 border-t border-slate-100 flex justify-end">
+        <button 
+            onClick={() => { 
+                setValidationAlert({ ...validationAlert, isOpen: false }); 
+                // Lógica específica para redireccionar al error
+                if (validationAlert.type === 'LAB_MISSING') { 
+                    setStep(2); 
+                    setShowHbError(true); 
+                } 
+            }} 
+            className={`px-8 py-3 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-sm tracking-wide text-white ${validationAlert.type === 'GESTANTE' ? 'bg-pink-500 hover:bg-pink-600' : 'bg-orange-500 hover:bg-orange-600'}`}
+        >
+            ENTENDIDO, VOY A CORREGIR
+        </button>
+      </div>
+    </div>
+  </div>
+)}
               {/* MODALES INTERNOS (Manual, Adolescente, Jurisdicción) */}
               {isManualModalOpen && (
                   <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -2547,9 +2641,23 @@ const generatePDF = () => {
                           <div className="col-span-1 flex flex-col gap-1"><label className={getLabelStyle(1)}>Sexo</label><input name="sexo" className={getLockedInputStyle(1)} value={patientData.sexo} onChange={handlePatient} readOnly={true} /></div>
                           <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>Edad (A/M/D)</label><input className={`${baseInputStyle} border-orange-200 text-orange-800 bg-orange-50 cursor-default text-center tracking-wide`} value={ageString} readOnly={true} /></div>
                           <div className="col-span-1 flex flex-col gap-1"><label className={getLabelStyle(1)}>Edad Meses</label><input className={`${baseInputStyle} border-orange-200 text-orange-800 bg-orange-50 cursor-default text-center font-black`} value={ageInMonths} readOnly={true} /></div>
-                          <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>Financiador</label><input name="financiador" className={isPatientDataLocked ? getLockedInputStyle(1) : getInputStyle(1)} value={patientData.financiador} onChange={handlePatient} readOnly={isPatientDataLocked} /></div>
-                        </div>
-
+                          <div className="col-span-2 flex flex-col gap-1">
+    			  <label className={getLabelStyle(1)}>Financiador</label>
+   			  <select 
+                          name="financiador" 
+       			  className={isPatientDataLocked ? getLockedInputStyle(1) : getInputStyle(1)} 
+       			  value={patientData.financiador} 
+       			  onChange={handlePatient} 
+       			  disabled={isPatientDataLocked}
+    			>
+       			 <option value="">SELECCIONAR...</option>
+       			 <option value="1-PAGANTE">1-PAGANTE</option>
+       			 <option value="2-SIS">2-SIS</option>
+       			 <option value="3-ESSALUD">3-ESSALUD</option>
+       			 <option value="4-OTROS">4-OTROS</option>
+    			</select>
+			</div>
+                       </div>
                         <div className="grid grid-cols-12 gap-2 items-end">
                           <div className="col-span-8 flex flex-col gap-1"><label className={getLabelStyle(1)}>Paciente</label><input name="paciente" className={isPatientDataLocked ?
                           getLockedInputStyle(1) + " font-black" : getInputStyle(1) + " font-black"} value={patientData.paciente} onChange={handlePatient} readOnly={isPatientDataLocked} /></div>
@@ -2599,10 +2707,38 @@ const generatePDF = () => {
                                             } if(item.name==='pCef') { setIgnorePCefValidation(true); setShowPCefError(false); } if(item.name==='pPreGest') { setIgnorePreGestValidation(true); setShowPreGestError(false);
                                             } }} className="text-[9px] font-bold bg-slate-100 text-slate-500 hover:bg-slate-200 px-2 py-0.5 rounded transition-colors">OMITIR</button> )}
                                         </div>
-                                        <input name={item.name} disabled={isLocked} value={clinicalData[item.name] ||
-                                        ''} onChange={(e) => handleNumericInput(e, item.min, item.max)} placeholder={isLocked ? "NO APLICA" : ""} className={`${borderlessInputStyle} border-2 border-slate-200 focus:border-teal-500 h-10 text-center text-lg font-bold text-slate-700 ${(item.isHb && showHbError && !clinicalData.hb) ?
-                                        'bg-red-50 border-red-500 animate-pulse placeholder-red-300' : ''} ${(item.name === 'pPreGest' && showPreGestError) ? 'bg-red-50 border-red-500 animate-pulse' : ''} ${isLocked ?
-                                        'bg-slate-100 text-slate-400 shadow-none' : ''} ${!isLocked && clinicalData[item.name] ? 'bg-teal-50 border-teal-500 text-teal-800' : ''}`} />
+					 <input 
+    name={item.name} 
+    disabled={isLocked} 
+    value={clinicalData[item.name] || ''} 
+    onChange={(e) => handleNumericInput(e, item.min, item.max)} 
+    placeholder={isLocked ? "NO APLICA" : ""} 
+    className={`
+        ${borderlessInputStyle} 
+        border-2 h-8 text-center text-lg font-bold transition-all
+        
+        /* 1. ESTADO NORMAL (Si no hay alertas ni bloqueos) */
+        ${!isLocked && !showHbError && !showPreGestError ? 'border-slate-200 focus:border-teal-500 text-slate-700' : ''}
+        
+        /* 2. ESTADO BLOQUEADO */
+        ${isLocked ? 'bg-slate-100 text-slate-400 shadow-none border-slate-200' : ''}
+        
+        /* 3. LÓGICA DE HEMOGLOBINA (ROJO / VERDE) */
+        ${(item.isHb && showHbError) 
+            ? (!clinicalData.hb 
+                ? 'bg-red-50 border-red-600 animate-pulse shadow-[0_0_10px_rgba(220,38,38,0.3)]' /* ROJO SI ESTÁ VACÍO */
+                : 'bg-emerald-100 border-emerald-500 text-emerald-800 font-black shadow-sm'      /* VERDE SI YA ESCRIBIÓ */
+              ) 
+            : ''
+        }
+
+        /* 4. LÓGICA DE P. PRE-GEST (ROJO / NORMAL) */
+        ${(item.name === 'pPreGest' && showPreGestError) ? 'bg-red-50 border-red-500 animate-pulse' : ''}
+        
+        /* 5. SI YA TIENE DATO (Y NO ES EL CASO ESPECIAL DE ERROR DE HB) */
+        ${!isLocked && clinicalData[item.name] && !(item.isHb && showHbError) ? 'bg-teal-50 border-teal-500 text-teal-800' : ''}
+    `} 
+/>                                       
                                     </div>
                                     <div className="col-span-7 flex flex-col justify-end h-full pt-4">
                                             <div className="flex w-full h-8 rounded-lg overflow-hidden text-xs font-bold shadow-sm border border-slate-200">
