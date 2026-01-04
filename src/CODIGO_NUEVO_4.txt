@@ -522,7 +522,7 @@ export default function App() {
   const [hbAdjusted, setHbAdjusted] = useState(null);
   const [isPremature, setIsPremature] = useState(false);
 
-  const [adminData, setAdminData] = useState({ anio: '2026', mes: 'ENERO', establecimiento: 'PACAIPAMPA', turno: 'MAÑANA', ups: 'MEDICINA', dniResp: '', nombreResp: '', isConfigured: false });
+  const [adminData, setAdminData] = useState({ anio: '2026', mes: 'ENERO', establecimiento: 'E.S I-4 PACAIPAMPA', turno: 'MAÑANA', ups: 'MEDICINA', dniResp: '', nombreResp: '', isConfigured: false });
   const initialPatient = { dni: '', paciente: '', hc: '', fecNac: '', sexo: '', financiador: '', direccion: '', distrito: '', estAtencion: 'PACAIPAMPA', fecAtencion: '', condicion: '', fur: '', estOrigen: '', condEst: '', condServ: '' };
   const [patientData, setPatientData] = useState(initialPatient);
   const [savedPatients, setSavedPatients] = useState([]);
@@ -761,48 +761,32 @@ export default function App() {
       setShowSuggestions(false); 
       setSuggestions([]); 
       
-      // =====================================================================
-      // 1. VALIDACIÓN DE JURISDICCIÓN (INTELIGENTE CON NUEVOS NOMBRES)
-      // =====================================================================
-      // Objetivo: Detectar si "E.S I-4 PACAIPAMPA" es compatible con "PACAIPAMPA"
+      // 1. DETECCIÓN DE JURISDICCIÓN
       let estConfigRaw = adminData.establecimiento.trim().toUpperCase();
       let estPatientRaw = p.estOrigen ? p.estOrigen.trim().toUpperCase() : "";
       
-      // Extraemos la PALABRA CLAVE del establecimiento configurado
+      // Palabras clave para comparar (Tu lógica actual)
       let keyword = "";
       if (estConfigRaw.includes("PACAIPAMPA")) keyword = "PACAIPAMPA";
       else if (estConfigRaw.includes("PUERTO")) keyword = "PUERTO";
-      else if (estConfigRaw.includes("LAGUNAS")) keyword = "LAGUNAS"; // Cubre "Lagunas S.P" y "Lagunas de San Pablo"
+      else if (estConfigRaw.includes("LAGUNAS")) keyword = "LAGUNAS";
       else if (estConfigRaw.includes("CUMBICUS")) keyword = "CUMBICUS";
       else if (estConfigRaw.includes("CACHIACO")) keyword = "CACHIACO";
-      else keyword = estConfigRaw; // Fallback por si agregas otro
+      else keyword = estConfigRaw;
 
-      // Verificamos si el origen del paciente CONTIENE esa palabra clave
-      const match = estPatientRaw.includes(keyword);
+      const isSameJurisdiction = estPatientRaw.includes(keyword);
 
-      if (!match) {
-          setJurisdictionErrorMsg(`El paciente pertenece a: "${p.estOrigen || 'DESCONOCIDO'}"\nPero usted está en: "${adminData.establecimiento}"`);
-          setShowJurisdictionModal(true); 
-      }
-
-      // =====================================================================
-      // 2. CARGA DE DATOS (Mantiene tu lógica original)
-      // =====================================================================
+      // 2. PREPARAR DATOS COMUNES
       setSearchTerm(p.nombre || "");
       const safeFecNac = parseExcelDate(p.fecNac);
-
+      
+      // Alerta Adolescente (Mantiene tu lógica)
       const currentAgeObj = getAgeComponents(safeFecNac, patientData.fecAtencion);
       if (currentAgeObj.y >= 12 && currentAgeObj.y <= 17) {
           setShowAdolescentModal(true);
       }
 
-      // Cálculo de Continuador usando la misma palabra clave para el historial
-      const esContinuador = p.historialEst.some(historialItem => { 
-          const itemLimpio = cleanStr(historialItem); 
-          return itemLimpio.includes(cleanStr(keyword)); 
-      });
-      const condicionCalculada = esContinuador ? "C" : "R";
-
+      // Cargar Historial Clínico Previo
       const formatLastDate = (val) => {
           if(!val) return "-";
           const isoDate = parseExcelDate(val); 
@@ -821,48 +805,72 @@ export default function App() {
           pPreg: { val: p.last_ppreg, date: formatLastDate(p.last_fec_ppreg) }
       });
 
-      setPatientData(prev => ({ 
-          ...prev,
-          id: p.id, 
-          dni: p.dni || "", 
-          paciente: p.nombre || "", 
-          hc: p.hc || "", 
-          fecNac: safeFecNac, 
-          sexo: p.sexo || 'M', 
-          financiador: p.financiador || 'SIS', 
-          direccion: p.direccion || '', 
-          distrito: p.distrito || '', 
-          estOrigen: p.estOrigen || '', 
-          fur: p.last_fur ? parseExcelDate(p.last_fur) : prev.fur,
-          condEst: condicionCalculada, 
-          condServ: '' 
-      })); 
-      
-      setIsDataVerified(false); 
+      // 3. LÓGICA DIFERENCIADA (EL CAMBIO CLAVE)
+      if (isSameJurisdiction) {
+          // --- CASO A: MISMO ESTABLECIMIENTO (CONTINUADOR) ---
+          const esContinuador = p.historialEst.some(h => cleanStr(h).includes(cleanStr(keyword)));
+          
+          setPatientData(prev => ({ 
+              ...prev,
+              id: p.id, 
+              dni: p.dni || "", 
+              paciente: p.nombre || "", 
+              hc: p.hc || "", // Mantiene su HC antigua
+              fecNac: safeFecNac, 
+              sexo: p.sexo || 'M', 
+              financiador: p.financiador || '2-SIS', 
+              direccion: p.direccion || '', 
+              distrito: p.distrito || '', 
+              estOrigen: p.estOrigen || '', 
+              fur: p.last_fur ? parseExcelDate(p.last_fur) : prev.fur,
+              condEst: esContinuador ? "C" : "R", 
+              condServ: '' 
+          }));
+          
+          // Bloqueamos datos porque ya es nuestro paciente
+          setIsPatientDataLocked(true); 
 
-      // =====================================================================
-      // 3. BLOQUEO Y ALERTA DE HC VACÍA
-      // =====================================================================
+      } else {
+          // --- CASO B: VIENE DE OTRO ESTABLECIMIENTO (TRANSFERENCIA / NUEVO AQUÍ) ---
+          
+          setPatientData(prev => ({ 
+              ...prev,
+              id: p.id, 
+              dni: p.dni || "", 
+              paciente: p.nombre || "", 
+              fecNac: safeFecNac, 
+              sexo: p.sexo || 'M', 
+              financiador: p.financiador || '2-SIS', 
+              direccion: p.direccion || '', 
+              distrito: p.distrito || '', 
+              fur: p.last_fur ? parseExcelDate(p.last_fur) : prev.fur,
+              
+              // --- CAMBIOS AUTOMÁTICOS SOLICITADOS ---
+              estOrigen: adminData.establecimiento, // Se auto-selecciona el actual (A)
+              hc: "",                               // Se limpia la HC para obligar a editar
+              condEst: 'N',                         // Fuerza NUEVO
+              condServ: 'N'                         // Fuerza NUEVO
+          }));
+
+          // DESBLOQUEAMOS para que pueda editar HC y Establecimiento
+          setIsPatientDataLocked(false);
+
+          // LANZAMOS LA ADVERTENCIA ESPECÍFICA
+          setValidationAlert({
+              isOpen: true,
+              type: 'TRANSFER', // Nuevo tipo de alerta azul/info
+              title: 'Paciente de Otro Establecimiento',
+              message: `El paciente pertenece a: "${p.estOrigen || 'DESCONOCIDO'}".\nSe procederá a registrar en: "${adminData.establecimiento}".`,
+              details: '✅ Se han cargado sus datos personales.\n✅ La condición cambió automáticamente a NUEVO.\n✏️ POR FAVOR: Ingrese el N° de HISTORIA CLÍNICA de este establecimiento.'
+          });
+      }
+      
+      // Focus en el input de HC si está vacío (pequeño delay para que renderice)
       setTimeout(() => { 
           const hcInput = document.querySelector('input[name="hc"]');
-          const tieneDireccion = p.direccion && p.direccion.trim() !== "";
-          const tieneHC = p.hc && String(p.hc).trim() !== ""; 
-
-          if (!tieneHC) {
-               // A: NO TIENE HC -> OBLIGATORIO EDITAR (Desbloqueamos todo y pintamos rojo)
-               setIsPatientDataLocked(false);
-               if (hcInput) {
-                   hcInput.focus();
-                   hcInput.style.borderColor = "red";
-                   hcInput.style.backgroundColor = "#fee2e2";
-                   hcInput.classList.add("animate-pulse");
-               }
-          } else {
-               // B: SÍ TIENE HC -> Bloqueamos si ya tiene dirección
-               setIsPatientDataLocked(tieneDireccion);
-          }
-      }, 100);
-  };
+          if (hcInput && !isSameJurisdiction) hcInput.focus();
+      }, 200);
+  };  
   const checkRowValidity = (row) => { return (row.desc && row.desc.trim() !== '' && row.tipo && row.tipo !== '-' && row.tipo !== '' && row.codigo && row.codigo.trim() !== '');
   };
   const openDxSearch = (index) => { setCurrentDxRow(index); const existing = diagnoses[index];
@@ -2621,53 +2629,77 @@ const generatePDF = () => {
             <div className="flex-grow overflow-y-auto p-6 bg-[#FAFAFA] no-scrollbar relative" ref={dxListRef}>
               
               {/* --- ALERTA DE VALIDACIÓN FLOTANTE (FIXED) --- */}
+{/* --- ALERTA DE VALIDACIÓN FLOTANTE (FIXED) --- */}
 {validationAlert.isOpen && (
   <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
-    {/* CAPA DE FONDO OSCURO (BACKDROP) */}
     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setValidationAlert({ ...validationAlert, isOpen: false })}></div>
 
-    {/* TARJETA DE ALERTA */}
-    <div className={`relative bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border-2 animate-in zoom-in duration-300 ${validationAlert.type === 'GESTANTE' ? 'border-pink-200' : 'border-orange-200'}`}>
+    {/* LÓGICA DE COLORES SEGÚN TIPO */}
+    <div className={`relative bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border-2 animate-in zoom-in duration-300 
+        ${validationAlert.type === 'GESTANTE' ? 'border-pink-200' : validationAlert.type === 'TRANSFER' ? 'border-indigo-200' : 'border-orange-200'}`}>
       
-      {/* CABECERA DE LA ALERTA */}
-      <div className={`px-8 py-6 border-b flex items-center gap-4 ${validationAlert.type === 'GESTANTE' ? 'bg-pink-50 border-pink-100' : 'bg-orange-50 border-orange-100'}`}>
-        <div className={`p-4 rounded-full shrink-0 shadow-sm ${validationAlert.type === 'GESTANTE' ? 'bg-pink-200 text-pink-700' : 'bg-orange-200 text-orange-700'}`}>
-          {validationAlert.type === 'GESTANTE' ? <Baby size={40} strokeWidth={2} /> : <Activity size={40} strokeWidth={2} />}
+      {/* CABECERA */}
+      <div className={`px-8 py-6 border-b flex items-center gap-4 
+          ${validationAlert.type === 'GESTANTE' ? 'bg-pink-50 border-pink-100' : validationAlert.type === 'TRANSFER' ? 'bg-indigo-50 border-indigo-100' : 'bg-orange-50 border-orange-100'}`}>
+        
+        <div className={`p-4 rounded-full shrink-0 shadow-sm 
+            ${validationAlert.type === 'GESTANTE' ? 'bg-pink-200 text-pink-700' : validationAlert.type === 'TRANSFER' ? 'bg-indigo-200 text-indigo-700' : 'bg-orange-200 text-orange-700'}`}>
+          {validationAlert.type === 'GESTANTE' ? <Baby size={40} strokeWidth={2} /> : validationAlert.type === 'TRANSFER' ? <RefreshCw size={40} strokeWidth={2}/> : <Activity size={40} strokeWidth={2} />}
         </div>
+        
         <div>
-          <h3 className={`text-2xl font-black ${validationAlert.type === 'GESTANTE' ? 'text-pink-700' : 'text-orange-800'}`}>{validationAlert.title}</h3>
-          <p className={`text-xs font-bold mt-1 uppercase ${validationAlert.type === 'GESTANTE' ? 'text-pink-400' : 'text-orange-400'}`}>Corrección requerida</p>
+          <h3 className={`text-2xl font-black 
+              ${validationAlert.type === 'GESTANTE' ? 'text-pink-700' : validationAlert.type === 'TRANSFER' ? 'text-indigo-800' : 'text-orange-800'}`}>
+              {validationAlert.title}
+          </h3>
+          <p className={`text-xs font-bold mt-1 uppercase 
+              ${validationAlert.type === 'GESTANTE' ? 'text-pink-400' : validationAlert.type === 'TRANSFER' ? 'text-indigo-400' : 'text-orange-400'}`}>
+              {validationAlert.type === 'TRANSFER' ? 'Acción Requerida: Asignar HC' : 'Corrección requerida'}
+          </p>
         </div>
       </div>
 
-      {/* CONTENIDO DEL MENSAJE */}
+      {/* CONTENIDO */}
       <div className="p-8 max-h-[60vh] overflow-y-auto">
         <p className="text-slate-700 font-bold text-lg mb-6 leading-snug">{validationAlert.message}</p>
-        <div className={`p-5 rounded-2xl border flex items-start gap-4 shadow-sm ${validationAlert.type === 'GESTANTE' ? 'bg-pink-50 border-pink-200' : 'bg-orange-50 border-orange-200'}`}>
-          <div className={`mt-1 ${validationAlert.type === 'GESTANTE' ? 'text-pink-500' : 'text-orange-500'}`}><AlertTriangle size={24}/></div>
+        <div className={`p-5 rounded-2xl border flex items-start gap-4 shadow-sm 
+            ${validationAlert.type === 'GESTANTE' ? 'bg-pink-50 border-pink-200' : validationAlert.type === 'TRANSFER' ? 'bg-indigo-50 border-indigo-200' : 'bg-orange-50 border-orange-200'}`}>
+          <div className={`mt-1 
+              ${validationAlert.type === 'GESTANTE' ? 'text-pink-500' : validationAlert.type === 'TRANSFER' ? 'text-indigo-500' : 'text-orange-500'}`}>
+              <AlertTriangle size={24}/>
+          </div>
           <div className="text-sm font-medium text-slate-600 whitespace-pre-line leading-relaxed">{validationAlert.details}</div>
         </div>
       </div>
 
-      {/* BOTÓN DE ACCIÓN */}
+      {/* BOTÓN */}
       <div className="px-8 py-5 bg-slate-50 border-t border-slate-100 flex justify-end">
         <button 
             onClick={() => { 
                 setValidationAlert({ ...validationAlert, isOpen: false }); 
-                // Lógica específica para redireccionar al error
+                // Si es falta de laboratorio, saltar al paso 2
                 if (validationAlert.type === 'LAB_MISSING') { 
                     setStep(2); 
                     setShowHbError(true); 
                 } 
+                // Si es transferencia, enfocar la HC
+                if (validationAlert.type === 'TRANSFER') {
+                    setTimeout(() => {
+                        const hcInput = document.querySelector('input[name="hc"]');
+                        if (hcInput) { hcInput.focus(); hcInput.select(); }
+                    }, 100);
+                }
             }} 
-            className={`px-8 py-3 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-sm tracking-wide text-white ${validationAlert.type === 'GESTANTE' ? 'bg-pink-500 hover:bg-pink-600' : 'bg-orange-500 hover:bg-orange-600'}`}
+            className={`px-8 py-3 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-sm tracking-wide text-white 
+                ${validationAlert.type === 'GESTANTE' ? 'bg-pink-500 hover:bg-pink-600' : validationAlert.type === 'TRANSFER' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-orange-500 hover:bg-orange-600'}`}
         >
-            ENTENDIDO, VOY A CORREGIR
+            {validationAlert.type === 'TRANSFER' ? 'ENTENDIDO, INGRESARÉ HC' : 'ENTENDIDO, VOY A CORREGIR'}
         </button>
       </div>
     </div>
   </div>
 )}
+
               {/* MODALES INTERNOS (Manual, Adolescente, Jurisdicción) */}
               {isManualModalOpen && (
                   <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -3015,10 +3047,27 @@ const generatePDF = () => {
                                     <option value="">▼ LISTA RÁPIDA</option>{listaCaserios.map(c => (<option key={c} value={c}>{c}</option>))}
                                 </select>
                             </div>
-                            <div className="col-span-12 md:col-span-4 space-y-0.5 pb-1">
-                                <label className="text-[9px] font-bold text-slate-400 uppercase">Establecimiento Origen (Referencia)</label>
-                                <input name="estOrigen" className={`w-full h-9 px-3 rounded-lg border outline-none text-[11px] font-bold uppercase ${isPatientDataLocked ? 'bg-slate-50 border-slate-200 text-slate-600' : 'bg-white border-slate-200 focus:border-blue-500'}`} value={patientData.estOrigen} onChange={handlePatient} readOnly={isPatientDataLocked} />
-                            </div>
+			    <div className="col-span-12 md:col-span-4 space-y-0.5 pb-1">
+    <label className="text-[9px] font-bold text-slate-400 uppercase">Establecimiento Origen (Referencia)</label>
+    <select 
+        name="estOrigen" 
+        className={`w-full h-9 px-3 rounded-lg border outline-none text-[11px] font-bold uppercase cursor-pointer 
+            ${isPatientDataLocked 
+                ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed' 
+                : 'bg-white border-slate-200 focus:border-blue-500 text-slate-700 hover:border-blue-300'
+            }`} 
+        value={patientData.estOrigen} 
+        onChange={handlePatient} 
+        disabled={isPatientDataLocked}
+    >
+        <option value="">SELECCIONE...</option>
+        <option value="E.S I-4 PACAIPAMPA">E.S I-4 PACAIPAMPA</option>
+        <option value="P.S I-2 EL PUERTO">P.S I-2 EL PUERTO</option>
+        <option value="P.S I-1 LAGUNAS DE SAN PABLO">P.S I-1 LAGUNAS DE SAN PABLO</option>
+        <option value="P.S I-1 CUMBICUS">P.S I-1 CUMBICUS</option>
+        <option value="P.S I-1 CACHIACO">P.S I-1 CACHIACO</option>
+    </select>
+</div>
 
                         </div>
                       </div>
@@ -3031,20 +3080,20 @@ const generatePDF = () => {
               {/* PASO 2: DATOS CLÍNICOS - DISEÑO ULTRA REDONDEADO (SOFT UI) */}
               {/* PASO 2: DATOS CLÍNICOS - DISEÑO 'BURBUJA' (FULL ROUNDED) */}
               {/* PASO 2: DATOS CLÍNICOS - INPUTS INTERNOS REDONDEADOS */}
+              {/* PASO 2: DATOS CLÍNICOS - CON CLASIFICACIÓN DE P. ABDOMINAL */}
+              {/* PASO 2: DATOS CLÍNICOS - REORGANIZADO Y COMPACTO */}
               {step === 2 && (
                 <div className="w-full max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300 pb-2">
                   
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
                       
-                      {/* COLUMNA IZQUIERDA */}
+                      {/* ================= COLUMNA IZQUIERDA (INPUTS) ================= */}
+                      {/* (Esta parte no ha cambiado, mantiene la lógica de P. Abd) */}
                       <div className="lg:col-span-8">
                           <div className="bg-white p-5 rounded-[2.5rem] shadow-sm border border-slate-200">
-                              
                               <h3 className="font-bold text-sm text-slate-700 mb-5 flex items-center gap-2 border-b border-slate-100 pb-3 ml-2">
-                                  <Activity size={20} className="text-teal-600"/>
-                                  ANTROPOMETRÍA Y FUNCIONES VITALES
+                                  <Activity size={20} className="text-teal-600"/> ANTROPOMETRÍA Y FUNCIONES VITALES
                               </h3>
-
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {[
                                     { label: "Talla", name: "talla", unit: "cm", icon: <ArrowRight className="rotate-[-45deg]" size={20}/>, min: 30, max: 200, hist: lastClinicalData.talla, color: 'blue' },
@@ -3055,64 +3104,45 @@ const generatePDF = () => {
                                     { label: "P. Pre-Gest.", name: "pPreGest", unit: "Kg", icon: <Baby size={18}/>, min: 30, max: 150, hist: lastClinicalData.pPreg, checkCond: patientData.condicion === 'GESTANTE', specialBtn: true, color: 'pink' }
                                 ].map((item, idx) => {
                                     if (item.checkAge === false) return null;
-                                    
                                     const isLocked = item.checkCond === false || (item.name === 'pAbd' && ageObj.y < 12) || (item.name === 'pCef' && ageObj.y > 5);
                                     const hasHist = item.hist && item.hist.val;
                                     
+                                    // Lógica P. Abdominal
+                                    let pAbdStatus = { text: "", color: `border-${item.color}-200`, bg: "bg-slate-50", textCol: "text-slate-700" };
+                                    if (item.name === 'pAbd' && clinicalData.pAbd && !isLocked) {
+                                        const val = parseFloat(clinicalData.pAbd); const sex = patientData.sexo;
+                                        if (sex === 'M' || sex === 'MASCULINO') {
+                                            if (val >= 102) pAbdStatus = { text: "RIESGO MUY ALTO", color: "border-red-500", bg: "bg-red-50", textCol: "text-red-700" };
+                                            else if (val >= 94) pAbdStatus = { text: "RIESGO ALTO", color: "border-orange-400", bg: "bg-orange-50", textCol: "text-orange-700" };
+                                            else pAbdStatus = { text: "NORMAL", color: "border-emerald-400", bg: "bg-emerald-50", textCol: "text-emerald-700" };
+                                        } else {
+                                            if (val >= 88) pAbdStatus = { text: "RIESGO MUY ALTO", color: "border-red-500", bg: "bg-red-50", textCol: "text-red-700" };
+                                            else if (val >= 80) pAbdStatus = { text: "RIESGO ALTO", color: "border-orange-400", bg: "bg-orange-50", textCol: "text-orange-700" };
+                                            else pAbdStatus = { text: "NORMAL", color: "border-emerald-400", bg: "bg-emerald-50", textCol: "text-emerald-700" };
+                                        }
+                                    }
+                                    const isHbAlert = (item.isHb && showHbError && !clinicalData.hb);
+
                                     return (
                                         <div key={idx} className={`relative group transition-all ${isLocked ? 'opacity-60 grayscale' : ''}`}>
-                                            
-                                            {/* Contenedor Fila */}
                                             <div className="flex items-center gap-3 p-2 rounded-[2rem] border border-slate-100 bg-white shadow-sm hover:shadow-md transition-all h-[5.5rem]">
-                                                
-                                                {/* Ícono */}
                                                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ml-1 ${isLocked ? 'bg-slate-200 text-slate-400' : `bg-${item.color}-100 text-${item.color}-600`}`}>
                                                     {item.icon}
                                                 </div>
-
-                                                {/* Area Central */}
                                                 <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
                                                     <div className="flex justify-between items-center px-1">
-                                                        <label className="text-[9px] font-bold text-slate-400 uppercase truncate">{item.label}</label>
-                                                        {item.specialBtn && !clinicalData[item.name] && !isLocked && ( 
-                                                            <button onClick={() => { 
-                                                                if(item.name==='pAbd') setIgnorePAbdValidation(true); 
-                                                                if(item.name==='pCef') setIgnorePCefValidation(true); 
-                                                                if(item.name==='pPreGest') setIgnorePreGestValidation(true); 
-                                                            }} className="text-[8px] bg-slate-100 text-slate-400 hover:bg-red-100 hover:text-red-500 px-2 py-0.5 rounded-full font-bold transition-colors">OMITIR</button> 
-                                                        )}
+                                                        <label className="text-[9px] font-bold text-slate-500 uppercase truncate">{item.label}</label>
+                                                        {item.specialBtn && !clinicalData[item.name] && !isLocked && ( <button onClick={() => { if(item.name==='pAbd') setIgnorePAbdValidation(true); if(item.name==='pCef') setIgnorePCefValidation(true); if(item.name==='pPreGest') setIgnorePreGestValidation(true); }} className="text-[8px] bg-slate-100 text-slate-400 hover:bg-red-100 hover:text-red-500 px-2 py-0.5 rounded-full font-bold transition-colors">OMITIR</button> )}
+                                                        {pAbdStatus.text && ( <span className={`text-[8px] font-black px-2 py-0.5 rounded-lg ${pAbdStatus.bg} ${pAbdStatus.textCol} animate-in fade-in zoom-in`}>{pAbdStatus.text}</span> )}
                                                     </div>
-                                                    
-                                                    {/* --- AQUÍ ESTÁ EL CAMBIO CLAVE: INPUT REDONDEADO INTERNO --- */}
                                                     <div className="relative">
-                                                        <input 
-                                                            name={item.name} 
-                                                            disabled={isLocked} 
-                                                            value={clinicalData[item.name] || ''} 
-                                                            onChange={(e) => handleNumericInput(e, item.min, item.max)} 
-                                                            placeholder="0.0" 
-                                                            className={`w-full h-10 bg-slate-50 border-2 border-slate-200 rounded-2xl px-3 text-xl font-black text-slate-700 outline-none focus:border-${item.color}-400 focus:bg-white focus:ring-4 focus:ring-${item.color}-50 transition-all placeholder-slate-300 disabled:cursor-not-allowed
-                                                                ${(item.isHb && showHbError && !clinicalData.hb) ? 'border-red-300 bg-red-50 text-red-500 placeholder-red-300' : ''}
-                                                            `}
-                                                        />
-                                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 uppercase pointer-events-none">{item.unit}</span>
+                                                        <input name={item.name} disabled={isLocked} value={clinicalData[item.name] || ''} onChange={(e) => handleNumericInput(e, item.min, item.max)} placeholder="0.0" className={`w-full h-10 border-2 rounded-2xl px-3 text-xl font-black outline-none transition-all placeholder-slate-300 disabled:cursor-not-allowed ${isHbAlert ? 'border-red-300 bg-red-50 text-red-500 placeholder-red-300' : ''} ${item.name === 'pAbd' && !isLocked ? `${pAbdStatus.bg} ${pAbdStatus.color} ${pAbdStatus.textCol}` : `bg-slate-50 border-slate-200 text-slate-700 focus:border-${item.color}-400 focus:bg-white focus:ring-4 focus:ring-${item.color}-50`}`}/>
+                                                        <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold uppercase pointer-events-none ${item.name === 'pAbd' && !isLocked && clinicalData.pAbd ? pAbdStatus.textCol : 'text-slate-400'}`}>{item.unit}</span>
                                                     </div>
                                                 </div>
-
-                                                {/* Historial */}
-                                                <div className="w-16 flex flex-col items-end justify-center pl-1 h-14 mr-1">
-                                                    {hasHist ? (
-                                                        <>
-                                                            <span className="text-[8px] text-slate-400 leading-none mb-1 text-center w-full">{item.hist.date}</span>
-                                                            <div className="text-xs font-black text-teal-700 bg-teal-50 px-1 py-1.5 rounded-2xl border border-teal-100 text-center w-full shadow-sm">
-                                                                {item.hist.val}
-                                                            </div>
-                                                        </>
-                                                    ) : (
-                                                        <span className="text-[8px] font-bold text-slate-300 bg-slate-50 px-2 py-2 rounded-2xl block text-center w-full border border-slate-100">---</span>
-                                                    )}
+                                                <div className="w-20 flex flex-col items-end justify-center border-l border-slate-200 pl-2 h-14 mr-1">
+                                                    {hasHist ? ( <><span className="text-[8px] text-slate-400 leading-none mb-1.5">{item.hist.date}</span><div className="text-sm font-black text-teal-700 bg-teal-100 px-2 py-1.5 rounded-2xl border border-teal-200 text-center w-full shadow-sm flex items-center justify-center">{item.hist.val}</div></>) : ( <span className="text-[8px] font-bold text-slate-300 bg-slate-100 px-3 py-1.5 rounded-2xl block text-center w-full">---</span> )}
                                                 </div>
-
                                             </div>
                                         </div>
                                     );
@@ -3121,69 +3151,61 @@ const generatePDF = () => {
                           </div>
                       </div>
 
-                      {/* COLUMNA DERECHA */}
-                      <div className="lg:col-span-4 space-y-4">
+                      {/* ================= COLUMNA DERECHA (WIDGETS REORGANIZADOS) ================= */}
+                      <div className="lg:col-span-4 space-y-5">
                           
-                          {/* WIDGET ANEMIA */}
-                          <div className="bg-gradient-to-br from-violet-600 to-indigo-700 rounded-[2.5rem] p-5 text-white shadow-lg shadow-indigo-200 relative overflow-hidden group">
-                              {/* ... contenido anemia ... */}
-                              <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-5 transition-opacity"></div>
-                              <div className="flex justify-between items-center mb-4">
-                                  <div className="flex items-center gap-3">
-                                      <div className="p-2.5 bg-white/20 rounded-2xl backdrop-blur-sm"><Calculator size={20} className="text-white"/></div>
-                                      <div>
-                                          <h4 className="font-bold text-sm leading-tight">Anemia</h4>
-                                          <p className="text-[9px] text-indigo-200 opacity-80">Calculadora</p>
-                                      </div>
-                                  </div>
-                              </div>
-                              
-                              <div className="bg-black/20 rounded-2xl p-3 mb-4 text-center border border-white/10">
-                                <div className="text-[10px] font-bold opacity-70 uppercase tracking-widest mb-1">Resultado</div>
-                                <div className="text-lg font-black truncate">{anemiaResult || "---"}</div>
-                              </div>
-
-                              <button onClick={() => setShowAnemiaModal(true)} className="w-full bg-white text-indigo-700 font-bold py-3 rounded-2xl text-[10px] shadow-md hover:bg-indigo-50 transition-all flex items-center justify-center gap-2 transform active:scale-95">
-                                  ABRIR CALCULADORA <ArrowRight size={12}/>
-                              </button>
-                          </div>
-
-                          {/* WIDGET NUTRICIÓN */}
-                           <div className="bg-white rounded-[2.5rem] p-5 shadow-sm border border-slate-200">
+                          {/* --- BLOQUE 1: ESTADO NUTRICIONAL (SOLO) --- */}
+                          <div className="bg-white rounded-[2.5rem] p-5 shadow-sm border border-slate-200">
                               <h4 className="text-slate-700 font-bold text-xs mb-4 flex items-center gap-2 ml-1">
                                   <Heart size={16} className="text-rose-500"/> Estado Nutricional
                               </h4>
-                              
-                              <div className="flex gap-3 mb-3">
-                                  {/* IMC */}
+                              {/* Solo IMC y Diagnóstico */}
+                              <div className="flex gap-3">
                                   <div className="w-20 bg-slate-50 rounded-2xl p-2 border border-slate-100 text-center flex flex-col justify-center">
                                       <span className="text-[8px] font-bold text-slate-400 block mb-0.5">IMC</span>
                                       <div className="text-base font-black text-slate-700">{clinicalData.imc || '--'}</div>
                                   </div>
-                                  
-                                  {/* INPUT RIESGO: CAMBIA DE COLOR DINÁMICAMENTE */}
                                   <div className="flex-1">
-                                      <input 
-                                        name="riesgo" 
-                                        value={clinicalData.riesgo} 
-                                        onChange={handleClinical} 
-                                        className={`w-full h-full border-2 rounded-2xl px-3 text-[10px] font-bold outline-none uppercase text-center transition-all duration-300
-                                            ${clinicalData.riesgo === 'NORMAL' 
-                                                ? 'bg-emerald-100 border-emerald-300 text-emerald-800 shadow-inner' // VERDE
-                                                : (clinicalData.riesgo && clinicalData.riesgo.includes('TABLA')) 
-                                                    ? 'bg-amber-100 border-amber-300 text-amber-800' // NARANJA (TABLA Z)
-                                                    : clinicalData.riesgo 
-                                                        ? 'bg-red-100 border-red-300 text-red-800 animate-pulse' // ROJO (CUALQUIER OTRA COSA)
-                                                        : 'bg-slate-50 border-slate-200 text-slate-700 placeholder-slate-300 focus:border-teal-500' // GRIS (VACÍO)
-                                            }
-                                        `} 
-                                        placeholder="DIAGNÓSTICO..." 
-                                      />
+                                      <input name="riesgo" value={clinicalData.riesgo} onChange={handleClinical} className={`w-full h-full border-2 rounded-2xl px-3 text-[10px] font-bold outline-none uppercase text-center transition-all duration-300 ${clinicalData.riesgo === 'NORMAL' ? 'bg-emerald-100 border-emerald-300 text-emerald-800 shadow-inner' : (clinicalData.riesgo && clinicalData.riesgo.includes('TABLA')) ? 'bg-amber-100 border-amber-300 text-amber-800' : clinicalData.riesgo ? 'bg-red-100 border-red-300 text-red-800 animate-pulse' : 'bg-slate-50 border-slate-200 text-slate-700 placeholder-slate-300 focus:border-teal-500'}`} placeholder="DIAGNÓSTICO..." />
                                   </div>
                               </div>
+                          </div>
 
-                              <button onClick={() => setShowNutriModal(true)} className="w-full border-2 border-dashed border-slate-300 text-slate-500 hover:border-teal-400 hover:text-teal-700 hover:bg-teal-50 font-bold py-2.5 rounded-2xl text-[10px] transition-all flex items-center justify-center gap-2">
-                                  <FileText size={14}/> TABLA Z-SCORE
+                          {/* --- BLOQUE 2: CALCULADORAS CLÍNICAS (AGRUPADAS) --- */}
+                          <div className="bg-slate-50/80 rounded-[2.5rem] p-4 shadow-inner border border-slate-100 space-y-3">
+                              <h4 className="text-slate-500 font-bold text-[10px] uppercase tracking-widest mb-3 ml-2 flex items-center gap-2">
+                                  <Calculator size={14}/> Herramientas
+                              </h4>
+
+                              {/* BOTÓN 1: CALCULADORA ANEMIA (Color Violeta) */}
+                              <button onClick={() => setShowAnemiaModal(true)} className="w-full group bg-gradient-to-r from-violet-600 to-indigo-600 text-white p-3.5 rounded-2xl shadow-md hover:shadow-lg hover:scale-[1.02] transition-all text-left flex justify-between items-center relative overflow-hidden">
+                                  <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-20 transition-opacity"></div>
+                                  <div className="pl-1">
+                                      <div className="text-[9px] font-bold opacity-80 mb-0.5 flex items-center gap-1">
+                                          <Droplets size={10}/> Calculadora Anemia
+                                      </div>
+                                      {/* Muestra el resultado actual de forma compacta */}
+                                      <div className="text-sm font-black truncate leading-tight">
+                                        {anemiaResult && anemiaResult !== "---" ? anemiaResult : "EVALUAR"}
+                                      </div>
+                                  </div>
+                                  <div className="bg-white/20 p-2 rounded-xl backdrop-blur-sm shrink-0">
+                                      <ArrowRight size={16} />
+                                  </div>
+                              </button>
+
+                              {/* BOTÓN 2: TABLA Z-SCORE (Color Esmeralda, mismo tamaño) */}
+                              <button onClick={() => setShowNutriModal(true)} className="w-full group bg-gradient-to-r from-emerald-500 to-teal-600 text-white p-3.5 rounded-2xl shadow-md hover:shadow-lg hover:scale-[1.02] transition-all text-left flex justify-between items-center relative overflow-hidden">
+                                  <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-20 transition-opacity"></div>
+                                  <div className="pl-1">
+                                      <div className="text-[9px] font-bold opacity-80 mb-0.5 flex items-center gap-1">
+                                          <FileText size={10}/> Tabla Z-Score (OMS)
+                                      </div>
+                                      <div className="text-sm font-black truncate leading-tight">VER GRÁFICAS</div>
+                                  </div>
+                                  <div className="bg-white/20 p-2 rounded-xl backdrop-blur-sm shrink-0">
+                                      <ArrowRight size={16} />
+                                  </div>
                               </button>
                           </div>
 

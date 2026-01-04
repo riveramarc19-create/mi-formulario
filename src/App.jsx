@@ -522,7 +522,7 @@ export default function App() {
   const [hbAdjusted, setHbAdjusted] = useState(null);
   const [isPremature, setIsPremature] = useState(false);
 
-  const [adminData, setAdminData] = useState({ anio: '2026', mes: 'ENERO', establecimiento: 'PACAIPAMPA', turno: 'MAÑANA', ups: 'MEDICINA', dniResp: '', nombreResp: '', isConfigured: false });
+  const [adminData, setAdminData] = useState({ anio: '2026', mes: 'ENERO', establecimiento: 'E.S I-4 PACAIPAMPA', turno: 'MAÑANA', ups: 'MEDICINA', dniResp: '', nombreResp: '', isConfigured: false });
   const initialPatient = { dni: '', paciente: '', hc: '', fecNac: '', sexo: '', financiador: '', direccion: '', distrito: '', estAtencion: 'PACAIPAMPA', fecAtencion: '', condicion: '', fur: '', estOrigen: '', condEst: '', condServ: '' };
   const [patientData, setPatientData] = useState(initialPatient);
   const [savedPatients, setSavedPatients] = useState([]);
@@ -761,48 +761,32 @@ export default function App() {
       setShowSuggestions(false); 
       setSuggestions([]); 
       
-      // =====================================================================
-      // 1. VALIDACIÓN DE JURISDICCIÓN (INTELIGENTE CON NUEVOS NOMBRES)
-      // =====================================================================
-      // Objetivo: Detectar si "E.S I-4 PACAIPAMPA" es compatible con "PACAIPAMPA"
+      // 1. DETECCIÓN DE JURISDICCIÓN
       let estConfigRaw = adminData.establecimiento.trim().toUpperCase();
       let estPatientRaw = p.estOrigen ? p.estOrigen.trim().toUpperCase() : "";
       
-      // Extraemos la PALABRA CLAVE del establecimiento configurado
+      // Palabras clave para comparar (Tu lógica actual)
       let keyword = "";
       if (estConfigRaw.includes("PACAIPAMPA")) keyword = "PACAIPAMPA";
       else if (estConfigRaw.includes("PUERTO")) keyword = "PUERTO";
-      else if (estConfigRaw.includes("LAGUNAS")) keyword = "LAGUNAS"; // Cubre "Lagunas S.P" y "Lagunas de San Pablo"
+      else if (estConfigRaw.includes("LAGUNAS")) keyword = "LAGUNAS";
       else if (estConfigRaw.includes("CUMBICUS")) keyword = "CUMBICUS";
       else if (estConfigRaw.includes("CACHIACO")) keyword = "CACHIACO";
-      else keyword = estConfigRaw; // Fallback por si agregas otro
+      else keyword = estConfigRaw;
 
-      // Verificamos si el origen del paciente CONTIENE esa palabra clave
-      const match = estPatientRaw.includes(keyword);
+      const isSameJurisdiction = estPatientRaw.includes(keyword);
 
-      if (!match) {
-          setJurisdictionErrorMsg(`El paciente pertenece a: "${p.estOrigen || 'DESCONOCIDO'}"\nPero usted está en: "${adminData.establecimiento}"`);
-          setShowJurisdictionModal(true); 
-      }
-
-      // =====================================================================
-      // 2. CARGA DE DATOS (Mantiene tu lógica original)
-      // =====================================================================
+      // 2. PREPARAR DATOS COMUNES
       setSearchTerm(p.nombre || "");
       const safeFecNac = parseExcelDate(p.fecNac);
-
+      
+      // Alerta Adolescente (Mantiene tu lógica)
       const currentAgeObj = getAgeComponents(safeFecNac, patientData.fecAtencion);
       if (currentAgeObj.y >= 12 && currentAgeObj.y <= 17) {
           setShowAdolescentModal(true);
       }
 
-      // Cálculo de Continuador usando la misma palabra clave para el historial
-      const esContinuador = p.historialEst.some(historialItem => { 
-          const itemLimpio = cleanStr(historialItem); 
-          return itemLimpio.includes(cleanStr(keyword)); 
-      });
-      const condicionCalculada = esContinuador ? "C" : "R";
-
+      // Cargar Historial Clínico Previo
       const formatLastDate = (val) => {
           if(!val) return "-";
           const isoDate = parseExcelDate(val); 
@@ -821,48 +805,72 @@ export default function App() {
           pPreg: { val: p.last_ppreg, date: formatLastDate(p.last_fec_ppreg) }
       });
 
-      setPatientData(prev => ({ 
-          ...prev,
-          id: p.id, 
-          dni: p.dni || "", 
-          paciente: p.nombre || "", 
-          hc: p.hc || "", 
-          fecNac: safeFecNac, 
-          sexo: p.sexo || 'M', 
-          financiador: p.financiador || 'SIS', 
-          direccion: p.direccion || '', 
-          distrito: p.distrito || '', 
-          estOrigen: p.estOrigen || '', 
-          fur: p.last_fur ? parseExcelDate(p.last_fur) : prev.fur,
-          condEst: condicionCalculada, 
-          condServ: '' 
-      })); 
-      
-      setIsDataVerified(false); 
+      // 3. LÓGICA DIFERENCIADA (EL CAMBIO CLAVE)
+      if (isSameJurisdiction) {
+          // --- CASO A: MISMO ESTABLECIMIENTO (CONTINUADOR) ---
+          const esContinuador = p.historialEst.some(h => cleanStr(h).includes(cleanStr(keyword)));
+          
+          setPatientData(prev => ({ 
+              ...prev,
+              id: p.id, 
+              dni: p.dni || "", 
+              paciente: p.nombre || "", 
+              hc: p.hc || "", // Mantiene su HC antigua
+              fecNac: safeFecNac, 
+              sexo: p.sexo || 'M', 
+              financiador: p.financiador || '2-SIS', 
+              direccion: p.direccion || '', 
+              distrito: p.distrito || '', 
+              estOrigen: p.estOrigen || '', 
+              fur: p.last_fur ? parseExcelDate(p.last_fur) : prev.fur,
+              condEst: esContinuador ? "C" : "R", 
+              condServ: '' 
+          }));
+          
+          // Bloqueamos datos porque ya es nuestro paciente
+          setIsPatientDataLocked(true); 
 
-      // =====================================================================
-      // 3. BLOQUEO Y ALERTA DE HC VACÍA
-      // =====================================================================
+      } else {
+          // --- CASO B: VIENE DE OTRO ESTABLECIMIENTO (TRANSFERENCIA / NUEVO AQUÍ) ---
+          
+          setPatientData(prev => ({ 
+              ...prev,
+              id: p.id, 
+              dni: p.dni || "", 
+              paciente: p.nombre || "", 
+              fecNac: safeFecNac, 
+              sexo: p.sexo || 'M', 
+              financiador: p.financiador || '2-SIS', 
+              direccion: p.direccion || '', 
+              distrito: p.distrito || '', 
+              fur: p.last_fur ? parseExcelDate(p.last_fur) : prev.fur,
+              
+              // --- CAMBIOS AUTOMÁTICOS SOLICITADOS ---
+              estOrigen: adminData.establecimiento, // Se auto-selecciona el actual (A)
+              hc: "",                               // Se limpia la HC para obligar a editar
+              condEst: 'N',                         // Fuerza NUEVO
+              condServ: 'N'                         // Fuerza NUEVO
+          }));
+
+          // DESBLOQUEAMOS para que pueda editar HC y Establecimiento
+          setIsPatientDataLocked(false);
+
+          // LANZAMOS LA ADVERTENCIA ESPECÍFICA
+          setValidationAlert({
+              isOpen: true,
+              type: 'TRANSFER', // Nuevo tipo de alerta azul/info
+              title: 'Paciente de Otro Establecimiento',
+              message: `El paciente pertenece a: "${p.estOrigen || 'DESCONOCIDO'}".\nSe procederá a registrar en: "${adminData.establecimiento}".`,
+              details: '✅ Se han cargado sus datos personales.\n✅ La condición cambió automáticamente a NUEVO.\n✏️ POR FAVOR: Ingrese el N° de HISTORIA CLÍNICA de este establecimiento.'
+          });
+      }
+      
+      // Focus en el input de HC si está vacío (pequeño delay para que renderice)
       setTimeout(() => { 
           const hcInput = document.querySelector('input[name="hc"]');
-          const tieneDireccion = p.direccion && p.direccion.trim() !== "";
-          const tieneHC = p.hc && String(p.hc).trim() !== ""; 
-
-          if (!tieneHC) {
-               // A: NO TIENE HC -> OBLIGATORIO EDITAR (Desbloqueamos todo y pintamos rojo)
-               setIsPatientDataLocked(false);
-               if (hcInput) {
-                   hcInput.focus();
-                   hcInput.style.borderColor = "red";
-                   hcInput.style.backgroundColor = "#fee2e2";
-                   hcInput.classList.add("animate-pulse");
-               }
-          } else {
-               // B: SÍ TIENE HC -> Bloqueamos si ya tiene dirección
-               setIsPatientDataLocked(tieneDireccion);
-          }
-      }, 100);
-  };
+          if (hcInput && !isSameJurisdiction) hcInput.focus();
+      }, 200);
+  };  
   const checkRowValidity = (row) => { return (row.desc && row.desc.trim() !== '' && row.tipo && row.tipo !== '-' && row.tipo !== '' && row.codigo && row.codigo.trim() !== '');
   };
   const openDxSearch = (index) => { setCurrentDxRow(index); const existing = diagnoses[index];
@@ -2621,53 +2629,77 @@ const generatePDF = () => {
             <div className="flex-grow overflow-y-auto p-6 bg-[#FAFAFA] no-scrollbar relative" ref={dxListRef}>
               
               {/* --- ALERTA DE VALIDACIÓN FLOTANTE (FIXED) --- */}
+{/* --- ALERTA DE VALIDACIÓN FLOTANTE (FIXED) --- */}
 {validationAlert.isOpen && (
   <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
-    {/* CAPA DE FONDO OSCURO (BACKDROP) */}
     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setValidationAlert({ ...validationAlert, isOpen: false })}></div>
 
-    {/* TARJETA DE ALERTA */}
-    <div className={`relative bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border-2 animate-in zoom-in duration-300 ${validationAlert.type === 'GESTANTE' ? 'border-pink-200' : 'border-orange-200'}`}>
+    {/* LÓGICA DE COLORES SEGÚN TIPO */}
+    <div className={`relative bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border-2 animate-in zoom-in duration-300 
+        ${validationAlert.type === 'GESTANTE' ? 'border-pink-200' : validationAlert.type === 'TRANSFER' ? 'border-indigo-200' : 'border-orange-200'}`}>
       
-      {/* CABECERA DE LA ALERTA */}
-      <div className={`px-8 py-6 border-b flex items-center gap-4 ${validationAlert.type === 'GESTANTE' ? 'bg-pink-50 border-pink-100' : 'bg-orange-50 border-orange-100'}`}>
-        <div className={`p-4 rounded-full shrink-0 shadow-sm ${validationAlert.type === 'GESTANTE' ? 'bg-pink-200 text-pink-700' : 'bg-orange-200 text-orange-700'}`}>
-          {validationAlert.type === 'GESTANTE' ? <Baby size={40} strokeWidth={2} /> : <Activity size={40} strokeWidth={2} />}
+      {/* CABECERA */}
+      <div className={`px-8 py-6 border-b flex items-center gap-4 
+          ${validationAlert.type === 'GESTANTE' ? 'bg-pink-50 border-pink-100' : validationAlert.type === 'TRANSFER' ? 'bg-indigo-50 border-indigo-100' : 'bg-orange-50 border-orange-100'}`}>
+        
+        <div className={`p-4 rounded-full shrink-0 shadow-sm 
+            ${validationAlert.type === 'GESTANTE' ? 'bg-pink-200 text-pink-700' : validationAlert.type === 'TRANSFER' ? 'bg-indigo-200 text-indigo-700' : 'bg-orange-200 text-orange-700'}`}>
+          {validationAlert.type === 'GESTANTE' ? <Baby size={40} strokeWidth={2} /> : validationAlert.type === 'TRANSFER' ? <RefreshCw size={40} strokeWidth={2}/> : <Activity size={40} strokeWidth={2} />}
         </div>
+        
         <div>
-          <h3 className={`text-2xl font-black ${validationAlert.type === 'GESTANTE' ? 'text-pink-700' : 'text-orange-800'}`}>{validationAlert.title}</h3>
-          <p className={`text-xs font-bold mt-1 uppercase ${validationAlert.type === 'GESTANTE' ? 'text-pink-400' : 'text-orange-400'}`}>Corrección requerida</p>
+          <h3 className={`text-2xl font-black 
+              ${validationAlert.type === 'GESTANTE' ? 'text-pink-700' : validationAlert.type === 'TRANSFER' ? 'text-indigo-800' : 'text-orange-800'}`}>
+              {validationAlert.title}
+          </h3>
+          <p className={`text-xs font-bold mt-1 uppercase 
+              ${validationAlert.type === 'GESTANTE' ? 'text-pink-400' : validationAlert.type === 'TRANSFER' ? 'text-indigo-400' : 'text-orange-400'}`}>
+              {validationAlert.type === 'TRANSFER' ? 'Acción Requerida: Asignar HC' : 'Corrección requerida'}
+          </p>
         </div>
       </div>
 
-      {/* CONTENIDO DEL MENSAJE */}
+      {/* CONTENIDO */}
       <div className="p-8 max-h-[60vh] overflow-y-auto">
         <p className="text-slate-700 font-bold text-lg mb-6 leading-snug">{validationAlert.message}</p>
-        <div className={`p-5 rounded-2xl border flex items-start gap-4 shadow-sm ${validationAlert.type === 'GESTANTE' ? 'bg-pink-50 border-pink-200' : 'bg-orange-50 border-orange-200'}`}>
-          <div className={`mt-1 ${validationAlert.type === 'GESTANTE' ? 'text-pink-500' : 'text-orange-500'}`}><AlertTriangle size={24}/></div>
+        <div className={`p-5 rounded-2xl border flex items-start gap-4 shadow-sm 
+            ${validationAlert.type === 'GESTANTE' ? 'bg-pink-50 border-pink-200' : validationAlert.type === 'TRANSFER' ? 'bg-indigo-50 border-indigo-200' : 'bg-orange-50 border-orange-200'}`}>
+          <div className={`mt-1 
+              ${validationAlert.type === 'GESTANTE' ? 'text-pink-500' : validationAlert.type === 'TRANSFER' ? 'text-indigo-500' : 'text-orange-500'}`}>
+              <AlertTriangle size={24}/>
+          </div>
           <div className="text-sm font-medium text-slate-600 whitespace-pre-line leading-relaxed">{validationAlert.details}</div>
         </div>
       </div>
 
-      {/* BOTÓN DE ACCIÓN */}
+      {/* BOTÓN */}
       <div className="px-8 py-5 bg-slate-50 border-t border-slate-100 flex justify-end">
         <button 
             onClick={() => { 
                 setValidationAlert({ ...validationAlert, isOpen: false }); 
-                // Lógica específica para redireccionar al error
+                // Si es falta de laboratorio, saltar al paso 2
                 if (validationAlert.type === 'LAB_MISSING') { 
                     setStep(2); 
                     setShowHbError(true); 
                 } 
+                // Si es transferencia, enfocar la HC
+                if (validationAlert.type === 'TRANSFER') {
+                    setTimeout(() => {
+                        const hcInput = document.querySelector('input[name="hc"]');
+                        if (hcInput) { hcInput.focus(); hcInput.select(); }
+                    }, 100);
+                }
             }} 
-            className={`px-8 py-3 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-sm tracking-wide text-white ${validationAlert.type === 'GESTANTE' ? 'bg-pink-500 hover:bg-pink-600' : 'bg-orange-500 hover:bg-orange-600'}`}
+            className={`px-8 py-3 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-sm tracking-wide text-white 
+                ${validationAlert.type === 'GESTANTE' ? 'bg-pink-500 hover:bg-pink-600' : validationAlert.type === 'TRANSFER' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-orange-500 hover:bg-orange-600'}`}
         >
-            ENTENDIDO, VOY A CORREGIR
+            {validationAlert.type === 'TRANSFER' ? 'ENTENDIDO, INGRESARÉ HC' : 'ENTENDIDO, VOY A CORREGIR'}
         </button>
       </div>
     </div>
   </div>
 )}
+
               {/* MODALES INTERNOS (Manual, Adolescente, Jurisdicción) */}
               {isManualModalOpen && (
                   <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -3015,10 +3047,27 @@ const generatePDF = () => {
                                     <option value="">▼ LISTA RÁPIDA</option>{listaCaserios.map(c => (<option key={c} value={c}>{c}</option>))}
                                 </select>
                             </div>
-                            <div className="col-span-12 md:col-span-4 space-y-0.5 pb-1">
-                                <label className="text-[9px] font-bold text-slate-400 uppercase">Establecimiento Origen (Referencia)</label>
-                                <input name="estOrigen" className={`w-full h-9 px-3 rounded-lg border outline-none text-[11px] font-bold uppercase ${isPatientDataLocked ? 'bg-slate-50 border-slate-200 text-slate-600' : 'bg-white border-slate-200 focus:border-blue-500'}`} value={patientData.estOrigen} onChange={handlePatient} readOnly={isPatientDataLocked} />
-                            </div>
+			    <div className="col-span-12 md:col-span-4 space-y-0.5 pb-1">
+    <label className="text-[9px] font-bold text-slate-400 uppercase">Establecimiento Origen (Referencia)</label>
+    <select 
+        name="estOrigen" 
+        className={`w-full h-9 px-3 rounded-lg border outline-none text-[11px] font-bold uppercase cursor-pointer 
+            ${isPatientDataLocked 
+                ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed' 
+                : 'bg-white border-slate-200 focus:border-blue-500 text-slate-700 hover:border-blue-300'
+            }`} 
+        value={patientData.estOrigen} 
+        onChange={handlePatient} 
+        disabled={isPatientDataLocked}
+    >
+        <option value="">SELECCIONE...</option>
+        <option value="E.S I-4 PACAIPAMPA">E.S I-4 PACAIPAMPA</option>
+        <option value="P.S I-2 EL PUERTO">P.S I-2 EL PUERTO</option>
+        <option value="P.S I-1 LAGUNAS DE SAN PABLO">P.S I-1 LAGUNAS DE SAN PABLO</option>
+        <option value="P.S I-1 CUMBICUS">P.S I-1 CUMBICUS</option>
+        <option value="P.S I-1 CACHIACO">P.S I-1 CACHIACO</option>
+    </select>
+</div>
 
                         </div>
                       </div>
