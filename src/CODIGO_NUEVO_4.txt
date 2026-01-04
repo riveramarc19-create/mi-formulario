@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Activity, ArrowRight, ArrowLeft, X, Plus, LogOut, Database, Search, Trash2, FileSpreadsheet, Calendar, Edit, Download, Grid, Save, UserPlus, Users, Save as SaveIcon, FileText, AlertTriangle, Calculator, Siren, Baby, RefreshCw, CheckCircle, Droplets, Eye, EyeOff, Heart, Syringe, Brain, Smile } from 'lucide-react';
+import { Activity, ArrowRight, ArrowLeft, X, Plus, LogOut, Database, Search, Trash2, FileSpreadsheet, Calendar, Edit, Download, Grid, Save, UserPlus, Users,User,UserRound,Stethoscope, Save as SaveIcon, FileText, AlertTriangle, Calculator, Siren, Baby, RefreshCw, CheckCircle, Droplets, Eye, EyeOff,Lock, Heart, Syringe, Brain, Smile } from 'lucide-react';
 
 import NutritionalStatusModal from './NutritionalStatusModal';
 import AnemiaCalculatorModal from './AnemiaCalculatorModal';
@@ -522,7 +522,7 @@ export default function App() {
   const [hbAdjusted, setHbAdjusted] = useState(null);
   const [isPremature, setIsPremature] = useState(false);
 
-  const [adminData, setAdminData] = useState({ anio: '2025', mes: 'ENERO', establecimiento: 'PACAIPAMPA', turno: 'MAÑANA', ups: 'MEDICINA', dniResp: '', nombreResp: '', isConfigured: false });
+  const [adminData, setAdminData] = useState({ anio: '2026', mes: 'ENERO', establecimiento: 'PACAIPAMPA', turno: 'MAÑANA', ups: 'MEDICINA', dniResp: '', nombreResp: '', isConfigured: false });
   const initialPatient = { dni: '', paciente: '', hc: '', fecNac: '', sexo: '', financiador: '', direccion: '', distrito: '', estAtencion: 'PACAIPAMPA', fecAtencion: '', condicion: '', fur: '', estOrigen: '', condEst: '', condServ: '' };
   const [patientData, setPatientData] = useState(initialPatient);
   const [savedPatients, setSavedPatients] = useState([]);
@@ -577,9 +577,58 @@ export default function App() {
         return false;
   }, [patientData.condEst, patientData.condServ]);
   useEffect(() => {
-    const p = parseFloat(clinicalData.peso); const t = parseFloat(clinicalData.talla);
-    if (p > 0 && t > 0) { const t_m = t / 100; setClinicalData(prev => ({ ...prev, imc: (p / (t_m * t_m)).toFixed(2) })); }
-  }, [clinicalData.peso, clinicalData.talla]);
+    const p = parseFloat(clinicalData.peso);
+    const t = parseFloat(clinicalData.talla);
+    const anios = typeof ageObj.y === 'number' ? ageObj.y : 0;
+
+    // 1. CÁLCULO DEL IMC MATEMÁTICO (Solo si es mayor de 5 años)
+    let imcCalc = "";
+    if (anios >= 5 && p > 0 && t > 0) {
+        const t_m = t / 100;
+        imcCalc = (p / (t_m * t_m)).toFixed(2);
+    }
+
+    // 2. CLASIFICACIÓN / DIAGNÓSTICO SEGÚN GRUPO ETARIO
+    let dx = "";
+    
+    if (imcCalc) {
+        const imcVal = parseFloat(imcCalc);
+
+        // CASO A: ADULTO MAYOR (60 AÑOS A MÁS) - RM N° 240-2013/MINSA
+        // Rangos especiales: Delgadez <23, Normal 23-27.9, Sobrepeso 28-31.9
+        if (anios >= 60) {
+            if (imcVal < 23.0) dx = "DELGADEZ";
+            else if (imcVal <= 27.9) dx = "NORMAL";
+            else if (imcVal <= 31.9) dx = "SOBREPESO";
+            else dx = "OBESIDAD";
+        }
+        
+        // CASO B: ADULTO JOVEN Y MADURO (20 A 59 AÑOS) - ESTÁNDAR OMS
+        // Rangos estándar: Bajo <18.5, Normal 18.5-24.9, Sobrepeso 25-29.9
+        else if (anios >= 20) {
+            if (imcVal < 18.5) dx = "BAJO PESO";
+            else if (imcVal <= 24.9) dx = "NORMAL";
+            else if (imcVal <= 29.9) dx = "SOBREPESO";
+            else if (imcVal <= 34.9) dx = "OBESIDAD I";
+            else if (imcVal <= 39.9) dx = "OBESIDAD II";
+            else dx = "OBESIDAD III";
+        }
+        
+        // CASO C: ESCOLAR Y ADOLESCENTE (5 A 19 AÑOS) - NTS N° 157
+        // Requiere Gráficas/Tablas (Z-Score). No se clasifica solo con el número.
+        else {
+            dx = "VER TABLA Z"; 
+        }
+    }
+
+    // 3. ACTUALIZACIÓN DEL ESTADO (IMC + RIESGO)
+    setClinicalData(prev => ({ 
+        ...prev, 
+        imc: imcCalc,
+        riesgo: dx // Aquí se llena automáticamente el input de la derecha
+    }));
+
+  }, [clinicalData.peso, clinicalData.talla, ageObj.y]);
   useEffect(() => { if (patientData.condicion !== 'GESTANTE') setPatientData(prev => ({...prev, fur: ''})); }, [patientData.condicion]);
   useEffect(() => { if (adminData.isConfigured) setPatientData(prev => ({...prev, estAtencion: adminData.establecimiento})); }, [adminData.isConfigured, adminData.establecimiento]);
   useEffect(() => { setAnemiaResult(""); setAnemiaColor("bg-slate-200 text-slate-500"); setHbAdjusted(null); }, [patientData.dni]);
@@ -862,17 +911,31 @@ export default function App() {
   const handlePatient = (e) => {
       const { name, value } = e.target;
       let finalValue = value;
-      if (name === "condicion" && value === "GESTANTE") {
-          const isFemale = patientData.sexo === "F";
-          const currentAge = getAgeComponents(patientData.fecNac, patientData.fecAtencion).y;
-          if (!isFemale) { alert("Error: Solo pacientes de sexo FEMENINO pueden ser registradas como GESTANTE."); return;
+
+      // --- VALIDACIÓN DE GESTANTE / PUÉRPERA ---
+      if (name === "condicion" && (value === "GESTANTE" || value === "PUERPERA")) {
+          const sexo = patientData.sexo ? patientData.sexo.toUpperCase() : "";
+          const esHombre = sexo === "M" || sexo === "MASCULINO";
+
+          // 1. REGLA ABSOLUTA: HOMBRES NO PUEDEN SER GESTANTES
+          if (esHombre) {
+              alert(`⛔ ERROR DE SEXO\n\nEl paciente está registrado como MASCULINO.\nNo puede asignarle la condición de ${value}.`);
+              return; // DETIENE EL CAMBIO (El select no cambiará)
           }
-          if (currentAge < 11 || currentAge > 48) { alert(`Error de Validación: La paciente tiene ${currentAge} años.\n\nPara registrar la condición de GESTANTE, la edad debe estar entre 11 y 48 años.`);
-          return; }
+
+          // 2. REGLA DE EDAD FÉRTIL (Aproximada 10-55 años)
+          const currentAge = getAgeComponents(patientData.fecNac, patientData.fecAtencion).y;
+          if (currentAge < 10 || currentAge > 55) {
+               alert(`⚠️ ALERTA DE EDAD\n\nLa paciente tiene ${currentAge} años.\nVerifique si realmente corresponde la condición de ${value}.`);
+               // Aquí no hacemos return, solo avisamos, por si es un caso excepcional.
+          }
       }
-      if (['direccion', 'distrito', 'estOrigen'].includes(name)) { finalValue = value.toUpperCase();
+
+      if (['direccion', 'distrito', 'estOrigen'].includes(name)) { 
+          finalValue = value.toUpperCase();
       }
-      setPatientData({ ...patientData, [name]: finalValue });
+      
+      setPatientData(prev => ({ ...prev, [name]: finalValue }));
   };
   const handleClinical = (e) => setClinicalData({ ...clinicalData, [e.target.name]: e.target.value });
   const handleNumericInput = (e, min, max) => {
@@ -1271,7 +1334,30 @@ export default function App() {
              alert("⛔ ERROR DE CONSISTENCIA\n\nUn paciente REINGRESANTE al establecimiento no puede ser CONTINUADOR en el servicio inmediatamente.\n\nSeleccione NUEVO o REINGRESANTE para el servicio.");
              markError("condServ"); return;
         }
+        // --- NUEVA VALIDACIÓN: GESTANTE Y FUR ---
+        if (patientData.condicion === 'GESTANTE') {
+            // 1. Validar que la FUR no esté vacía
+            if (!patientData.fur) {
+                alert("⚠️ ATENCIÓN: GESTANTE SIN FUR\n\nAl seleccionar la condición 'GESTANTE', es OBLIGATORIO registrar la Fecha de Última Regla (FUR).");
+                markError("fur"); 
+                return;
+            }
 
+            // 2. Validar consistencia de fechas (FUR no puede ser mayor a Fecha de Atención)
+            const dFur = new Date(patientData.fur);
+            // Usamos la fecha de atención si existe, sino la fecha actual del sistema
+            const dAtencion = patientData.fecAtencion ? new Date(patientData.fecAtencion) : new Date();
+            
+            // Normalizamos las horas a 00:00:00 para comparar solo días
+            dFur.setHours(0,0,0,0); 
+            dAtencion.setHours(0,0,0,0);
+
+            if (dFur > dAtencion) {
+                alert(`⛔ ERROR DE FECHAS\n\nLa FUR (${patientData.fur}) no puede ser una fecha futura respecto a la Fecha de Atención (${patientData.fecAtencion}).\n\nPor favor corrija la fecha.`);
+                markError("fur");
+                return;
+            }
+        }
         // 4. Historia Clínica vs DNI
         const dniStr = String(patientData.dni).trim();
         const hcStr = String(patientData.hc || '').trim();
@@ -2148,63 +2234,100 @@ const generatePDF = () => {
     }  
   };
 
+  // --- PANTALLA DE LOGIN REDISEÑADA (MODERNA) ---
+  // --- PANTALLA DE LOGIN REDISEÑADA (CORREGIDA) ---
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen w-full bg-slate-900 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm animate-in zoom-in duration-300">
-          <div className="text-center mb-6">
-            <div className="bg-blue-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg text-white">
-              <Siren size={32} />
-            </div>
-            <h1 className="text-2xl font-black text-slate-800">SMART HIS</h1>
-            <p className="text-slate-400 text-xs font-bold uppercase">Acceso Personal de Salud</p>
-          </div>
-
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-500 ml-1 mb-1">DNI USUARIO</label>
-              <input 
-                type="number" 
-                className="w-full h-12 px-4 rounded-xl border-2 border-slate-200 font-bold text-slate-700 focus:border-blue-500 outline-none transition-all"
-                placeholder="Ingrese su DNI"
-                value={loginDni}
-                onChange={(e) => setLoginDni(e.target.value)}
-                autoFocus
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 ml-1 mb-1">CONTRASEÑA</label>
-              <div className="relative">
-                  <input 
-                  type={showPassword ? "text" : "password"} 
-                  className="w-full h-12 px-4 pr-12 rounded-xl border-2 border-slate-200 font-bold text-slate-700 focus:border-blue-500 outline-none transition-all"
-                  placeholder="••••••••"
-                  value={loginPass}
-                  onChange={(e) => setLoginPass(e.target.value)}
-                />
-                <button 
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition-colors p-1"
-                  tabIndex="-1" 
-                >
-                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                </button>
-              </div>
-            </div>
-            {loginError && (
-              <div className="p-3 bg-red-50 text-red-600 text-xs font-bold rounded-lg text-center border border-red-100 flex items-center justify-center gap-2">
-                 <AlertTriangle size={14}/> {loginError}
-              </div>
-            )}
-
-            <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-lg transition-transform active:scale-95">
-              INICIAR SESIÓN
-            </button>
-          </form>
+      // CONTENEDOR PRINCIPAL CON FONDO DEGRADADO OSCURO
+      <div className="min-h-screen w-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black flex items-center justify-center p-4">
+        
+        {/* TARJETA DE LOGIN CON EFECTO GLASSMORPHISM */}
+        <div className="bg-white/90 backdrop-blur-xl p-10 rounded-[40px] shadow-2xl shadow-black/20 w-full max-w-md border border-white/20 relative overflow-hidden">
           
-          <p className="text-center text-[10px] text-slate-300 mt-6">
-            Versión 1.0
+          {/* Elemento decorativo de fondo (brillo superior) */}
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-32 bg-blue-500/10 blur-[60px] rounded-full pointer-events-none"></div>
+
+          <div className="relative z-10">
+            {/* LOGO Y TÍTULO */}
+            <div className="text-center mb-10">
+              {/* Ícono con brillo */}
+              <div className="inline-block relative mb-4">
+                 <div className="absolute inset-0 bg-blue-500 blur-xl opacity-30 rounded-2xl scale-110"></div>
+                 <div className="bg-gradient-to-br from-blue-600 to-indigo-600 w-24 h-24 rounded-2xl flex items-center justify-center text-white relative shadow-lg transform rotate-3 hover:rotate-0 transition-all duration-500">
+                   <Stethoscope size={44} strokeWidth={2} />
+                 </div>
+              </div>
+              
+              <h1 className="text-4xl font-black text-slate-800 tracking-tight mb-2">SMART HIS</h1>
+              <p className="text-slate-500 font-medium text-sm uppercase tracking-widest">Acceso Personal de Salud</p>
+            </div>
+
+            {/* FORMULARIO */}
+            <form onSubmit={handleLogin} className="space-y-6">
+              
+              {/* INPUT USUARIO (CON ÍCONO INTEGRADO) */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-600 uppercase ml-1 tracking-wider">DNI Usuario</label>
+                <div className="relative group">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors">
+                      <User size={20} />
+                  </div>
+                  <input 
+                    type="number" 
+                    value={loginDni} // <--- CORREGIDO: Antes decía username
+                    onChange={(e) => setLoginDni(e.target.value)} // <--- CORREGIDO: Antes decía setUsername
+                    className="w-full pl-12 pr-4 py-4 rounded-2xl bg-slate-50 border-2 border-slate-100 outline-none text-lg font-bold text-slate-700 transition-all focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-50/50 shadow-sm placeholder:text-slate-300"
+                    placeholder="Ingrese su DNI..."
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              {/* INPUT CONTRASEÑA (CON ÍCONOS INTEGRADOS) */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-600 uppercase ml-1 tracking-wider">Contraseña</label>
+                <div className="relative group">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors">
+                      <Lock size={20} />
+                  </div>
+                  <input 
+                    type={showPassword ? "text" : "password"}
+                    value={loginPass} // <--- CORREGIDO: Antes decía password
+                    onChange={(e) => setLoginPass(e.target.value)} // <--- CORREGIDO: Antes decía setPassword
+                    className="w-full pl-12 pr-12 py-4 rounded-2xl bg-slate-50 border-2 border-slate-100 outline-none text-lg font-bold text-slate-700 transition-all focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-50/50 shadow-sm placeholder:text-slate-300 font-mono"
+                    placeholder="••••••••"
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition-colors focus:outline-none p-1"
+                  >
+                    {showPassword ? <EyeOff size={22}/> : <Eye size={22}/>}
+                  </button>
+                </div>
+              </div>
+
+              {loginError && (
+                <div className="p-3 bg-red-50 text-red-600 text-xs font-bold rounded-lg text-center border border-red-100 flex items-center justify-center gap-2 animate-pulse">
+                   <AlertTriangle size={14}/> {loginError}
+                </div>
+              )}
+
+              {/* BOTÓN DE INGRESO (CON DEGRADADO Y BRILLO) */}
+              <button 
+                type="submit"
+                className="w-full bg-gradient-to-r from-blue-600 via-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white py-4 rounded-2xl font-black text-lg tracking-wide shadow-xl shadow-blue-500/30 hover:shadow-blue-500/50 transition-all transform hover:scale-[1.02] active:scale-[0.98] mt-4 relative overflow-hidden group"
+              >
+                <span className="relative z-10">INICIAR SESIÓN</span>
+                {/* Efecto de brillo al pasar el mouse */}
+                <div className="absolute inset-0 h-full w-full scale-0 rounded-2xl transition-all duration-300 group-hover:scale-100 group-hover:bg-white/10"></div>
+              </button>
+            </form>
+          </div>
+          
+          {/* FOOTER */}
+          <p className="text-center text-slate-400 text-xs font-medium mt-8 opacity-80 relative z-10">
+            Versión 1.0 | Smart HIS System
           </p>
         </div>
       </div>
@@ -2433,33 +2556,63 @@ const generatePDF = () => {
               } }} className="px-4 py-4 hover:bg-slate-50 text-slate-300 hover:text-red-500 transition-colors border-l border-slate-100 ml-4" title="Cerrar y volver al menú principal"><X size={24}/></button>
             </div>
              {/* --- BARRA FIJA DE DATOS DEL PACIENTE (VISIBLE EN PASOS 1, 2, 3) --- */}
+             {/* --- BARRA FIJA DE DATOS DEL PACIENTE (DISEÑO LIMPIO) --- */}
+             {/* --- BARRA FIJA DE DATOS DEL PACIENTE (DISEÑO LIMPIO + ÍCONO MODERNO) --- */}
+             {/* --- CINTILLO FIJO DE DATOS (DINÁMICO POR SEXO) --- */}
             {patientData.paciente && step < 4 && (
-              <div className="bg-blue-50 border-b border-blue-100 px-6 py-2 flex justify-between items-center shrink-0 animate-in slide-in-from-top-2 z-30">
-                 <div className="flex items-center gap-3">
-                    <div className="bg-blue-100 p-2 rounded-full text-blue-600 shadow-sm">
-                        <Users size={16} strokeWidth={2.5}/>
+              <div className={`
+                  border-b px-6 py-3 flex justify-between items-center shrink-0 animate-in slide-in-from-top-2 z-30 shadow-sm transition-colors duration-300
+                  ${(patientData.sexo === 'M' || patientData.sexo === 'MASCULINO') 
+                      ? 'bg-sky-100 border-sky-300'  // ESTILO MASCULINO (Celeste Intenso)
+                      : (patientData.sexo === 'F' || patientData.sexo === 'FEMENINO')
+                          ? 'bg-pink-100 border-pink-300' // ESTILO FEMENINO (Rosado Intenso)
+                          : 'bg-slate-100 border-slate-200' // ESTILO NEUTRO
+                  }
+              `}>
+                 <div className="flex items-center gap-4">
+                    {/* ÍCONO DINÁMICO */}
+                    <div className={`
+                        p-2.5 rounded-xl shadow-sm border border-white/50
+                        ${(patientData.sexo === 'M' || patientData.sexo === 'MASCULINO') ? 'bg-sky-200 text-sky-800' : 
+                          (patientData.sexo === 'F' || patientData.sexo === 'FEMENINO') ? 'bg-pink-200 text-pink-800' : 'bg-slate-200 text-slate-600'}
+                    `}>
+                        <UserRound size={20} strokeWidth={2.5}/>
                     </div>
+
+                    {/* DATOS DE TEXTO */}
                     <div>
-                       <h3 className="text-xs font-black text-blue-900 leading-none tracking-wide">{patientData.paciente}</h3>
-                       <div className="flex items-center gap-2 mt-1">
-                           <span className="text-[10px] font-bold text-slate-500 bg-white px-1.5 py-0.5 rounded border border-blue-100">
-                              DNI: <span className="text-slate-800">{patientData.dni}</span>
+                       <h3 className={`text-sm font-black leading-none tracking-wide mb-1.5 uppercase
+                           ${(patientData.sexo === 'M' || patientData.sexo === 'MASCULINO') ? 'text-sky-900' : 
+                             (patientData.sexo === 'F' || patientData.sexo === 'FEMENINO') ? 'text-pink-900' : 'text-slate-800'}
+                       `}>
+                           {patientData.paciente}
+                       </h3>
+
+                       <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-wide opacity-80">
+                           <span className={(patientData.sexo === 'M' || patientData.sexo === 'MASCULINO') ? 'text-sky-800' : (patientData.sexo === 'F' || patientData.sexo === 'FEMENINO') ? 'text-pink-800' : 'text-slate-600'}>
+                              DNI: <span className="font-black">{patientData.dni}</span>
                            </span>
-                           <span className="text-[10px] font-bold text-slate-500 bg-white px-1.5 py-0.5 rounded border border-blue-100">
-                              EDAD: <span className="text-slate-800">{ageString}</span>
+
+                           <span className="opacity-40">|</span>
+
+                           <span className={(patientData.sexo === 'M' || patientData.sexo === 'MASCULINO') ? 'text-sky-800' : (patientData.sexo === 'F' || patientData.sexo === 'FEMENINO') ? 'text-pink-800' : 'text-slate-600'}>
+                              EDAD: <span className="font-black">{ageObj.y} AÑOS, {ageObj.m} MESES, {ageObj.d} DÍAS</span>
                            </span>
-                           <span className="text-[10px] font-bold text-slate-500 bg-white px-1.5 py-0.5 rounded border border-blue-100">
-                              SEXO: <span className="text-slate-800">{patientData.sexo}</span>
+
+                           <span className="opacity-40">|</span>
+
+                           <span className={(patientData.sexo === 'M' || patientData.sexo === 'MASCULINO') ? 'text-sky-800' : (patientData.sexo === 'F' || patientData.sexo === 'FEMENINO') ? 'text-pink-800' : 'text-slate-600'}>
+                              SEXO: <span className="font-black">{patientData.sexo}</span>
                            </span>
                        </div>
                     </div>
                  </div>
-                 
-                 <div className="flex items-center gap-4">
-                    {/* INDICADOR VISUAL DE ESTADO */}
-                    <div className="text-right hidden sm:block">
-                        <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">H. Clínica</div>
-                        <div className="text-sm font-black text-slate-700">{patientData.hc || "---"}</div>
+
+                 {/* INDICADOR H. CLÍNICA */}
+                 <div className="text-right hidden sm:block">
+                    <div className={`text-[9px] font-bold uppercase tracking-wider ${(patientData.sexo === 'M' || patientData.sexo === 'MASCULINO') ? 'text-sky-600' : (patientData.sexo === 'F' || patientData.sexo === 'FEMENINO') ? 'text-pink-600' : 'text-slate-400'}`}>H. Clínica</div>
+                    <div className={`text-lg font-black ${(patientData.sexo === 'M' || patientData.sexo === 'MASCULINO') ? 'text-sky-900' : (patientData.sexo === 'F' || patientData.sexo === 'FEMENINO') ? 'text-pink-900' : 'text-slate-700'}`}>
+                        {patientData.hc || "---"}
                     </div>
                  </div>
               </div>
@@ -2613,257 +2766,431 @@ const generatePDF = () => {
               )}
 
               {/* PASO 1: PACIENTE */}
+              {/* PASO 1: PACIENTE - DISEÑO MODERNO */}
+              {/* PASO 1: PACIENTE - DISEÑO MODERNO COMPACTO */}
+              {/* PASO 1: PACIENTE - DISEÑO MODERNO COMPACTO (CON ESTABLECIMIENTO EN BUSCADOR) */}
+              {/* PASO 1: PACIENTE - DISEÑO MODERNO COMPACTO (ALINEACIÓN VERTICAL CORREGIDA) */}
+              {/* PASO 1: PACIENTE - DISEÑO MODERNO (CON CINTILLO DE SEXO DINÁMICO) */}
               {step === 1 && (
-                <div className="animate-in fade-in slide-in-from-right-8 duration-300 min-w-[800px] mx-auto max-w-5xl relative">
-                  <div className={`border rounded-xl p-4 mb-4 shadow-sm relative z-50 transition-all duration-300 ${showSuggestions ? 'bg-white ring-4 ring-blue-50 border-blue-200 shadow-xl' : getTheme(1).bgLight + ' ' + getTheme(1).border}`} ref={searchRef}>
-                    <div className="flex gap-4 items-end">
-                        <div className="flex-1 relative">
-                          <label className={`text-[10px] font-bold uppercase block mb-1.5 ml-2 ${getTheme(1).labelText}`}>Buscar Paciente (DNI o Nombre)</label>
-                            <div className="relative flex gap-2">
-                                <div className="relative flex-1">
-                                    <input className={`w-full pl-12 pr-4 h-12 rounded-xl bg-white border-2 outline-none text-lg font-bold placeholder-slate-300 shadow-sm transition-all ${getTheme(1).border} ${getTheme(1).text} ${getTheme(1).focusBorder} focus:ring-4 ${getTheme(1).focusRing}`} placeholder="Ej. 12345678 o JUAN PEREZ" autoFocus value={searchTerm} onChange={handleSearchInput} onFocus={() => { if(suggestions.length > 0) setShowSuggestions(true); }} />
-                                    <Search className={`absolute left-4 top-3.5 ${getTheme(1).labelText}`} size={22}/>
-                                    {showSuggestions && suggestions.length > 0 && (
-  <div className="absolute top-14 left-0 w-full bg-white rounded-2xl shadow-2xl border border-slate-200 max-h-[350px] overflow-y-auto p-2 no-scrollbar animate-in zoom-in-95 duration-200 z-[100]">
-    {suggestions.map((p) => {
-      // --- LÓGICA INTELIGENTE DE COMPARACIÓN VISUAL ---
-      const adminEst = adminData.establecimiento.toUpperCase();
-      const patientEst = (p.estOrigen || "").toUpperCase();
-      
-      let isSameJurisdiction = false;
+                <div className="animate-in fade-in slide-in-from-right-8 duration-300 w-full max-w-6xl mx-auto pb-4">
+                  
+                  {/* 1. BARRA DE BÚSQUEDA FLOTANTE */}
+                  <div className={`bg-white rounded-xl p-1.5 mb-3 shadow-md border border-blue-100 relative z-50 transition-all duration-300 ${showSuggestions ? 'ring-4 ring-blue-50' : ''}`} ref={searchRef}>
+                    <div className="flex gap-2 items-center">
+                        <div className="flex-1 relative group">
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors">
+                                <Search size={20} strokeWidth={2}/>
+                            </div>
+                            <input 
+                                className="w-full pl-10 pr-3 h-10 rounded-lg bg-transparent outline-none text-base font-bold text-slate-700 placeholder-slate-300 transition-all uppercase" 
+                                placeholder="BUSCAR PACIENTE (DNI O APELLIDOS)..." 
+                                autoFocus 
+                                value={searchTerm} 
+                                onChange={handleSearchInput} 
+                                onFocus={() => { if(suggestions.length > 0) setShowSuggestions(true); }} 
+                            />
+                            
+                            {/* LISTA DE SUGERENCIAS */}
+                            {showSuggestions && suggestions.length > 0 && (
+                                <div className="absolute top-full left-0 w-full mt-1 bg-white rounded-xl shadow-xl border border-slate-100 max-h-[300px] overflow-y-auto p-1 no-scrollbar z-[100]">
+                                    {suggestions.map((p) => {
+                                        const adminEst = adminData.establecimiento.toUpperCase();
+                                        const patientEst = (p.estOrigen || "").toUpperCase();
+                                        let isSameJurisdiction = false;
+                                        let myKeyword = "";
+                                        if (adminEst.includes("PACAIPAMPA")) myKeyword = "PACAIPAMPA";
+                                        else if (adminEst.includes("PUERTO")) myKeyword = "PUERTO";
+                                        else if (adminEst.includes("LAGUNAS")) myKeyword = "LAGUNAS";
+                                        else if (adminEst.includes("CUMBICUS")) myKeyword = "CUMBICUS";
+                                        else if (adminEst.includes("CACHIACO")) myKeyword = "CACHIACO";
+                                        
+                                        if (myKeyword && patientEst.includes(myKeyword)) isSameJurisdiction = true;
+                                        else if (!myKeyword && adminEst === patientEst) isSameJurisdiction = true;
 
-      // 1. Detectamos cuál es TU establecimiento clave (IGNORAMOS "P.S", "I-1", ETC.)
-      let myKeyword = "";
-      if (adminEst.includes("PACAIPAMPA")) myKeyword = "PACAIPAMPA";
-      else if (adminEst.includes("PUERTO")) myKeyword = "PUERTO";
-      else if (adminEst.includes("LAGUNAS")) myKeyword = "LAGUNAS";
-      else if (adminEst.includes("CUMBICUS")) myKeyword = "CUMBICUS";
-      else if (adminEst.includes("CACHIACO")) myKeyword = "CACHIACO";
-      
-      // 2. Comparamos: Si el paciente tiene TU palabra clave, es de tu jurisdicción (VERDE)
-      if (myKeyword && patientEst.includes(myKeyword)) {
-          isSameJurisdiction = true;
-      } else if (!myKeyword && adminEst === patientEst) {
-          // Si no hay palabra clave, comparamos texto exacto (Backup)
-          isSameJurisdiction = true;
-      }
-
-      return (
-        <div 
-          key={p.id} 
-          onMouseDown={() => selectPatient(p)}
-          className="p-3 cursor-pointer rounded-xl group hover:bg-blue-50 transition-all border-b border-slate-50 last:border-0 flex items-start gap-3"
-        >
-          {/* ÍCONO (VERDE SI COINCIDE, NARANJA SI NO) */}
-          <div className={`mt-1 p-2 rounded-full ${isSameJurisdiction ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
-             <Users size={18} />
-          </div>
-
-          {/* DATOS DEL PACIENTE */}
-          <div className="flex-1">
-             <div className={`font-bold text-sm uppercase ${isSameJurisdiction ? 'text-slate-700' : 'text-slate-600'}`}>
-                {getHighlightedText(p.nombre, searchTerm)}
-             </div>
-             
-             <div className="flex flex-wrap gap-2 mt-1.5 text-[10px] font-bold uppercase">
-                {/* DNI */}
-                <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded border border-slate-200">
-                   DNI: <span className="text-slate-700">{getHighlightedText(p.dni, searchTerm)}</span>
-                </span>
-                
-                {/* HC */}
-                <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded border border-slate-200">
-                   HC: {p.hc || "S/D"}
-                </span>
-
-                {/* ETIQUETA DE JURISDICCIÓN (AQUÍ ESTÁ LA MAGIA VISUAL) */}
-                <span className={`px-2 py-0.5 rounded border flex items-center gap-1 ${
-                    isSameJurisdiction 
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200' // VERDE (COINCIDE)
-                    : 'bg-orange-50 text-orange-700 border-orange-200'    // NARANJA (ALERTA)
-                }`}>
-                    {!isSameJurisdiction && <AlertTriangle size={10} />}
-                    EST: {p.estOrigen || "DESCONOCIDO"}
-                </span>
-             </div>
-          </div>
-        </div>
-      );
-    })}
-  </div>
-)}
- </div>
-                                      <div className="flex gap-2">
-                                     <button onClick={() => setIsManualModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white w-12 h-12 rounded-xl flex items-center justify-center shadow-lg transition-transform active:scale-95" title="Registrar Paciente Nuevo"><UserPlus size={24}/></button>
-                                    
-                             </div>
-                          </div>
+                                        return (
+                                            <div key={p.id} onMouseDown={() => selectPatient(p)} className="p-2 cursor-pointer rounded-lg group hover:bg-blue-50 transition-all border-b border-slate-50 last:border-0 flex items-start gap-3">
+                                                <div className={`mt-0.5 p-2 rounded-full ${isSameJurisdiction ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
+                                                    <Users size={16} />
+                                                </div>
+                                                <div className="flex-1">
+                                                    <div className={`font-black text-xs uppercase ${isSameJurisdiction ? 'text-slate-700' : 'text-slate-600'}`}>
+                                                        {getHighlightedText(p.nombre, searchTerm)}
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-1 mt-1 text-[9px] font-bold uppercase">
+                                                        <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200">DNI: <span className="text-slate-800">{getHighlightedText(p.dni, searchTerm)}</span></span>
+                                                        <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200">HC: {p.hc || "S/D"}</span>
+                                                        <span className={`px-1.5 py-0.5 rounded border flex items-center gap-1 ${isSameJurisdiction ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-orange-50 text-orange-700 border-orange-200'}`}>
+                                                            {!isSameJurisdiction && <AlertTriangle size={8} />} EST: {p.estOrigen || "DESCONOCIDO"}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
-                        <div className="w-48 shrink-0"><label className={getLabelStyle(1)}>F. Atención</label><div className="relative"><input type="date" name="fecAtencion" className={getDateInputStyle(1) + ` h-12 ${getTheme(1).bgLight} text-center`} value={patientData.fecAtencion} onChange={handlePatient} /></div></div>
+                        
+                        <button onClick={() => setIsManualModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white w-10 h-10 rounded-lg flex items-center justify-center shadow-md shadow-blue-200 transition-transform active:scale-95 group" title="Registrar Paciente Nuevo">
+                            <UserPlus size={20} className="group-hover:scale-110 transition-transform"/>
+                        </button>
+			{/* FECHA DE ATENCIÓN (DISEÑO PREMIUM) */}
+                        <div className="relative group min-w-[220px]">
+                            {/* Fondo decorativo al hacer hover */}
+                            <div className="absolute inset-0 bg-blue-600 blur opacity-0 group-hover:opacity-10 rounded-xl transition-opacity duration-300"></div>
+                            
+                            <div className="h-14 bg-white border border-blue-100 rounded-xl flex items-center px-4 gap-3 shadow-sm relative z-10 transition-all group-hover:border-blue-300 group-hover:translate-y-[-1px]">
+                                {/* Ícono con fondo */}
+                                <div className="bg-blue-50 text-blue-600 p-2 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-colors duration-300">
+                                    <Calendar size={20} strokeWidth={2.5}/>
+                                </div>
+                                
+                                {/* Contenedor de Texto e Input */}
+                                <div className="flex flex-col justify-center">
+                                    <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest leading-tight mb-0.5 group-hover:text-blue-500 transition-colors">
+                                        Fecha Atención
+                                    </label>
+                                    <input 
+                                        type="date" 
+                                        name="fecAtencion" 
+                                        className="bg-transparent font-black text-slate-700 text-sm outline-none cursor-pointer uppercase p-0 border-none h-auto w-full focus:ring-0" 
+                                        value={patientData.fecAtencion} 
+                                        onChange={handlePatient} 
+                                    />
+                                </div>
+                            </div>
+                        </div>
+			
                     </div>
                   </div>
 
-                  <div className={`transition-all duration-500 ease-in-out ${showSuggestions ?
-                  'opacity-40 blur-sm pointer-events-none grayscale-[0.5]' : 'opacity-100 blur-0'}`}>
-                      <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+                  {/* 2. FORMULARIO PRINCIPAL */}
+                  <div className={`transition-all duration-500 ease-in-out ${showSuggestions ? 'opacity-30 blur-[1px] pointer-events-none' : 'opacity-100'}`}>
+                      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                         
-                        <div className="grid grid-cols-12 gap-2 items-end border-b pb-4 border-slate-100 mb-2 bg-slate-50/50 p-2 rounded-xl">
-                            <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>Cond. Est.</label><select name="condEst" className={getSelectStyle(patientData.condEst)} value={patientData.condEst} onChange={handlePatient}><option value="">...</option><option value="N">NUEVO</option><option value="C">CONTINUADOR</option><option value="R">REINGRESANTE</option></select></div>
-                            <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>Cond. Serv.</label><select name="condServ" className={getSelectStyle(patientData.condServ, isInvalidCombo)} value={patientData.condServ} onChange={handlePatient}><option value="">...</option><option value="N">NUEVO</option><option value="C">CONTINUADOR</option><option value="R">REINGRESANTE</option></select></div>
-                            <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>Condición</label><select name="condicion" className={getInputStyle(1) + " text-xs"} value={patientData.condicion} onChange={handlePatient}><option value="">NINGUNA</option><option value="GESTANTE">GESTANTE</option><option value="PUERPERA">PUERPERA</option></select></div>
-                            <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>FUR</label><div className="relative"><input type="date" name="fur" className={(patientData.condicion !== 'GESTANTE' ? 'bg-slate-100 opacity-50 cursor-not-allowed' : 'bg-white cursor-pointer') + 
-                            " " + getDateInputStyle(1) + " text-center text-xs px-1"} value={patientData.fur} onChange={handlePatient} disabled={patientData.condicion !== 'GESTANTE'} /></div></div>
-                            <div className="col-span-4 flex justify-end pb-[2px]">{isPatientDataLocked ?
-                            (<button onClick={() => setIsPatientDataLocked(false)} className={`w-full justify-center bg-white border-2 border-slate-200 hover:border-blue-400 text-blue-600 hover:bg-blue-50 px-2 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-sm h-[38px]`}><Edit size={16}/> EDITAR</button>) : (<button onClick={() => setIsPatientDataLocked(true)} className={`w-full justify-center bg-white border-2 border-red-200 hover:border-red-400 text-red-600 hover:bg-red-50 px-2 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-sm h-[38px]`}><X size={16}/> BLOQUEAR</button>)}</div>
+                        {/* SECCIÓN A: DATOS DE ADMISIÓN */}
+                        <div className="bg-slate-50/80 p-3 border-b border-slate-100">
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
+                                <div className="space-y-0.5">
+                                    <label className="text-[9px] font-bold text-slate-500 uppercase ml-1">Cond. Est.</label>
+                                    <div className="relative">
+                                        <select name="condEst" className={`w-full h-9 px-2 rounded-lg border-2 outline-none text-[11px] font-bold transition-all appearance-none cursor-pointer ${!patientData.condEst ? 'border-red-300 bg-red-50 text-red-700' : 'border-slate-200 bg-white hover:border-blue-400 focus:border-blue-500'}`} value={patientData.condEst} onChange={handlePatient}>
+                                            <option value="">SELECCIONAR...</option><option value="N">NUEVO</option><option value="C">CONTINUADOR</option><option value="R">REINGRESANTE</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="space-y-0.5">
+                                    <label className="text-[9px] font-bold text-slate-500 uppercase ml-1">Cond. Serv.</label>
+                                    <div className="relative">
+                                        <select name="condServ" className={`w-full h-9 px-2 rounded-lg border-2 outline-none text-[11px] font-bold transition-all appearance-none cursor-pointer ${isInvalidCombo ? 'border-red-500 bg-red-50 animate-pulse' : !patientData.condServ ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white hover:border-blue-400'}`} value={patientData.condServ} onChange={handlePatient}>
+                                            <option value="">SELECCIONAR...</option><option value="N">NUEVO</option><option value="C">CONTINUADOR</option><option value="R">REINGRESANTE</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="space-y-0.5">
+                                    <label className="text-[9px] font-bold text-slate-500 uppercase ml-1">Condición Esp.</label>
+                                    <select 
+                                        name="condicion" 
+                                        className="w-full h-9 px-2 rounded-lg border-2 border-slate-200 bg-white outline-none text-[11px] font-bold text-slate-700 focus:border-blue-500 transition-all cursor-pointer" 
+                                        value={patientData.condicion} 
+                                        onChange={handlePatient}
+                                    >
+                                        <option value="">NINGUNA</option>
+                                        {/* Bloqueamos visualmente si es Hombre */}
+                                        <option value="GESTANTE" disabled={patientData.sexo === 'M' || patientData.sexo === 'MASCULINO'} className="disabled:text-slate-300">
+                                            GESTANTE {(patientData.sexo === 'M' || patientData.sexo === 'MASCULINO') ? '(Bloqueado)' : ''}
+                                        </option>
+                                        <option value="PUERPERA" disabled={patientData.sexo === 'M' || patientData.sexo === 'MASCULINO'} className="disabled:text-slate-300">
+                                            PUERPERA {(patientData.sexo === 'M' || patientData.sexo === 'MASCULINO') ? '(Bloqueado)' : ''}
+                                        </option>
+                                    </select>
+                                </div>
+                                <div className="flex gap-2">
+                                    <div className="space-y-0.5 flex-1">
+                                        <label className="text-[9px] font-bold text-slate-500 uppercase ml-1">FUR</label>
+                                        <input 
+                                            type="date" 
+                                            name="fur" 
+                                            className={`w-full h-9 px-2 rounded-lg border-2 outline-none text-[11px] font-bold text-center transition-all 
+                                                ${patientData.condicion !== 'GESTANTE' 
+                                                    ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' // Caso Desactivado
+                                                    : (!patientData.fur 
+                                                        ? 'border-red-500 bg-red-50 text-slate-800 animate-pulse' // Caso Gestante SIN fecha (ROJO)
+                                                        : 'bg-white border-slate-200 hover:border-blue-400 cursor-pointer text-slate-700' // Caso Gestante CON fecha (NORMAL)
+                                                    )
+                                                }`} 
+                                            value={patientData.fur} 
+                                            onChange={handlePatient} 
+                                            disabled={patientData.condicion !== 'GESTANTE'} 
+                                        />
+                                    </div>
+                                    <div className="flex items-end">
+                                        {isPatientDataLocked ? 
+                                        (<button onClick={() => setIsPatientDataLocked(false)} className="h-9 px-3 bg-white border-2 border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-200 rounded-lg font-bold text-[9px] flex items-center gap-1 transition-all shadow-sm"><Edit size={12}/> EDITAR</button>) : 
+                                        (<button onClick={() => setIsPatientDataLocked(true)} className="h-9 px-3 bg-white border-2 border-red-100 text-red-500 hover:bg-red-50 hover:border-red-200 rounded-lg font-bold text-[9px] flex items-center gap-1 transition-all shadow-sm"><X size={12}/> BLOQUEAR</button>)}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                        <div className="grid grid-cols-12 gap-2 items-end">
-                          <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>DNI</label><input name="dni" className={getLockedInputStyle(1)} value={patientData.dni} onChange={handlePatient} readOnly={true} /></div>
-                          <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>H. Clínica</label><input ref={hcInputRef} name="hc" className={`${isPatientDataLocked ? getLockedInputStyle(1) : getInputStyle(1)} ${(!patientData.hc || patientData.hc === patientData.dni) && !isPatientDataLocked ?
-                          'border-red-500 bg-red-50 focus:border-red-600 focus:ring-red-100' : ''}`} value={patientData.hc} onChange={handlePatient} readOnly={isPatientDataLocked} /></div>
-                          <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>Fecha Nac.</label><input type="date" name="fecNac" className={getLockedDateInputStyle(1)} value={patientData.fecNac} onChange={handlePatient} readOnly={true} /></div>
-                          <div className="col-span-1 flex flex-col gap-1"><label className={getLabelStyle(1)}>Sexo</label><input name="sexo" className={getLockedInputStyle(1)} value={patientData.sexo} onChange={handlePatient} readOnly={true} /></div>
-                          <div className="col-span-2 flex flex-col gap-1"><label className={getLabelStyle(1)}>Edad (A/M/D)</label><input className={`${baseInputStyle} border-orange-200 text-orange-800 bg-orange-50 cursor-default text-center tracking-wide`} value={ageString} readOnly={true} /></div>
-                          <div className="col-span-1 flex flex-col gap-1"><label className={getLabelStyle(1)}>Edad Meses</label><input className={`${baseInputStyle} border-orange-200 text-orange-800 bg-orange-50 cursor-default text-center font-black`} value={ageInMonths} readOnly={true} /></div>
-                          <div className="col-span-2 flex flex-col gap-1">
-    			  <label className={getLabelStyle(1)}>Financiador</label>
-   			  <select 
-                          name="financiador" 
-       			  className={isPatientDataLocked ? getLockedInputStyle(1) : getInputStyle(1)} 
-       			  value={patientData.financiador} 
-       			  onChange={handlePatient} 
-       			  disabled={isPatientDataLocked}
-    			>
-       			 <option value="">SELECCIONAR...</option>
-       			 <option value="1-PAGANTE">1-PAGANTE</option>
-       			 <option value="2-SIS">2-SIS</option>
-       			 <option value="3-ESSALUD">3-ESSALUD</option>
-       			 <option value="4-OTROS">4-OTROS</option>
-    			</select>
-			</div>
-                       </div>
-                        <div className="grid grid-cols-12 gap-2 items-end">
-                          <div className="col-span-8 flex flex-col gap-1"><label className={getLabelStyle(1)}>Paciente</label><input name="paciente" className={isPatientDataLocked ?
-                          getLockedInputStyle(1) + " font-black" : getInputStyle(1) + " font-black"} value={patientData.paciente} onChange={handlePatient} readOnly={isPatientDataLocked} /></div>
-                          <div className="col-span-4 flex flex-col gap-1"><label className={getLabelStyle(1)}>Distrito</label><input name="distrito" className={isPatientDataLocked ?
-                          getLockedInputStyle(1) : getInputStyle(1)} value={patientData.distrito} onChange={handlePatient} readOnly={isPatientDataLocked} /></div>
-                        </div>
+                        {/* SECCIÓN B: DATOS DEL PACIENTE */}
+                        <div className="p-4 grid grid-cols-12 gap-x-4 gap-y-3">
+                            
+                            {/* FILA 1 */}
+                            <div className="col-span-12 md:col-span-2 space-y-0.5">
+                                <label className="text-[9px] font-bold text-slate-400 uppercase flex items-center gap-1"><span className="p-0.5 bg-slate-100 rounded text-slate-500"><User size={8}/></span> DNI</label>
+                                <input name="dni" className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 font-bold text-xs outline-none focus:bg-white focus:border-blue-500 transition-all" value={patientData.dni} onChange={handlePatient} readOnly={true} />
+                            </div>
+                            <div className="col-span-12 md:col-span-2 space-y-0.5">
+                                <label className="text-[9px] font-bold text-slate-400 uppercase flex items-center gap-1"><span className="p-0.5 bg-slate-100 rounded text-slate-500"><FileText size={8}/></span> H. Clínica</label>
+                                <input ref={hcInputRef} name="hc" className={`w-full h-9 px-3 rounded-lg border font-bold text-xs outline-none transition-all ${isPatientDataLocked ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed shadow-inner' : 'bg-white border-blue-300 text-slate-800 focus:ring-2 focus:ring-blue-100'} ${(!patientData.hc || patientData.hc === patientData.dni) && !isPatientDataLocked ? 'border-red-500 bg-red-50 animate-pulse' : ''}`} value={patientData.hc} onChange={handlePatient} readOnly={isPatientDataLocked} />
+                            </div>
+                            <div className="col-span-12 md:col-span-2 space-y-0.5">
+                                <label className="text-[9px] font-bold text-slate-400 uppercase flex items-center gap-1"><span className="p-0.5 bg-slate-100 rounded text-slate-500"><Calendar size={8}/></span> Nacimiento</label>
+                                <input type="date" name="fecNac" className="w-full h-9 px-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 font-bold text-[10px] text-center outline-none" value={patientData.fecNac} onChange={handlePatient} readOnly={true} />
+                            </div>
+                            
+                            {/* --- CAMBIO AQUÍ: CINTILLO DE SEXO DINÁMICO --- */}
+                            {/* CINTILLO DE SEXO CORREGIDO (Detecta M o F) */}
+                            <div className="col-span-6 md:col-span-1 space-y-0.5">
+                                <label className="text-[9px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                                    {/* Ícono dinámico */}
+                                    <span className={`p-0.5 rounded transition-all ${
+                                        (patientData.sexo === 'M' || patientData.sexo === 'MASCULINO') ? 'bg-sky-200 text-sky-700' : 
+                                        (patientData.sexo === 'F' || patientData.sexo === 'FEMENINO') ? 'bg-pink-200 text-pink-700' : 
+                                        'bg-slate-100 text-slate-500'
+                                    }`}>
+                                        <Users size={8}/>
+                                    </span> 
+                                    Sexo
+                                </label>
+                                
+                                {/* Input dinámico */}
+                                <input 
+                                    name="sexo" 
+                                    className={`w-full h-9 px-0 text-center rounded-lg border-2 font-black text-xs outline-none transition-all ${
+                                        (patientData.sexo === 'M' || patientData.sexo === 'MASCULINO') 
+                                        ? 'bg-sky-100 border-sky-300 text-sky-800 shadow-sm shadow-sky-100' 
+                                        : (patientData.sexo === 'F' || patientData.sexo === 'FEMENINO') 
+                                            ? 'bg-pink-100 border-pink-300 text-pink-800 shadow-sm shadow-pink-100' 
+                                            : 'bg-slate-50 border-slate-200 text-slate-400'
+                                    }`} 
+                                    value={patientData.sexo || "S/D"} 
+                                    readOnly={true} 
+                                />
+                            </div>                            
+                            <div className="col-span-6 md:col-span-3 space-y-0.5">
+                                <label className="text-[9px] font-bold text-slate-400 uppercase flex items-center gap-1"><span className="p-0.5 bg-slate-100 rounded text-slate-500"><Activity size={8}/></span> Edad Calculada</label>
+                                <div className="flex gap-2">
+                                    <input className="flex-1 h-9 bg-orange-50 border border-orange-100 rounded-lg text-center text-orange-800 font-bold text-[10px] shadow-sm outline-none px-0" value={ageString} readOnly={true} />
+                                    <input className="w-14 h-9 bg-orange-50 border border-orange-100 rounded-lg text-center text-orange-800 font-black text-[10px] shadow-sm outline-none px-0" value={ageInMonths ? ageInMonths + 'm' : ''} readOnly={true} title="Meses totales" />
+                                </div>
+                            </div>
+                            
+                            <div className="col-span-12 md:col-span-2 space-y-0.5">
+                                <label className="text-[9px] font-bold text-slate-400 uppercase flex items-center gap-1"><span className="p-0.5 bg-slate-100 rounded text-slate-500"><FileSpreadsheet size={8}/></span> Financiador</label>
+                                <select name="financiador" className={`w-full h-9 px-2 rounded-lg border outline-none text-[11px] font-bold transition-all ${isPatientDataLocked ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed' : 'bg-white border-slate-200 hover:border-blue-400 cursor-pointer'}`} value={patientData.financiador} onChange={handlePatient} disabled={isPatientDataLocked}>
+                                    <option value="">SELECCIONAR...</option><option value="1-PAGANTE">1-PAGANTE</option><option value="2-SIS">2-SIS</option><option value="3-ESSALUD">3-ESSALUD</option><option value="4-OTROS">4-OTROS</option>
+                                </select>
+                            </div>
 
-                        <div className="grid grid-cols-12 gap-2 items-end">
-                            <div className="col-span-5 flex flex-col gap-1"><label className={getLabelStyle(1)}>Dirección</label><input name="direccion" className={`${isPatientDataLocked ?
-                            getLockedInputStyle(1) : getInputStyle(1)} ${!patientData.direccion ? 'border-red-400 bg-red-50' : ''}`} value={patientData.direccion} onChange={handlePatient} readOnly={isPatientDataLocked} placeholder={!patientData.direccion ? "¡VACÍO!"
-                            : ""} /></div>
-                            <div className="col-span-3 flex flex-col gap-1"><label className="text-[9px] font-bold text-blue-500 uppercase ml-1 mb-0.5">Seleccionar Caserío</label><select className={`w-full h-9 px-2 rounded-xl border-2 outline-none text-xs font-bold transition-all ${isPatientDataLocked ?
-                            'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-white border-blue-300 text-blue-700 cursor-pointer hover:border-blue-500 focus:ring-2 focus:ring-blue-100'}`} disabled={isPatientDataLocked} onChange={(e) => { if(e.target.value) { setPatientData(prev => ({...prev, direccion: e.target.value}));
-                            } }} value=""><option value="">▼ LISTA CASERÍOS</option>{listaCaserios.map(caserio => ( <option key={caserio} value={caserio}>{caserio}</option> ))}</select></div>
-                            <div className="col-span-4 flex flex-col gap-1"><label className={getLabelStyle(1)}>ESTABLECIMIENTO DE ATENCIÓN</label><input name="estOrigen" className={isPatientDataLocked ?
-                            getLockedInputStyle(1) : getInputStyle(1)} value={patientData.estOrigen} onChange={handlePatient} readOnly={isPatientDataLocked} /></div>
+                            {/* FILA 2 */}
+                            <div className="col-span-12 md:col-span-8 space-y-0.5">
+                                <label className="text-[9px] font-bold text-slate-400 uppercase">Apellidos y Nombres</label>
+                                <input name="paciente" className={`w-full h-9 px-3 rounded-lg border outline-none font-black text-xs uppercase tracking-wide transition-all ${isPatientDataLocked ? 'bg-slate-50 border-slate-200 text-slate-600 shadow-inner' : 'bg-white border-blue-200 text-blue-900 focus:ring-2 focus:ring-blue-50'}`} value={patientData.paciente} onChange={handlePatient} readOnly={isPatientDataLocked} />
+                            </div>
+                            <div className="col-span-12 md:col-span-4 space-y-0.5">
+                                <label className="text-[9px] font-bold text-slate-400 uppercase">Distrito Procedencia</label>
+                                <input name="distrito" className={`w-full h-9 px-3 rounded-lg border outline-none text-[11px] font-bold uppercase ${isPatientDataLocked ? 'bg-slate-50 border-slate-200 text-slate-600' : 'bg-white border-slate-200 text-slate-800 focus:border-blue-500'}`} value={patientData.distrito} onChange={handlePatient} readOnly={isPatientDataLocked} />
+                            </div>
+
+                            {/* FILA 3 */}
+                            <div className="col-span-12 md:col-span-5 space-y-0.5">
+                                <label className="text-[9px] font-bold text-slate-400 uppercase">Dirección / Jr. / Av.</label>
+                                <input name="direccion" className={`w-full h-9 px-3 rounded-lg border outline-none text-[11px] font-bold uppercase transition-all ${!patientData.direccion && !isPatientDataLocked ? 'border-red-300 bg-red-50 focus:bg-white' : isPatientDataLocked ? 'bg-slate-50 border-slate-200 text-slate-600' : 'bg-white border-slate-200 focus:border-blue-500'}`} value={patientData.direccion} onChange={handlePatient} readOnly={isPatientDataLocked} placeholder={!patientData.direccion ? "¡INGRESE DIRECCIÓN!" : ""} />
+                            </div>
+                            <div className="col-span-12 md:col-span-3 space-y-0.5">
+                                <label className="text-[9px] font-bold text-blue-500 uppercase">Seleccionar Caserío (Ayuda)</label>
+                                <select className={`w-full h-9 px-2 rounded-lg border-2 outline-none text-[11px] font-bold transition-all cursor-pointer ${isPatientDataLocked ? 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed' : 'bg-white border-blue-100 text-blue-600 hover:border-blue-300'}`} disabled={isPatientDataLocked} onChange={(e) => { if(e.target.value) setPatientData(prev => ({...prev, direccion: e.target.value})); }} value="">
+                                    <option value="">▼ LISTA RÁPIDA</option>{listaCaserios.map(c => (<option key={c} value={c}>{c}</option>))}
+                                </select>
+                            </div>
+                            <div className="col-span-12 md:col-span-4 space-y-0.5 pb-1">
+                                <label className="text-[9px] font-bold text-slate-400 uppercase">Establecimiento Origen (Referencia)</label>
+                                <input name="estOrigen" className={`w-full h-9 px-3 rounded-lg border outline-none text-[11px] font-bold uppercase ${isPatientDataLocked ? 'bg-slate-50 border-slate-200 text-slate-600' : 'bg-white border-slate-200 focus:border-blue-500'}`} value={patientData.estOrigen} onChange={handlePatient} readOnly={isPatientDataLocked} />
+                            </div>
+
                         </div>
                       </div>
                   </div>
                 </div>
               )}
-              
               {/* PASO 2: DATOS CLÍNICOS */}
+	      {/* PASO 2: DATOS CLÍNICOS - DISEÑO DASHBOARD MODERNO */}
+              {/* PASO 2: DATOS CLÍNICOS - DISEÑO COMPACTO Y EFICIENTE */}
+              {/* PASO 2: DATOS CLÍNICOS - DISEÑO ULTRA REDONDEADO (SOFT UI) */}
+              {/* PASO 2: DATOS CLÍNICOS - DISEÑO 'BURBUJA' (FULL ROUNDED) */}
+              {/* PASO 2: DATOS CLÍNICOS - INPUTS INTERNOS REDONDEADOS */}
               {step === 2 && (
-                <div className="w-full lg:max-w-[65%] mx-auto transition-all duration-300">
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                      <div className="lg:col-span-2 bg-white p-3 rounded-2xl shadow-sm border border-slate-200">
-                      <h3 className="font-extrabold mb-2 flex items-center gap-2 text-lg text-teal-800"><Activity size={24}/> Antropometría y Funciones Vitales</h3>
-                      {/* LISTA DE INPUTS MÉDICOS CON UNIDADES CORREGIDAS */}
-  <div className="space-y-2">
-    {[
-        /* AQUI AGREGAMOS LA PROPIEDAD 'unit' PARA QUE SE VEA EN LA BARRA VERDE */
-        { label: "Talla (cm)", name: "talla", unit: "cm", min: 30, max: 200, hist: lastClinicalData.talla },
-        { label: "Peso (kg)", name: "peso", unit: "Kg", min: 0.5, max: 180, hist: lastClinicalData.peso },
-        { label: "P. Abdominal", name: "pAbd", unit: "cm", min: 10, max: 200, hist: lastClinicalData.pAbd, checkAge: ageObj.y >= 12, specialBtn: true },
-        { label: "P. Cefálico", name: "pCef", unit: "cm", min: 20, max: 60, hist: lastClinicalData.pCef, checkAge: ageObj.y <= 5, specialBtn: true },
-        { label: "Hemoglobina", name: "hb", unit: "g/dl", min: 0, max: 24, hist: lastClinicalData.hb, isHb: true },
-        { label: "P. Pre-Gest.", name: "pPreGest", unit: "Kg", min: 30, max: 150, hist: lastClinicalData.pPreg, checkCond: patientData.condicion === 'GESTANTE', specialBtn: true }
-    ].map((item, idx) => {
-        if (item.checkAge === false) return null;
-        
-        const isLocked = item.checkCond === false || (item.name === 'pAbd' && ageObj.y < 12) || (item.name === 'pCef' && ageObj.y > 5);
-        const hasHist = item.hist && item.hist.val;
-        
-        return (
-            <div key={idx} className="grid grid-cols-12 gap-4 items-center border-b border-slate-50 pb-2 last:border-0 last:pb-0">
-                <div className="col-span-5">
-                    <div className="flex justify-between items-center mb-0.5">
-                        <label className="text-[10px] font-bold text-teal-700 uppercase tracking-wider">{item.label}</label>
-                        {item.specialBtn && !clinicalData[item.name] && !isLocked && ( 
-                            <button onClick={() => { 
-                                if(item.name==='pAbd') setIgnorePAbdValidation(true); 
-                                if(item.name==='pCef') setIgnorePCefValidation(true); 
-                                if(item.name==='pPreGest') setIgnorePreGestValidation(true); 
-                            }} className="text-[9px] bg-slate-100 text-slate-500 hover:bg-slate-200 px-2 py-0.5 rounded transition-colors">OMITIR</button> 
-                        )}
-                    </div>
-                    
-                    <input 
-                        name={item.name} 
-                        disabled={isLocked} 
-                        value={clinicalData[item.name] || ''} 
-                        onChange={(e) => handleNumericInput(e, item.min, item.max)} 
-                        placeholder={isLocked ? "NO APLICA" : ""} 
-                        className={`
-                            ${borderlessInputStyle} border-2 h-8 text-center text-lg font-bold transition-all
-                            ${isLocked ? 'bg-slate-100 text-slate-400 shadow-none border-slate-200' : ''}
-                            ${(item.isHb && showHbError && !clinicalData.hb) ? 'bg-red-50 border-red-600 animate-pulse shadow-md shadow-red-200' : ''}
-                            ${(item.isHb && showHbError && clinicalData.hb) ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : ''}
-                            ${(item.name === 'pPreGest' && showPreGestError) ? 'bg-red-50 border-red-500 animate-pulse' : ''}
-                            ${!isLocked && clinicalData[item.name] && !(item.isHb && showHbError) ? 'bg-teal-50 border-teal-500 text-teal-800' : ''}
-                            ${!isLocked && !showHbError && !showPreGestError && !clinicalData[item.name] ? 'border-slate-200 focus:border-teal-500 text-slate-700' : ''}
-                        `} 
-                    />
-                </div>
-                
-                {/* SECCIÓN DEL HISTORIAL (VISUALIZACIÓN DE DATO PREVIO) */}
-                <div className="col-span-7 flex flex-col justify-end h-full pt-4">
-                    <div className="flex w-full h-8 rounded-lg overflow-hidden text-[10px] font-bold shadow-sm border border-slate-200">
-                        {/* FECHA */}
-                        <div className="w-1/2 bg-rose-50 text-rose-800 flex items-center justify-center border-r border-rose-100 truncate px-1">
-                            {hasHist ? (
-                                <span className="flex items-center gap-1"><Calendar size={10} className="mb-0.5"/> {item.hist.date}</span>
-                            ) : "SIN FECHA"}
-                        </div>
-                        
-                        {/* VALOR + UNIDAD (AQUÍ ESTÁ EL CAMBIO VISUAL) */}
-                        <div className="w-1/2 bg-teal-600 text-white flex items-center justify-center tracking-wide">
-                            {hasHist ? (
-                                <span>
-                                    {item.hist.val} <span className="text-[9px] opacity-80 font-normal ml-0.5">{item.unit}</span>
-                                </span>
-                            ) : "SIN DATO"}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
-    })}
-  </div>
-</div>
-                    <div className="flex flex-col gap-4">
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 flex flex-col items-center text-center shadow-sm">
-                            <div className="bg-purple-50 p-3 rounded-full shadow-sm mb-3 text-purple-600"><Calculator size={28}/></div>
-                            <h4 className="text-slate-800 font-bold text-sm mb-1">Evaluación de Anemia</h4>
-                            <p className="text-slate-500 text-[10px] mb-4">Ajuste por altitud y diagnóstico</p>
-                            <button onClick={() => setShowAnemiaModal(true)} className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 rounded-xl text-xs shadow-md transition-all active:scale-95">ABRIR CALCULADORA</button>
-                        </div>
-                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-                            <h4 className="text-teal-800 font-bold text-sm mb-4 border-b border-slate-100 pb-2">Diagnóstico Nutricional</h4>
-                            <div className="flex gap-2 mb-3">
-                                <div className="flex-1"><label className="text-[10px] font-bold text-slate-400 block mb-1 uppercase">IMC</label><div className="h-10 bg-slate-100 rounded-lg flex items-center justify-center font-black text-slate-700 border border-slate-200">{clinicalData.imc ||
-                                '--'}</div></div>
-                                <div className="flex-[1.5]"><label className="text-[10px] font-bold text-slate-400 block mb-1 uppercase">Diagnóstico / Riesgo</label><input name="riesgo" value={clinicalData.riesgo} onChange={handleClinical} className="w-full h-10 bg-white border-2 border-slate-200 rounded-lg px-2 text-xs font-bold outline-none focus:border-teal-500 uppercase text-center" placeholder="NORMAL..." /></div>
-                            </div>
-                             <button onClick={() => setShowNutriModal(true)} className="w-full border-2 border-dashed border-slate-300 text-slate-500 hover:border-teal-400 hover:text-teal-700 hover:bg-teal-50 font-bold py-2 rounded-xl text-xs transition-all">Ver Tabla Z-Score (OMS)</button>
-                        </div>
-                    </div>
+                <div className="w-full max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300 pb-2">
+                  
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                      
+                      {/* COLUMNA IZQUIERDA */}
+                      <div className="lg:col-span-8">
+                          <div className="bg-white p-5 rounded-[2.5rem] shadow-sm border border-slate-200">
+                              
+                              <h3 className="font-bold text-sm text-slate-700 mb-5 flex items-center gap-2 border-b border-slate-100 pb-3 ml-2">
+                                  <Activity size={20} className="text-teal-600"/>
+                                  ANTROPOMETRÍA Y FUNCIONES VITALES
+                              </h3>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {[
+                                    { label: "Talla", name: "talla", unit: "cm", icon: <ArrowRight className="rotate-[-45deg]" size={20}/>, min: 30, max: 200, hist: lastClinicalData.talla, color: 'blue' },
+                                    { label: "Peso", name: "peso", unit: "Kg", icon: <span className="text-lg font-black leading-none">⚖️</span>, min: 0.5, max: 180, hist: lastClinicalData.peso, color: 'indigo' },
+                                    { label: "P. Abdominal", name: "pAbd", unit: "cm", icon: <RefreshCw size={18}/>, min: 10, max: 200, hist: lastClinicalData.pAbd, checkAge: ageObj.y >= 12, specialBtn: true, color: 'emerald' },
+                                    { label: "P. Cefálico", name: "pCef", unit: "cm", icon: <Smile size={18}/>, min: 20, max: 60, hist: lastClinicalData.pCef, checkAge: ageObj.y <= 5, specialBtn: true, color: 'orange' },
+                                    { label: "Hemoglobina", name: "hb", unit: "g/dl", icon: <Droplets size={18}/>, min: 0, max: 24, hist: lastClinicalData.hb, isHb: true, color: 'rose' },
+                                    { label: "P. Pre-Gest.", name: "pPreGest", unit: "Kg", icon: <Baby size={18}/>, min: 30, max: 150, hist: lastClinicalData.pPreg, checkCond: patientData.condicion === 'GESTANTE', specialBtn: true, color: 'pink' }
+                                ].map((item, idx) => {
+                                    if (item.checkAge === false) return null;
+                                    
+                                    const isLocked = item.checkCond === false || (item.name === 'pAbd' && ageObj.y < 12) || (item.name === 'pCef' && ageObj.y > 5);
+                                    const hasHist = item.hist && item.hist.val;
+                                    
+                                    return (
+                                        <div key={idx} className={`relative group transition-all ${isLocked ? 'opacity-60 grayscale' : ''}`}>
+                                            
+                                            {/* Contenedor Fila */}
+                                            <div className="flex items-center gap-3 p-2 rounded-[2rem] border border-slate-100 bg-white shadow-sm hover:shadow-md transition-all h-[5.5rem]">
+                                                
+                                                {/* Ícono */}
+                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ml-1 ${isLocked ? 'bg-slate-200 text-slate-400' : `bg-${item.color}-100 text-${item.color}-600`}`}>
+                                                    {item.icon}
+                                                </div>
+
+                                                {/* Area Central */}
+                                                <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
+                                                    <div className="flex justify-between items-center px-1">
+                                                        <label className="text-[9px] font-bold text-slate-400 uppercase truncate">{item.label}</label>
+                                                        {item.specialBtn && !clinicalData[item.name] && !isLocked && ( 
+                                                            <button onClick={() => { 
+                                                                if(item.name==='pAbd') setIgnorePAbdValidation(true); 
+                                                                if(item.name==='pCef') setIgnorePCefValidation(true); 
+                                                                if(item.name==='pPreGest') setIgnorePreGestValidation(true); 
+                                                            }} className="text-[8px] bg-slate-100 text-slate-400 hover:bg-red-100 hover:text-red-500 px-2 py-0.5 rounded-full font-bold transition-colors">OMITIR</button> 
+                                                        )}
+                                                    </div>
+                                                    
+                                                    {/* --- AQUÍ ESTÁ EL CAMBIO CLAVE: INPUT REDONDEADO INTERNO --- */}
+                                                    <div className="relative">
+                                                        <input 
+                                                            name={item.name} 
+                                                            disabled={isLocked} 
+                                                            value={clinicalData[item.name] || ''} 
+                                                            onChange={(e) => handleNumericInput(e, item.min, item.max)} 
+                                                            placeholder="0.0" 
+                                                            className={`w-full h-10 bg-slate-50 border-2 border-slate-200 rounded-2xl px-3 text-xl font-black text-slate-700 outline-none focus:border-${item.color}-400 focus:bg-white focus:ring-4 focus:ring-${item.color}-50 transition-all placeholder-slate-300 disabled:cursor-not-allowed
+                                                                ${(item.isHb && showHbError && !clinicalData.hb) ? 'border-red-300 bg-red-50 text-red-500 placeholder-red-300' : ''}
+                                                            `}
+                                                        />
+                                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 uppercase pointer-events-none">{item.unit}</span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Historial */}
+                                                <div className="w-16 flex flex-col items-end justify-center pl-1 h-14 mr-1">
+                                                    {hasHist ? (
+                                                        <>
+                                                            <span className="text-[8px] text-slate-400 leading-none mb-1 text-center w-full">{item.hist.date}</span>
+                                                            <div className="text-xs font-black text-teal-700 bg-teal-50 px-1 py-1.5 rounded-2xl border border-teal-100 text-center w-full shadow-sm">
+                                                                {item.hist.val}
+                                                            </div>
+                                                        </>
+                                                    ) : (
+                                                        <span className="text-[8px] font-bold text-slate-300 bg-slate-50 px-2 py-2 rounded-2xl block text-center w-full border border-slate-100">---</span>
+                                                    )}
+                                                </div>
+
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                              </div>
+                          </div>
+                      </div>
+
+                      {/* COLUMNA DERECHA */}
+                      <div className="lg:col-span-4 space-y-4">
+                          
+                          {/* WIDGET ANEMIA */}
+                          <div className="bg-gradient-to-br from-violet-600 to-indigo-700 rounded-[2.5rem] p-5 text-white shadow-lg shadow-indigo-200 relative overflow-hidden group">
+                              {/* ... contenido anemia ... */}
+                              <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-5 transition-opacity"></div>
+                              <div className="flex justify-between items-center mb-4">
+                                  <div className="flex items-center gap-3">
+                                      <div className="p-2.5 bg-white/20 rounded-2xl backdrop-blur-sm"><Calculator size={20} className="text-white"/></div>
+                                      <div>
+                                          <h4 className="font-bold text-sm leading-tight">Anemia</h4>
+                                          <p className="text-[9px] text-indigo-200 opacity-80">Calculadora</p>
+                                      </div>
+                                  </div>
+                              </div>
+                              
+                              <div className="bg-black/20 rounded-2xl p-3 mb-4 text-center border border-white/10">
+                                <div className="text-[10px] font-bold opacity-70 uppercase tracking-widest mb-1">Resultado</div>
+                                <div className="text-lg font-black truncate">{anemiaResult || "---"}</div>
+                              </div>
+
+                              <button onClick={() => setShowAnemiaModal(true)} className="w-full bg-white text-indigo-700 font-bold py-3 rounded-2xl text-[10px] shadow-md hover:bg-indigo-50 transition-all flex items-center justify-center gap-2 transform active:scale-95">
+                                  ABRIR CALCULADORA <ArrowRight size={12}/>
+                              </button>
+                          </div>
+
+                          {/* WIDGET NUTRICIÓN */}
+                           <div className="bg-white rounded-[2.5rem] p-5 shadow-sm border border-slate-200">
+                              <h4 className="text-slate-700 font-bold text-xs mb-4 flex items-center gap-2 ml-1">
+                                  <Heart size={16} className="text-rose-500"/> Estado Nutricional
+                              </h4>
+                              
+                              <div className="flex gap-3 mb-3">
+                                  {/* IMC */}
+                                  <div className="w-20 bg-slate-50 rounded-2xl p-2 border border-slate-100 text-center flex flex-col justify-center">
+                                      <span className="text-[8px] font-bold text-slate-400 block mb-0.5">IMC</span>
+                                      <div className="text-base font-black text-slate-700">{clinicalData.imc || '--'}</div>
+                                  </div>
+                                  
+                                  {/* INPUT RIESGO: CAMBIA DE COLOR DINÁMICAMENTE */}
+                                  <div className="flex-1">
+                                      <input 
+                                        name="riesgo" 
+                                        value={clinicalData.riesgo} 
+                                        onChange={handleClinical} 
+                                        className={`w-full h-full border-2 rounded-2xl px-3 text-[10px] font-bold outline-none uppercase text-center transition-all duration-300
+                                            ${clinicalData.riesgo === 'NORMAL' 
+                                                ? 'bg-emerald-100 border-emerald-300 text-emerald-800 shadow-inner' // VERDE
+                                                : (clinicalData.riesgo && clinicalData.riesgo.includes('TABLA')) 
+                                                    ? 'bg-amber-100 border-amber-300 text-amber-800' // NARANJA (TABLA Z)
+                                                    : clinicalData.riesgo 
+                                                        ? 'bg-red-100 border-red-300 text-red-800 animate-pulse' // ROJO (CUALQUIER OTRA COSA)
+                                                        : 'bg-slate-50 border-slate-200 text-slate-700 placeholder-slate-300 focus:border-teal-500' // GRIS (VACÍO)
+                                            }
+                                        `} 
+                                        placeholder="DIAGNÓSTICO..." 
+                                      />
+                                  </div>
+                              </div>
+
+                              <button onClick={() => setShowNutriModal(true)} className="w-full border-2 border-dashed border-slate-300 text-slate-500 hover:border-teal-400 hover:text-teal-700 hover:bg-teal-50 font-bold py-2.5 rounded-2xl text-[10px] transition-all flex items-center justify-center gap-2">
+                                  <FileText size={14}/> TABLA Z-SCORE
+                              </button>
+                          </div>
+
+                      </div>
                   </div>
                 </div>
               )}
-
               {/* PASO 3: DIAGNÓSTICOS */}
               {step === 3 && (
                 <div className="animate-in fade-in slide-in-from-right-8 duration-300 w-full max-w-[95%] mx-auto">
