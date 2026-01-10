@@ -382,51 +382,28 @@ const InlineFollowUpViewer = ({ type, data, onClose, onFileUpload, externalFilte
                                 ))}
                             </tr>
                         </thead>
-               
-			 <tbody className="bg-white">
-                            {filtered.map((row, i) => {
-                                // Determinamos si esta fila es la seleccionada
-                                const isSelected = selectedRowIndex === row.id;
-
-                                return (
-                                    <tr 
-                                        key={i} 
-                                        // AL HACER CLIC: Si ya está seleccionada, la desmarca. Si no, la selecciona.
-                                        onClick={() => setSelectedRowIndex(isSelected ? null : row.id)}
-                                        // CLASES DINÁMICAS: Cambia el color de fondo si isSelected es true
-                                        className={`transition-colors border-b cursor-pointer
-                                            ${isSelected 
-                                                ? 'bg-yellow-100 border-yellow-300'  // Color cuando está SELECCIONADO (Amarillo)
-                                                : 'border-slate-200 hover:bg-blue-50' // Color normal y hover
-                                            }
-                                        `}
-                                    >
-                                        {/* BOTÓN OJO */}
-                                        <td className={`px-2 py-2 border-r border-slate-200 text-center sticky left-0 z-20 shadow-sm
-                                            ${isSelected ? 'bg-yellow-50' : 'bg-slate-50'}
-                                        `}>
-                                            <button 
-                                                onClick={(e) => {
-                                                    e.stopPropagation(); // Evita que al dar click al ojo se seleccione/deseleccione la fila
-                                                    if (onView) onView(row);
-                                                }} 
-                                                className="bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white p-1.5 rounded-lg transition-all shadow-sm"
-                                                title="Ver seguimiento gráfico"
-                                            >
-                                                <Eye size={16} />
-                                            </button>
+                        <tbody className="bg-white">
+                            {filtered.map((row, i) => (
+                                <tr key={i} className="hover:bg-blue-50 transition-colors border-b border-slate-200">
+                                    {/* BOTÓN OJO */}
+                                    <td className="px-2 py-2 border-r border-slate-200 text-center bg-slate-50 sticky left-0 z-20 shadow-sm">
+                                        <button 
+                                            onClick={() => onView && onView(row)} 
+                                            className="bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white p-1.5 rounded-lg transition-all shadow-sm"
+                                            title="Ver seguimiento gráfico"
+                                        >
+                                            <Eye size={16} />
+                                        </button>
+                                    </td>
+                                    {/* RESTO DE DATOS */}
+                                    {columns.map((c, j) => (
+                                        <td key={j} className="px-3 py-2 whitespace-nowrap border-r border-slate-200">
+                                            {formatCell(row[c])}
                                         </td>
-                                        
-                                        {/* RESTO DE DATOS */}
-                                        {columns.map((c, j) => (
-                                            <td key={j} className="px-3 py-2 whitespace-nowrap border-r border-slate-200">
-                                                {formatCell(row[c])}
-                                            </td>
-                                        ))}
-                                    </tr>
-                                );
-                            })}
-                        </tbody>                            
+                                    ))}
+                                </tr>
+                            ))}
+                        </tbody>
                     </table>
                 </div>
                 
@@ -444,40 +421,29 @@ const InlineFollowUpViewer = ({ type, data, onClose, onFileUpload, externalFilte
 // --- MODAL DE SEGUIMIENTO INDIVIDUAL (CON SUPLEMENTACIÓN) ---
 // --- MODAL DE SEGUIMIENTO INDIVIDUAL (CRED + GESTANTE) ---
 // --- MODAL DE SEGUIMIENTO INDIVIDUAL (CRED + GESTANTE) ---
-// --- MODAL DE SEGUIMIENTO INDIVIDUAL (ANEMIA CORRECTO + CRED/GESTANTE ORIGINAL) ---
-// --- MODAL DE SEGUIMIENTO INDIVIDUAL (CORREGIDO: MUESTRA HB EN TODOS) ---
+// --- MODAL DE SEGUIMIENTO INDIVIDUAL (CRED + GESTANTE + ANEMIA) ---
+// --- MODAL DE SEGUIMIENTO INDIVIDUAL (FINAL) ---
+// --- MODAL DE SEGUIMIENTO INDIVIDUAL (ESTRUCTURA HÍBRIDA CORRECTA) ---
 const SeguimientoIndividualModal = ({ paciente, onClose }) => {
   if (!paciente) return null;
 
   const eventos = paciente.historialControles;
   const suplementosTotal = paciente.historialSuplementos ? paciente.historialSuplementos.length : 0;
-  
-  // Tipos
-  const esAnemia = paciente.tipoPaciente === 'ANEMIA';
-  const isCred = paciente.tipoPaciente === 'CRED';
-  const isGestante = paciente.tipoPaciente === 'GESTANTE';
 
-  // Detectar anemia para alerta en cabecera
-  const ultimaHb = !esAnemia ? paciente.historialControles.map(c => c.hb).filter(h => h).pop() : null;
-  const tieneAnemiaAlerta = ultimaHb && parseFloat(ultimaHb) < 11.0;
-
-  // --- TEMAS (TUS COLORES ORIGINALES) ---
-  let theme = { gradient: 'bg-slate-700', border: 'border-slate-100', icon: <Activity size={48}/>, text: 'text-slate-700', badge: 'bg-slate-600' };
-  
-  if (isCred) theme = { gradient: 'bg-gradient-to-r from-emerald-500 to-teal-600', border: 'border-emerald-100', icon: <Baby size={48} strokeWidth={1.5}/>, text: 'text-emerald-600', badge: 'bg-emerald-500' };
-  if (isGestante) theme = { gradient: 'bg-gradient-to-r from-pink-600 to-rose-700', border: 'border-pink-100', icon: <UserRound size={48} strokeWidth={1.5}/>, text: 'text-pink-600', badge: 'bg-pink-500' };
-  if (esAnemia) theme = { gradient: 'bg-gradient-to-r from-red-800 to-red-950', border: 'border-red-100', icon: <Droplets size={48} strokeWidth={1.5}/>, text: 'text-red-800', badge: 'bg-red-600' };
-  
-  // Alerta visual en cabecera si corresponde
-  if (tieneAnemiaAlerta) theme.gradient = 'bg-gradient-to-r from-orange-600 to-red-600 animate-pulse';
-
-  // Helper para filas de Anemia
-  const DataRow = ({ label, value, isHighlight }) => (
+  // --- COMPONENTE DE FILA (SOLO PARA ANEMIA) ---
+  const DataRow = ({ label, value, isHighlight = false }) => (
       <div className="flex justify-between items-center py-1 border-b border-dashed border-slate-200 last:border-0">
-          <span className="text-[10px] font-bold text-slate-400 uppercase w-16">{label}:</span>
-          <span className={`text-[11px] font-black uppercase text-right truncate flex-1 ${isHighlight ? 'text-sm text-slate-800' : 'text-slate-600'}`}>{value || '-'}</span>
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide min-w-[50px]">{label}:</span>
+          <span className={`text-[11px] font-black uppercase text-right truncate ${isHighlight ? 'text-lg text-slate-800' : 'text-slate-600'}`}>
+              {value || '-'}
+          </span>
       </div>
   );
+
+  // --- TEMAS ---
+  let theme = { gradient: 'bg-gradient-to-r from-red-800 to-red-950', border: 'border-red-100', icon: <Droplets size={48} strokeWidth={1.5}/>, text: 'text-red-800', badge: 'bg-red-600' };
+  if (paciente.tipoPaciente === 'CRED') theme = { gradient: 'bg-gradient-to-r from-emerald-500 to-teal-600', border: 'border-emerald-100', icon: <Baby size={48} strokeWidth={1.5}/>, text: 'text-emerald-600', badge: 'bg-emerald-500' };
+  if (paciente.tipoPaciente === 'GESTANTE') theme = { gradient: 'bg-gradient-to-r from-pink-600 to-rose-700', border: 'border-pink-100', icon: <UserRound size={48} strokeWidth={1.5}/>, text: 'text-pink-600', badge: 'bg-pink-500' };
 
   return (
     <div className="fixed inset-0 z-[150] bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
@@ -492,8 +458,7 @@ const SeguimientoIndividualModal = ({ paciente, onClose }) => {
                 <h2 className="text-2xl font-black tracking-tight leading-none mb-1">{paciente.nombre}</h2>
                 <div className="flex gap-3 text-xs font-bold opacity-90 mt-1">
                   <span className="bg-black/20 px-3 py-1 rounded-lg">DNI: {paciente.dni}</span>
-                  <span className="bg-black/20 px-3 py-1 rounded-lg">HC: {paciente.hc}</span>
-                  {esAnemia && <span className="bg-black/20 px-3 py-1 rounded-lg">EDAD: {paciente.edad}</span>}
+                  <span className="bg-black/20 px-3 py-1 rounded-lg">EDAD: {paciente.edad}</span>
                 </div>
               </div>
             </div>
@@ -504,84 +469,94 @@ const SeguimientoIndividualModal = ({ paciente, onClose }) => {
         {/* CUERPO */}
         <div className="flex-1 overflow-y-auto p-6 bg-slate-100 space-y-8">
           
-          {/* SECCIÓN PRINCIPAL */}
+          {/* ================= SECCIÓN CONTROLES ================= */}
           <div>
              <h3 className="text-slate-700 font-black text-sm uppercase tracking-widest mb-4 flex items-center gap-2">
-                <Activity size={18} className={theme.text}/> {esAnemia ? 'Ficha de Seguimiento' : 'Historial de Controles'}
+                <Activity size={18} className={theme.text}/> {paciente.tipoPaciente === 'ANEMIA' ? 'Ficha de Seguimiento' : 'Historial de Controles'}
              </h3>
 
              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                {eventos.map((ev, idx) => {
                  
-                 // --- A. DISEÑO ANEMIA (FICHA TÉCNICA) ---
-                 if (esAnemia) {
+                 // --- MODO ANEMIA (FICHA TÉCNICA) ---
+                 if (paciente.tipoPaciente === 'ANEMIA') {
+                     const esDx = ev.tipo === 'DX';
+                     const esRec = ev.tipo === 'RECUPERADO';
+                     const esTermino = ev.tipo === 'TERMINO';
+                     
+                     // Colores de Cabecera
                      let headerColor = "bg-slate-600";
-                     if (ev.tipo === 'DX') headerColor = "bg-red-700";
-                     else if (ev.tipo === 'RECUPERADO') headerColor = "bg-emerald-600";
-                     else if (ev.tipo === 'TERMINO') headerColor = "bg-slate-500";
-                     else if (ev.tipo === 'CONTROL' && !ev.hb) headerColor = "bg-blue-600"; 
+                     if (esDx) headerColor = "bg-red-700";
+                     else if (esRec) headerColor = "bg-emerald-600";
+                     else if (esTermino) headerColor = "bg-slate-500";
+                     else if (ev.hasTto && !ev.hb) headerColor = "bg-blue-600";
+
+                     // Título Tarjeta
+                     let cardTitle = ev.tipo;
+                     if(cardTitle === 'CONTROL' && !ev.hb && ev.hasTto) cardTitle = "ENTREGA HIERRO";
 
                      return (
-                       <div key={idx} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-lg transition-all flex flex-col h-full group">
-                           <div className={`${headerColor} px-4 py-2 flex justify-between items-center text-white`}>
-                               <span className="text-[10px] font-black uppercase tracking-wider">{ev.titulo}</span>
-                               <div className="bg-white/20 px-2 py-0.5 rounded text-[10px] font-bold flex gap-1"><Calendar size={10}/> {ev.fecha}</div>
+                       <div key={idx} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-lg transition-all flex flex-col">
+                           {/* HEADER */}
+                           <div className={`${headerColor} px-4 py-2 flex justify-between items-center`}>
+                               <span className="text-[10px] font-black text-white uppercase tracking-wider">{cardTitle}</span>
                            </div>
-                           <div className="p-4 flex-1 flex flex-col gap-1.5">
-                               {ev.hb && ev.hb !== '-' && <DataRow label="HB" value={ev.hb} isHighlight={true} />}
-                               {ev.detalle && <DataRow label={ev.etiqueta} value={ev.detalle} />}
-                               <div className="mt-auto pt-2 border-t border-slate-50">
-                                   <span className="text-[8px] font-bold text-slate-400 block uppercase mb-0.5">ATENDIÓ:</span>
-                                   <div className="text-[9px] font-bold text-slate-600 uppercase leading-tight truncate" title={ev.responsable}>{ev.responsable}</div>
-                               </div>
+
+                           {/* CUERPO (LISTA DE DATOS) */}
+                           <div className="p-4 flex-1 flex flex-col gap-1">
+                               <DataRow label="FECHA" value={ev.fecha} />
+                               {ev.hb && <DataRow label="HB" value={ev.hb} isHighlight={true} />}
+                               {esDx && ev.tipoAnemia && <DataRow label="TIPO" value={ev.tipoAnemia} />}
+                               {ev.hasTto && <DataRow label="ESQUEMA" value={ev.esquemaTto || 'HIERRO'} />}
+                               <DataRow label="ATENDIÓ" value={ev.responsable} />
                            </div>
-                           {ev.tipo === 'CONTROL' && <div className="h-1 bg-blue-400 w-full"></div>}
+                           
+                           {/* INDICADOR TTO */}
+                           {ev.hasTto && <div className="h-1.5 w-full bg-blue-500"></div>}
                        </div>
                      );
                  }
 
-                 // --- B. DISEÑO CRED / GESTANTE (CON HB AGREGADA) ---
-                 // Se detecta si este control específico tiene anemia
-                 const isAnemiaCtrl = ev.hb && parseFloat(ev.hb) < 11.0;
-                 
+                 // --- MODO GESTANTE / CRED (ESTRUCTURA ORIGINAL) ---
                  return (
-                    <div key={idx} className={`bg-white rounded-2xl p-4 shadow-sm border-2 transition-all hover:shadow-lg ${isAnemiaCtrl ? 'border-red-200' : theme.border}`}>
+                    <div key={idx} className={`bg-white rounded-2xl p-4 shadow-sm border-2 transition-all hover:shadow-lg ${theme.border}`}>
                         <div className="flex justify-between items-center mb-3">
-                           <span className={`text-xs font-black px-2 py-1 rounded-lg text-white shadow-sm ${isAnemiaCtrl ? 'bg-red-500' : theme.badge}`}>
-                               {isCred ? `CRED ${ev.numero}` : `CPN ${ev.numero}`}
-                           </span>
+                           <span className={`text-xs font-black px-2 py-1 rounded-lg text-white shadow-sm ${theme.badge}`}>Nº {ev.numero}</span>
                            <span className="text-xs font-bold text-slate-500">{ev.fecha}</span>
                         </div>
-                        
-                        {/* AQUÍ ESTÁ EL CAMBIO: GRID DE 3 COLUMNAS PARA MOSTRAR LA HB */}
-                        <div className="grid grid-cols-3 gap-2 text-center">
-                           <div className="bg-slate-50 rounded-xl p-1.5"><div className="text-[9px] font-bold text-slate-400">PESO</div><div className="font-black text-slate-700">{ev.peso||'-'}</div></div>
-                           <div className="bg-slate-50 rounded-xl p-1.5"><div className="text-[9px] font-bold text-slate-400">TALLA</div><div className="font-black text-slate-700">{ev.talla||'-'}</div></div>
-                           
-                           {/* CAJA DE HEMOGLOBINA */}
-                           <div className={`rounded-xl p-1.5 ${isAnemiaCtrl ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>
-                               <div className="text-[9px] font-bold opacity-70">HB</div>
-                               <div className="font-black">{ev.hb || '-'}</div>
-                           </div>
+                        <div className="grid grid-cols-2 gap-2 text-center">
+                           <div className="bg-slate-50 rounded-xl p-1.5"><div className="text-[9px] font-bold text-slate-400">PESO</div><div className="font-black text-slate-700">{ev.peso || '-'}</div></div>
+                           <div className="bg-slate-50 rounded-xl p-1.5"><div className="text-[9px] font-bold text-slate-400">TALLA</div><div className="font-black text-slate-700">{ev.talla || '-'}</div></div>
                         </div>
-
-                        <div className="mt-3 pt-2 border-t border-slate-50 text-[9px] text-slate-400 font-medium truncate uppercase text-center">{ev.responsable}</div>
+                        <div className="mt-3 pt-2 border-t border-slate-100 text-[9px] text-slate-400 font-medium truncate uppercase text-center">
+                            {ev.responsable}
+                        </div>
                     </div>
                  );
                })}
              </div>
           </div>
 
-          {/* SECCIÓN SUPLEMENTACIÓN (SOLO CRED/GESTANTE) */}
-          {!esAnemia && suplementosTotal > 0 && (
-             <div className="mt-8">
-                <h3 className="text-slate-700 font-black text-sm uppercase tracking-widest mb-4 flex items-center gap-2"><Syringe size={18} className={theme.text}/> Suplementación</h3>
-                <div className="flex flex-wrap gap-3">
-                   {paciente.historialSuplementos.map((supl, idx) => (
-                      <div key={idx} className={`border-2 rounded-2xl p-2 w-32 flex flex-col items-center justify-center bg-white ${theme.border}`}><div className={`w-8 h-8 rounded-full flex items-center justify-center mb-1 text-white shadow-sm ${theme.badge}`}><span className="font-black text-xs">{supl.numero}º</span></div><span className={`text-[9px] font-black uppercase mb-0.5 ${theme.text}`}>{supl.tipo}</span><span className="text-sm font-black text-slate-800">{supl.fecha}</span></div>
-                   ))}
-                </div>
-             </div>
+          {/* ================= SECCIÓN SUPLEMENTOS (SOLO GESTANTE / CRED) ================= */}
+          {paciente.tipoPaciente !== 'ANEMIA' && (
+              <div className="animate-in slide-in-from-bottom-4">
+                 <h3 className="text-slate-700 font-black text-sm uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <Syringe size={18} className={theme.text}/> Suplementación ({suplementosTotal})
+                 </h3>
+                 {suplementosTotal === 0 ? <div className="text-center text-slate-400 text-xs italic py-4">Sin datos</div> : (
+                    <div className="flex flex-wrap gap-3">
+                       {paciente.historialSuplementos.map((supl, idx) => (
+                          <div key={idx} className={`border-2 rounded-2xl p-2 w-32 flex flex-col items-center justify-center bg-white ${theme.border}`}>
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-1 text-white shadow-sm ${theme.badge}`}>
+                                 <span className="font-black text-xs">{supl.numero}º</span>
+                              </div>
+                              <span className={`text-[9px] font-black uppercase mb-0.5 ${theme.text}`}>{supl.tipo}</span>
+                              <span className="text-sm font-black text-slate-800">{supl.fecha}</span>
+                          </div>
+                       ))}
+                    </div>
+                 )}
+              </div>
           )}
 
         </div>
@@ -730,35 +705,36 @@ export default function App() {
   const [activeFollowUp, setActiveFollowUp] = useState(null); 
   const [selectedGestanteForModal, setSelectedGestanteForModal] = useState(null);
   // 1. PREPARAR DATOS GESTANTES
+   // 1. PREPARAR DATOS GESTANTES
   const dataGestantesInicial = useMemo(() => {
-      if (typeof SEGUIMIENTO_GESTANTES !== 'undefined' && Array.isArray(SEGUIMIENTO_GESTANTES)) {
-          return SEGUIMIENTO_GESTANTES.map((row, i) => ({ ...row, id: i, searchStr: Object.values(row).join(" ").toUpperCase() }));
-      }
-      return [];
+    if (typeof SEGUIMIENTO_GESTANTES !== 'undefined' && Array.isArray(SEGUIMIENTO_GESTANTES)) {
+      return SEGUIMIENTO_GESTANTES.map((row, i) => ({ ...row, id: i, searchStr: Object.values(row).join(" ").toUpperCase() }));
+    }
+    return [];
   }, []);
 
-  // 2. PREPARAR DATOS CRED (NUEVO)
+  // 2. PREPARAR DATOS CRED
   const dataCredInicial = useMemo(() => {
-      if (typeof SEGUIMIENTO_CRED !== 'undefined' && Array.isArray(SEGUIMIENTO_CRED)) {
-          return SEGUIMIENTO_CRED.map((row, i) => ({ ...row, id: i, searchStr: Object.values(row).join(" ").toUpperCase() }));
-      }
-      return [];
+    if (typeof SEGUIMIENTO_CRED !== 'undefined' && Array.isArray(SEGUIMIENTO_CRED)) {
+      return SEGUIMIENTO_CRED.map((row, i) => ({ ...row, id: i, searchStr: Object.values(row).join(" ").toUpperCase() }));
+    }
+    return [];
   }, []);
-  
+
   // 3. PREPARAR DATOS ANEMIA (NUEVO)
   const dataAnemiaInicial = useMemo(() => {
-      if (typeof SEGUIMIENTO_ANEMIA !== 'undefined' && Array.isArray(SEGUIMIENTO_ANEMIA)) {
-          return SEGUIMIENTO_ANEMIA.map((row, i) => ({ ...row, id: i, searchStr: Object.values(row).join(" ").toUpperCase() }));
-      }
-      return [];
+    if (typeof SEGUIMIENTO_ANEMIA !== 'undefined' && Array.isArray(SEGUIMIENTO_ANEMIA)) {
+      return SEGUIMIENTO_ANEMIA.map((row, i) => ({ ...row, id: i, searchStr: Object.values(row).join(" ").toUpperCase() }));
+    }
+    return [];
   }, []);
 
-  // 3. INICIALIZAR EL ESTADO CON AMBOS
+  // 4. INICIALIZAR EL ESTADO (CONECTAR LOS 3)
   const [followUpData, setFollowUpData] = useState({
-      'GESTANTE': dataGestantesInicial,
-      'CRED': dataCredInicial, // <--- ¡AQUÍ AGREGAMOS CRED!
-      'ANEMIA': dataAnemiaInicial
-  });
+    'GESTANTE': dataGestantesInicial,
+    'CRED': dataCredInicial,
+    'ANEMIA': dataAnemiaInicial // <--- ESTO ACTIVA EL BOTÓN ROJO DE ANEMIA
+  }); 
   useEffect(() => {
     const initDB = async () => {
         try {
@@ -2780,197 +2756,152 @@ const generatePDF = () => {
 			// LÓGICA MAESTRA: GESTANTES + CRED
                         // LÓGICA TODOTERRENO: GESTANTES + CRED (BLINDADA)
                         // LÓGICA TODOTERRENO: GESTANTES + CRED (BLINDADA)
+                        // LÓGICA MAESTRA: GESTANTES + CRED + ANEMIA
+                        // LÓGICA DEFINITIVA (GESTANTES + CRED + ANEMIA CORREGIDO)
+                        // LÓGICA DEFINITIVA (CON ANEMIA CORREGIDA)
+                        // LÓGICA DEFINITIVA (DETECTA NUMEROS Y FECHAS AUTOMÁTICAMENTE)
+			// LÓGICA MAESTRA V5 (ESTRUCTURA ETIQUETA: VALOR)
                         onView={(row) => {
-                            // ================= CASO 1: GESTANTE =================
+                            
+                            // 1. GESTANTE (Mismo código anterior)
                             if (activeFollowUp === 'GESTANTE') {
                                 const controles = [];
                                 for (let i = 1; i <= 20; i++) {
-                                    const fecha = row[`CPN_${i}`] || row[`CONT_${i}`];
-                                    if (fecha) {
-                                        controles.push({
-                                            numero: i,
-                                            fecha: fecha,
-                                            peso: row[`PESO_${i}`],
-                                            talla: row[`TALLA_${i}`],
-                                            hb: row[`HB_${i}`],
-                                            responsable: row[`ATENDIO_${i}`]
-                                        });
-                                    }
+                                    const f = row[`CPN_${i}`] || row[`CONT_${i}`];
+                                    if (f) controles.push({ numero: i, fecha: f, peso: row[`PESO_${i}`], talla: row[`TALLA_${i}`], hb: row[`HB_${i}`], responsable: row[`ATENDIO_${i}`] });
                                 }
                                 const suplementos = [];
                                 for (let j = 1; j <= 30; j++) {
-                                    const fechaSF = row[`SF_${j}`] || row[`SF${j}`] || row[`SULFATO_${j}`];
-                                    if (fechaSF) suplementos.push({ tipo: 'SULFATO', numero: j, fecha: fechaSF });
-                                    
-                                    const fechaAF = row[`AF_${j}`] || row[`AF${j}`] || row[`ACIDO_${j}`];
-                                    if (fechaAF) suplementos.push({ tipo: 'AC. FÓLICO', numero: j, fecha: fechaAF });
+                                    const fSF = row[`SF_${j}`]; if(fSF) suplementos.push({ tipo: 'SULFATO', numero: j, fecha: fSF });
+                                    const fAF = row[`AF_${j}`]; if(fAF) suplementos.push({ tipo: 'AC. FÓLICO', numero: j, fecha: fAF });
                                 }
-                                
-                                setSelectedGestanteForModal({
-                                    tipoPaciente: 'GESTANTE',
-                                    nombre: row.Nombre_P || row.Nombres_P,
-                                    dni: row.N_DNI_HIS || row.DNI,
-                                    hc: row.HC,
-                                    edad: row.Edad,
-                                    establecimiento: row.IPRESS_HIS || row.Establecimiento,
-                                    historialControles: controles,
-                                    historialSuplementos: suplementos,
-                                    ultimaAtencion: controles.length > 0 ? controles[controles.length - 1].fecha : "SIN DATOS"
-                                });
+                                setSelectedGestanteForModal({ tipoPaciente: 'GESTANTE', nombre: row.Nombre_P, dni: row.N_DNI_HIS, hc: row.HC, edad: row.Edad, establecimiento: row.IPRESS_HIS, historialControles: controles, historialSuplementos: suplementos });
                             } 
                             
-                            // ================= CASO 2: CRED (NIÑO) =================
+                            // 2. CRED (Mismo código anterior)
                             else if (activeFollowUp === 'CRED') {
                                 const controles = [];
-                                
-                                // A. CONTROLES RECIÉN NACIDO (RN)
                                 for (let i = 1; i <= 4; i++) {
-                                    const fechaRN = row[`CREDRN_${i}`] || row[`RN_${i}`] || row[`RN${i}`];
-                                    if (fechaRN) {
-                                        controles.push({
-                                            numero: `RN${i}`,
-                                            fecha: fechaRN,
-                                            peso: row[`PESO_${i}RN`] || row[`PESO_RN${i}`], 
-                                            talla: row[`TALLA_${i}RN`] || row[`TALLA_RN${i}`], 
-                                            hb: null,
-                                            responsable: row[`ATENDIO_${i}RN`] || row[`RESP_RN${i}`]
-                                        });
-                                    }
+                                    const fRN = row[`CREDRN_${i}`]; if (fRN) controles.push({ numero: `RN${i}`, fecha: fRN, peso: row[`PESO_${i}RN`], talla: row[`TALLA_${i}RN`], hb: null, responsable: row[`ATENDIO_${i}RN`] });
                                 }
-
-                                // B. CONTROLES CRED MENSUALES
                                 for (let i = 1; i <= 24; i++) {
-                                    const fechaCred = row[`CRED_${i}`] || row[`CONT_${i}`] || row[`CPN_${i}`];
-                                    if (fechaCred) { 
-                                        controles.push({
-                                            numero: i,
-                                            fecha: fechaCred,
-                                            peso: row[`PESO_${i}`] || row[`P_${i}`],
-                                            talla: row[`TALLA_${i}`] || row[`T_${i}`],
-                                            hb: row[`DOSAJE_${i}`] || row[`HB_${i}`],
-                                            responsable: row[`ATENDIO_${i}`] || row[`RESP_${i}`]
+                                    const fC = row[`CRED_${i}`] || row[`CONT_${i}`]; if (fC) controles.push({ numero: i, fecha: fC, peso: row[`PESO_${i}`], talla: row[`TALLA_${i}`], hb: row[`DOSAJE_${i}`], responsable: row[`ATENDIO_${i}`] });
+                                }
+                                const suplementos = [];
+                                for (let k = 1; k <= 30; k++) {
+                                    const fSF = row[`SF_${k}`]; if(fSF) suplementos.push({ tipo: 'SULFATO', numero: k, fecha: fSF });
+                                }
+                                const uniqueSupl = suplementos.filter((v,i,a)=>a.findIndex(t=>(t.fecha===v.fecha))===i);
+                                setSelectedGestanteForModal({ tipoPaciente: 'CRED', nombre: row.Nombres_P, dni: row.N_DNI_HIS, hc: row.HC, edad: row.Edad_Meses + " MESES", establecimiento: row.IPRESS_HIS, historialControles: controles, historialSuplementos: uniqueSupl });
+                            }
+
+                            // 3. ANEMIA (LÓGICA ETIQUETA : VALOR)
+                            else if (activeFollowUp === 'ANEMIA') {
+                                const timeline = new Map();
+                                const normFecha = (f) => f ? String(f).trim() : null;
+
+                                const getEv = (fechaRaw) => {
+                                    const f = normFecha(fechaRaw);
+                                    if (!f) return null;
+                                    if (!timeline.has(f)) {
+                                        timeline.set(f, {
+                                            fecha: f,
+                                            tipo: 'CONTROL', // DX, CONTROL, RECUPERADO
+                                            
+                                            // Campos Específicos para mostrar "ETIQUETA: VALOR"
+                                            hb: null,
+                                            tipoAnemia: null,
+                                            responsable: '-',
+                                            esquemaTto: null,
+                                            
+                                            // Flags internos
+                                            hasTto: false
                                         });
+                                    }
+                                    return timeline.get(f);
+                                };
+
+                                // A. DIAGNÓSTICO
+                                if (row.DIAGNOSTICO) {
+                                    const ev = getEv(row.DIAGNOSTICO);
+                                    if (ev) {
+                                        ev.tipo = 'DX';
+                                        ev.hb = row.HB_DX || row.HB_INICIAL || row.VALOR_HB_DX || '-';
+                                        ev.tipoAnemia = row.TIPO_ANEMIA || row.SEVERIDAD || row.DX_ANEMIA || 'NO REGIST.';
+                                        ev.responsable = row.ATENDIO_DX || row.RESPONSABLE_DX || '-';
                                     }
                                 }
 
-                                const suplementos = [];
-                                // C. SUPLEMENTOS (BÚSQUEDA DOBLE)
-                                const meses = [4,5,6,7,8,9,10,11,12,18,24,36];
-                                meses.forEach(m => {
-                                    if(row[`SUP_${m}M_SF`]) suplementos.push({ tipo: 'SULFATO', numero: `${m}m`, fecha: row[`SUP_${m}M_SF`] });
-                                    if(row[`SUP_${m}M_MN`]) suplementos.push({ tipo: 'MICRONUT.', numero: `${m}m`, fecha: row[`SUP_${m}M_MN`] });
-                                });
-
-                                for (let k = 1; k <= 30; k++) {
-                                    const fSF = row[`SF_${k}`] || row[`SF${k}`] || row[`SULFATO_${k}`];
-                                    if (fSF) suplementos.push({ tipo: 'SULFATO', numero: k, fecha: fSF });
-
-                                    const fMN = row[`MN_${k}`] || row[`MN${k}`] || row[`MICRONUT_${k}`];
-                                    if (fMN) suplementos.push({ tipo: 'MICRONUT.', numero: k, fecha: fMN });
+                                // B. DOSAJES (1 al 6)
+                                for (let i = 1; i <= 6; i++) {
+                                    const fDos = row[`DOSAJE_${i}`];
+                                    if (fDos) {
+                                        const ev = getEv(fDos);
+                                        if (ev) {
+                                            if (ev.tipo !== 'DX') ev.tipo = `DOSAJE ${i}`;
+                                            ev.hb = row[`HB_${i}`] || row[`VALOR_${i}`] || row[`VALOR_HB_${i}`] || row[`RESULTADO_${i}`] || ev.hb;
+                                            // Si hay responsable específico del dosaje, lo guardamos
+                                            if(row[`ATENDIO_DOS_${i}`]) ev.responsable = row[`ATENDIO_DOS_${i}`];
+                                        }
+                                    }
                                 }
 
-                                const suplementosUnicos = suplementos.filter((v,i,a)=>a.findIndex(t=>(t.fecha===v.fecha && t.tipo===v.tipo))===i);
+                                // C. RECUPERADO
+                                if (row.Recuperado) {
+                                    const ev = getEv(row.Recuperado);
+                                    if (ev) { 
+                                        ev.tipo = 'RECUPERADO'; 
+                                        ev.hb = 'OK'; 
+                                        ev.responsable = row.Atendió_Recuperado || row.ATENDIO_RECUPERADO || '-';
+                                    }
+                                }
+
+                                // D. TÉRMINO
+                                if (row['Término_Act.']) {
+                                    const ev = getEv(row['Término_Act.']);
+                                    if (ev) {
+                                        ev.tipo = 'TERMINO';
+                                        ev.responsable = row['ATENDIÓ_Término_Act.'] || '-';
+                                    }
+                                }
+
+                                // E. TRATAMIENTOS
+                                for (let k = 1; k <= 12; k++) {
+                                    const fTto = row[`TTO_${k}`] || row[`TRATAMIENTO_${k}`];
+                                    if (fTto) {
+                                        const ev = getEv(fTto);
+                                        if (ev) {
+                                            ev.hasTto = true;
+                                            // Intentamos buscar el esquema específico de ese tratamiento si existe columna
+                                            ev.esquemaTto = row[`ESQUEMA_${k}`] || row.ESQUEMA || row.TIPO_HIERRO || 'HIERRO';
+                                        }
+                                    }
+                                }
+
+                                const eventosOrdenados = Array.from(timeline.values()).sort((a, b) => {
+                                    try {
+                                        const [d1, m1, y1] = a.fecha.split('/');
+                                        const [d2, m2, y2] = b.fecha.split('/');
+                                        return new Date(`${y1}-${m1}-${d1}`) - new Date(`${y2}-${m2}-${d2}`);
+                                    } catch (e) { return 0; }
+                                });
 
                                 setSelectedGestanteForModal({
-                                    tipoPaciente: 'CRED',
-                                    nombre: row.Nombres_P || row.Nombre_P,
-                                    dni: row.N_DNI_HIS || row.DNI,
+                                    tipoPaciente: 'ANEMIA',
+                                    nombre: row.Nombres_P,
+                                    dni: row.N_DNI_HIS,
                                     hc: row.HC,
-                                    edad: (row.Edad_Meses || row.Edad) + " " + (row.Edad_Meses ? "MESES" : "AÑOS"),
-                                    establecimiento: row.IPRESS_HIS || row.Establecimiento,
-                                    historialControles: controles,
-                                    historialSuplementos: suplementosUnicos,
-                                    ultimaAtencion: controles.length > 0 ? controles[controles.length - 1].fecha : "SIN DATOS"
+                                    edad: row.Edad + " AÑOS",
+                                    establecimiento: row.IPRESS_HIS,
+                                    historialControles: eventosOrdenados,
+                                    historialSuplementos: [] 
                                 });
                             }
-				// 3. ANEMIA (LÓGICA BASADA EN TU ARCHIVO REAL)
-                else if (activeFollowUp === 'ANEMIA') {
-                    const controles = [];
-
-                    // A. DIAGNÓSTICO (Usa DOSAJE_1 y TIPO_ANEMIA)
-                    if (row.DIAGNOSTICO) {
-                        controles.push({
-                            tipo: 'DX',
-                            titulo: 'DIAGNÓSTICO',
-                            fecha: row.DIAGNOSTICO,
-                            hb: (row.DOSAJE_1 && row.DOSAJE_1 > 0) ? row.DOSAJE_1 : '-',
-                            etiqueta: 'TIPO',
-                            detalle: row.TIPO_ANEMIA || 'S/D', 
-                            responsable: row.ATENDIO_DIAGNOSTICO || '-'
-                        });
-                    }
-
-                    // B. SEGUIMIENTOS (TTO 1 al 6)
-                    // Mapeo específico según tu archivo:
-                    // TTO 2 -> DOSAJE_2
-                    // TTO 4 -> DOSAJE_3
-                    const mapHb = { 2: 'DOSAJE_2', 4: 'DOSAJE_3' };
-
-                    for (let k = 1; k <= 6; k++) {
-                        const fTto = row[`TTO_${k}`];
-                        if (fTto) {
-                            // Buscar HB si corresponde a este control
-                            const colHb = mapHb[k];
-                            const valHb = (colHb && row[colHb] && row[colHb] > 0) ? row[colHb] : null;
-
-                            controles.push({
-                                tipo: 'CONTROL',
-                                titulo: `CONTROL ${k}`,
-                                fecha: fTto,
-                                hb: valHb,
-                                etiqueta: 'ESQUEMA',
-                                detalle: row[`TIPO_TTO_${k}`] || 'HIERRO',
-                                responsable: row[`ATENDIO_TTO_${k}`] || '-'
-                            });
-                        }
-                    }
-
-                    // C. RECUPERADO (Usa DOSAJE_4)
-                    if (row.Recuperado) {
-                        controles.push({
-                            tipo: 'RECUPERADO',
-                            titulo: 'RECUPERADO',
-                            fecha: row.Recuperado,
-                            hb: (row.DOSAJE_4 && row.DOSAJE_4 > 0) ? row.DOSAJE_4 : 'OK',
-                            etiqueta: 'ESTADO',
-                            detalle: 'ALTA',
-                            responsable: row.ATENDIO_Recuperado || '-'
-                        });
-                    }
-                    
-                    // D. TÉRMINO (Opcional)
-                    // Nota: Tu archivo usa "Término_Act" o "T rmino_Act", revisamos ambos por seguridad
-                    const fTerm = row['Término_Act'] || row['T rmino_Act'];
-                    if (fTerm) {
-                         controles.push({
-                            tipo: 'TERMINO',
-                            titulo: 'TÉRMINO',
-                            fecha: fTerm,
-                            hb: 'FIN',
-                            etiqueta: 'MOTIVO',
-                            detalle: 'ADMIN.',
-                            responsable: row['ATENDIO_Término_Act'] || row['ATENDIO_T rmino_Act'] || '-'
-                        });
-                    }
-
-                    setSelectedGestanteForModal({
-                        tipoPaciente: 'ANEMIA',
-                        nombre: row.Nombres_P,
-                        dni: row.N_DNI_HIS,
-                        hc: row.HC,
-                        edad: row.Edad + " AÑOS",
-                        establecimiento: row.IPRESS_HIS,
-                        historialControles: controles,
-                        historialSuplementos: [] // No se usa en este modo
-                    });
-                }
-                            else {
-                                alert("Vista no configurada para este tipo.");
-                            }
-                        }}
+                            else { alert("Vista no configurada."); }
+                        }}                        
                     />
                 </div>
-            )}                                
+            )} 
 
 
             {/* 4. TARJETA PRINCIPAL (NUEVA ATENCIÓN) */}
