@@ -1570,7 +1570,7 @@ export default function App() {
         
         // 2. Fecha de Atención
         if (!patientData.fecAtencion) { 
-            alert("⚠️ FALTA FECHA DE ATENCIÓN\n\nPor favor, seleccione la fecha para continuar."); 
+            alert("⚠️ FALTA FECHA DE ATENCIÓN\n\nPor favor, seleccione Fecha de Atención para continuar."); 
             setIsCalendarOpen(true); // <--- ESTA LÍNEA ABRE EL CALENDARIO AUTOMÁTICAMENTE
             return; 
         }
@@ -1971,9 +1971,18 @@ const generatePDF = () => {
             let y = currY;
             const fullW = 201; 
             const xContent = mx + w.idx; 
+            
+            // --- DIMENSIONES PARA LAS CASILLAS TIPO EXCEL ---
+            const wLabel = 7; 
+            const wBox = 14;   
+            // ------------------------------------------------
 
             doc.setFontSize(6);
-            cell("Lote:", xContent, y, 20, hHeaderSmall, {bold:true, border:false, align:'left'});
+
+            // === FILA 1: LOTE ===
+            cell("Lote:", xContent, y, wLabel, hHeaderSmall, {bold:true, border:true, align:'left', fontSize:6});
+            cell("", xContent + wLabel, y, wBox, hHeaderSmall, {border:true});
+            
             cell("MINISTERIO DE SALUD", mx, y, fullW, hHeaderSmall, {bold:true, align:'center', fontSize:8, border:false});
             
             const grayColor = [180, 180, 180];
@@ -1986,8 +1995,12 @@ const generatePDF = () => {
              });
             y += hHeaderSmall;
 
-            cell("Pag:", xContent, y, 20, hHeaderSmall, {bold:true, border:false, align:'left'});
+            // === FILA 2: PAG ===
+            cell("Pag:", xContent, y, wLabel, hHeaderSmall, {bold:true, border:true, align:'left', fontSize:6});
+            cell("", xContent + wLabel, y, wBox, hHeaderSmall, {border:true});
+            
             cell("OFICINA GENERAL DE ESTADÍSTICA E INFORMÁTICA", mx, y, fullW, hHeaderSmall, {align:'center', fontSize:7, border:false});
+            
             cell("DEL PERSONAL DE SALUD", mx + 161, y, 40, hHeaderSmall, {
                 align:'center', 
                 border:false, 
@@ -1996,14 +2009,25 @@ const generatePDF = () => {
             });
             y += hHeaderSmall;
 
-            cell("Reg:", xContent, y, 20, hHeaderSmall, {bold:true, border:false, align:'left'});
+            // === SEPARADOR DOBLE LÍNEA (Visual) ===
+            y += 0.2; 
+
+            // === FILA 3: REG ===
+            cell("Reg:", xContent, y, wLabel, hHeaderSmall, {bold:true, border:true, align:'left', fontSize:6});
+            cell("", xContent + wLabel, y, wBox, hHeaderSmall, {border:true});
+            
             cell("Registro Diario de Atención y Otras Actividades de Salud", mx, y, fullW, hHeaderSmall, {align:'center', fontSize:7, border:false});
             
+            // Cuadro de Firma (Rectángulo gris vacío a la derecha)
             doc.setDrawColor(180, 180, 180);
-            doc.rect(mx + 161, y - (hHeaderSmall*2), 40, hHeaderSmall*4); 
+            doc.rect(mx + 161, y - (hHeaderSmall*2) - 0.2, 40, (hHeaderSmall*4)); 
             doc.setDrawColor(50, 50, 50); 
             
-            y += hHeaderSmall + 1;
+            // --- AQUÍ ESTÁ EL CAMBIO DE ESPACIO (0.7cm extra) ---
+            // Antes era hHeaderSmall + 2. Ahora sumamos 7mm extra -> + 9
+            y += hHeaderSmall + 9; 
+            // ----------------------------------------------------
+
             const bgHead = [230, 230, 230]; 
             const hMeta = 6; 
             
@@ -2050,7 +2074,6 @@ const generatePDF = () => {
 
             return y + hTable;
         };
-
         const BLOCKS_PER_PAGE = 11;
         const totalPages = Math.ceil(visualBlocks.length / BLOCKS_PER_PAGE) || 1;
 
@@ -2078,21 +2101,29 @@ const generatePDF = () => {
                 const idxText = (block && isFirst) ? block.index : "";
                 cell(idxText, cx, y, w.idx, hBlock, {align:'center', bold:true, vAlign:'middle', border:false, fontSize:8}); 
                 cx += w.idx;
-                if (isFirst) {
+		if (isFirst) {
                     const wName = w.dia + w.dni + w.fin + w.dist;
                     cell(p.paciente, cx, y, wName, hRowName, {bold:true, align:'left', fontSize: 7.5, border: false}); cx += wName;
                     
                     const wFNLabel = w.edad + w.sex;
                     cell("F.N:", cx, y, wFNLabel, hRowName, {align:'right', bold:true, border: false, fontSize:6}); cx += wFNLabel;
                     
+                    // CORRECCIÓN DEL ERROR: Primero definimos la variable wFNVal
                     const wFNVal = w.antL + w.antV;
-                    cell(p.fecNac, cx, y, wFNVal, hRowName, {align:'center', fill:[240,240,240], border:true, bold:true, fontSize:7}); cx += wFNVal;
+
+                    // Y AHORA LA USAMOS (Con el formato de fecha invertido)
+                    cell(p.fecNac ? p.fecNac.split('-').reverse().join('/') : "", cx, y, wFNVal, hRowName, {align:'center', fill:[240,240,240], border:true, bold:true, fontSize:7}); 
+                    cx += wFNVal;
+
                     const wCenter = w.antL + w.antV + w.est + w.serv + w.dx + w.tipo;
                     cell(c.dosaje ? `DOSAJE: ${c.dosaje}` : "", cx, y, wCenter, hRowName, {align:'center', fontSize:6, border: false}); cx += wCenter;
+
                     const wFURLabel = w.lab * 2;
                     cell("FUR:", cx, y, wFURLabel, hRowName, {align:'right', bold:true, border: false, fontSize:6}); cx += wFURLabel;
+
                     const wFURVal = w.lab + w.cie;
-                    cell(p.fur, cx, y, wFURVal, hRowName, {align:'center', fill:[240,240,240], border:true, bold:true, fontSize:7});
+                    // Formato de fecha invertido para FUR también
+                    cell(p.fur ? p.fur.split('-').reverse().join('/') : "", cx, y, wFURVal, hRowName, {align:'center', fill:[240,240,240], border:true, bold:true, fontSize:7});
                 } else {
                     let cxEmpty = cx;
                     cell("", cxEmpty, y, w.dia + w.dni + w.fin + w.dist, hRowName, {border: true});
@@ -2206,7 +2237,7 @@ const generatePDF = () => {
             }
         }
 
-        doc.save(`HIS_${adminData.mes}_${allPatients.length}_PACIENTES_OFICIAL.pdf`);
+        doc.save(`HIS_${adminData.mes}_${allPatients.length}_PACIENTES.pdf`);
         setSavedPatients([]);
         // Limpia la lista
         resetForm();                // Resetea el formulario
@@ -2301,9 +2332,9 @@ const generatePDF = () => {
                 if (k === 0) {
                     if (!isEmpty) {
                         patientRow[1] = p.paciente;
-                        patientRow[8] = p.fecNac;
+                        patientRow[8] = p.fecNac ? p.fecNac.split('-').reverse().join('/') : "";
                         if (c.dosaje) patientRow[10] = `F.U.DOSAJE: ${c.dosaje}`; 
-                        if (p.fur) patientRow[16] = p.fur;
+                        if (p.fur) patientRow[16] = p.fur.split('-').reverse().join('/');
                     }
                     patientRow[6] = "F.N:";
                     patientRow[14] = "FUR:";
@@ -2984,7 +3015,8 @@ const generatePDF = () => {
                 <span className="text-emerald-600 font-bold bg-emerald-50 px-3 py-1 rounded-xl">Conectada ({dbPacientes.length})</span> : <span className="text-orange-500 font-bold bg-orange-50 px-3 py-1 rounded-xl">Sin datos</span>}
               </p>
               <button 
-                onClick={() => {resetForm();
+               onClick={() => {
+		//resetForm();
                 setIsCalendarOpen(true); setIsModalOpen(true);}} 
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold shadow-xl shadow-blue-600/20 text-sm transition-all hover:-translate-y-1 active:scale-[0.98]"
               >
@@ -3007,8 +3039,13 @@ const generatePDF = () => {
                       </div>
                   ))}
               </div>
-              <button onClick={() => { if(window.confirm("¿Estás seguro de salir? Se perderán los datos no guardados.")) { setIsModalOpen(false); resetForm();
-              } }} className="px-4 py-4 hover:bg-slate-50 text-slate-300 hover:text-red-500 transition-colors border-l border-slate-100 ml-4" title="Cerrar y volver al menú principal"><X size={24}/></button>
+		<button 
+    onClick={() => setIsModalOpen(false)} // Solo cierra, no borra nada
+    className="px-4 py-4 hover:bg-slate-50 text-slate-300 hover:text-red-500 transition-colors border-l border-slate-100 ml-4" 
+    title="Cerrar y mantener datos en memoria"
+>
+    <X size={24}/>
+</button>
             </div>
              {/* --- BARRA FIJA DE DATOS DEL PACIENTE (VISIBLE EN PASOS 1, 2, 3) --- */}
              {/* --- BARRA FIJA DE DATOS DEL PACIENTE (DISEÑO LIMPIO) --- */}
@@ -3329,12 +3366,14 @@ const generatePDF = () => {
                     <div className="flex flex-col justify-center w-full pr-2">
                         <label className="text-[9px] font-black text-blue-600 uppercase tracking-widest leading-none mb-0.5">FECHA ATENCIÓN</label>
                         <input 
-                            type="date"
+                            type="text"
+			    readOnly
                             name="fecAtencion"
-                            value={patientData.fecAtencion}
-                            onChange={handlePatient}
+                            value={patientData.fecAtencion? patientData.fecAtencion.split('-').reverse().join('/') : '' }
+                            //onChange={handlePatient}
                             onClick={() => setIsCalendarOpen(true)}
-                            className="w-full h-8 rounded-lg bg-white border-2 border-blue-100 px-2 font-black text-base text-center text-blue-900 outline-none focus:border-blue-400 cursor-pointer shadow-sm"
+                            className="w-full h-8 rounded-lg bg-white border-2 border-blue-100 px-2 font-black text-base text-center text-blue-900 outline-none focus:border-blue-400 cursor-pointer shadow-sm placeholder-blue-300"
+			placeholder="SELECCIONAR"
                         />
                     </div>
                 </div>
@@ -3521,7 +3560,14 @@ const generatePDF = () => {
                                         const newVal = e.target.value;
                                         if(newVal && newVal !== "") {
                                             setPatientData(prev => ({...prev, direccion: newVal}));
-                                            
+                                            // Esto elimina el estilo de error forzado si el usuario usa la lista
+                                            const inputDir = document.querySelector('input[name="direccion"]');
+                                            if(inputDir) {
+                                                inputDir.style.borderColor = ""; 
+                                                inputDir.style.borderWidth = "";
+                                                inputDir.classList.remove("animate-pulse");
+                                            }
+
                                             // Activar bloqueo automático si HC ya existe
                                             if (patientData.hc && patientData.hc.trim() !== "") {
                                                  setTimeout(() => setIsPatientDataLocked(true), 100);
@@ -3537,7 +3583,7 @@ const generatePDF = () => {
 
                         <div className="bg-indigo-100/80 rounded-2xl p-3 border-2 border-indigo-300 shadow-md relative overflow-hidden">
                              <div className="absolute top-0 right-0 w-16 h-16 bg-indigo-200 rounded-bl-full opacity-60 pointer-events-none"></div>
-                            <label className="text-[10px] font-extrabold text-indigo-800 uppercase ml-1 mb-1.5 flex gap-2 items-center relative z-10"><ArrowRight size={12}/> Procedencia</label>
+                            <label className="text-[10px] font-extrabold text-indigo-800 uppercase ml-1 mb-1.5 flex gap-2 items-center relative z-10"><ArrowRight size={12}/> EE.SS DE ATENCIÓN</label>
                             <div className="space-y-2 relative z-10">
                                  <select 
                                     name="estOrigen"
@@ -3545,7 +3591,7 @@ const generatePDF = () => {
                                     onChange={handlePatient}
                                     className="w-full h-8 px-2 rounded-lg bg-white border-2 border-indigo-200 font-bold text-xs text-indigo-900 outline-none cursor-pointer hover:border-indigo-400 transition-all shadow-sm"
                                 >
-                                    <option value="">SELECCIONE ORIGEN...</option>
+                                    <option value="">SELECCIONE EE.SS DE ATENCIÓN...</option>
                                     <option value="E.S I-4 PACAIPAMPA">E.S I-4 PACAIPAMPA</option>
                                     <option value="P.S I-2 EL PUERTO">P.S I-2 EL PUERTO</option>
 			            <option value="P.S I-1 LAGUNAS DE SAN PABLO">P.S I-1 LAGUNAS DE SAN PABLO</option>
@@ -3554,9 +3600,9 @@ const generatePDF = () => {
                                     {/* ... resto de opciones ... */}
                                 </select>
                                  <div className="flex justify-between items-center px-1 pt-1">
-                                     <span className="text-[8px] font-bold text-slate-400">¿Datos incorrectos?</span>
-                                     <button onClick={() => setIsPatientDataLocked(!isPatientDataLocked)} className="text-[9px] font-black text-indigo-800 hover:text-indigo-600 hover:underline bg-indigo-200/50 px-2 py-0.5 rounded transition-colors">
-                                         {isPatientDataLocked ? 'DESBLOQUEAR EDICIÓN' : 'BLOQUEAR DATOS'}
+                                     <span className="text-[11px] font-bold text-slate-400">¿Datos Incorrectos?</span>
+                                     <button onClick={() => setIsPatientDataLocked(!isPatientDataLocked)} className="text-[11px] font-black text-indigo-800 hover:text-indigo-600 hover:underline bg-indigo-200/50 px-2 py-0.5 rounded transition-colors">
+                                         {isPatientDataLocked ? 'EDITAR DATOS' : 'BLOQUEAR DATOS'}
                                      </button>
                                  </div>
                             </div>
@@ -3744,7 +3790,7 @@ const generatePDF = () => {
                   <div className="h-10 bg-[#107C41] flex items-center px-4 justify-between shrink-0 shadow-md z-10">
                     <div className="flex items-center gap-4 text-white text-xs font-bold">
                         <FileSpreadsheet size={18} />
-                      <span>VISTA PREVIA DEL HIS (OFICIAL)</span>
+                      <span>VISTA PREVIA DEL HIS (1.0)</span>
                       <span className="opacity-50">|</span>
                       <span>{adminData.establecimiento} - {adminData.mes}</span>
                   </div>
@@ -3905,20 +3951,14 @@ const generatePDF = () => {
           >
             <ArrowLeft size={18} /> Atrás
           </button>
-        ) : (
+          ) : (
           <button 
-            onClick={() => { 
-              if (window.confirm("¿Está seguro de volver al menú principal? Se perderán los datos actuales.")) { 
-                setIsModalOpen(false); 
-                resetForm(); 
-              } 
-            }} 
-            className="px-6 py-2 rounded-xl hover:bg-red-50 text-slate-400 hover:text-red-600 font-bold flex gap-2 transition-all text-xs h-10 items-center border border-transparent hover:border-red-100"
+            onClick={() => setIsModalOpen(false)} 
+            className="px-6 py-2 rounded-xl hover:bg-blue-50 text-slate-400 hover:text-blue-600 font-bold flex gap-2 transition-all text-xs h-10 items-center border border-transparent hover:border-blue-100"
           >
             <LogOut size={18} /> IR A SEGUIMIENTO
           </button>
         )}
-
         {/* BOTONES DERECHOS (ACCIONES PRINCIPALES) */}
         <div className="flex gap-3">
           {/* LÓGICA DEL PASO 4: FLUJO DE CIERRE DE LOTE */}
