@@ -2025,7 +2025,7 @@ const generatePDF = () => {
             
             // --- AQUÍ ESTÁ EL CAMBIO DE ESPACIO (0.7cm extra) ---
             // Antes era hHeaderSmall + 2. Ahora sumamos 7mm extra -> + 9
-            y += hHeaderSmall + 9; 
+            y += hHeaderSmall + 1; 
             // ----------------------------------------------------
 
             const bgHead = [230, 230, 230]; 
