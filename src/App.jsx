@@ -1828,19 +1828,16 @@ export default function App() {
       alert("✅ Registro guardado exitosamente."); 
   };
 
-const generatePDF = () => {
+  const generatePDF = () => {
     try {
         const allPatients = [...savedPatients];
         // --- LÓGICA INTELIGENTE APLICADA AL PDF ---
-        // Verificamos si hay un paciente en pantalla
         if (patientData.paciente) {
-            // Revisamos si este paciente EXACTO (con mismos diagnósticos y fecha) ya está guardado
             const yaExiste = savedPatients.some(p => 
                 p.patient.dni === patientData.dni &&
                 p.patient.fecAtencion === patientData.fecAtencion &&
                 JSON.stringify(p.diagnoses) === JSON.stringify(diagnoses)
             );
-            // Solo lo agregamos al PDF si NO existe en la lista de guardados (es decir, es nuevo o editado sin guardar)
             if (!yaExiste) {
                 allPatients.push({ 
                     patient: patientData, 
@@ -1871,12 +1868,11 @@ const generatePDF = () => {
                     age,
                     diagnoses: chunkDxs
                 });
-            
             }
             globalIndex++;
         });
+
         const doc = new jsPDF('p', 'mm', 'a4'); 
-        
         doc.setFont("helvetica", "normal"); 
         doc.setDrawColor(50, 50, 50); 
         doc.setLineWidth(0.15);        
@@ -1888,14 +1884,17 @@ const generatePDF = () => {
         const hRowData = 5.5; 
         const hBlock = hRowName + (hRowData * 3);
         const w = {
-            idx: 6,   dia: 6,   dni: 14,  fin: 5,   dist: 28, 
-            edad: 8,  sex: 5,   
+            idx: 6,   dia: 6,   dni: 14,  fin: 5,   dist: 25, 
+            edad: 11,  sex: 5,   
             antL: 7,  antV: 8,
             est: 5,   serv: 5,
             dx: 55,   
             tipo: 6,  lab: 5,   cie: 13
         };
-        const hHeaderSmall = 4; 
+
+        // --- CAMBIO 1: AUMENTAR ALTURA DE CASILLAS IZQUIERDAS (De 4 a 7) ---
+        const hHeaderSmall = 7; 
+        // -------------------------------------------------------------------
         
         const cell = (txt, x, y, cw, ch, styles = {}) => {
             const { fill, bold, align, fontSize, border, rotate, vAlign, textColor, wrap, drawColor } = styles;
@@ -1923,7 +1922,7 @@ const generatePDF = () => {
                 else doc.setTextColor(0,0,0);
 
                 doc.setFontSize(fontSize || 6);
-                doc.setFont("helvetica", bold ? "bold" : "normal"); 
+                doc.setFont(styles.font ||"helvetica", bold ? "bold" : "normal"); 
                 
                 let text = String(txt);
                 const sensitiveLabels = ["Talla", "Peso", "HB", "P.C.", "P.Abd", "P.Preg", "años", "meses", "días"];
@@ -1967,15 +1966,16 @@ const generatePDF = () => {
                 }
             }
         };
+
         const drawHeader = (currY) => {
             let y = currY;
             const fullW = 201; 
             const xContent = mx + w.idx; 
             
-            // --- DIMENSIONES PARA LAS CASILLAS TIPO EXCEL ---
+            // --- DIMENSIONES EXTRA ---
             const wLabel = 7; 
             const wBox = 14;   
-            // ------------------------------------------------
+            // -------------------------
 
             doc.setFontSize(6);
 
@@ -1984,15 +1984,6 @@ const generatePDF = () => {
             cell("", xContent + wLabel, y, wBox, hHeaderSmall, {border:true});
             
             cell("MINISTERIO DE SALUD", mx, y, fullW, hHeaderSmall, {bold:true, align:'center', fontSize:8, border:false});
-            
-            const grayColor = [180, 180, 180];
-            cell("FIRMA Y SELLO", mx + 161, y, 40, hHeaderSmall, {
-                align:'center', 
-                border:false, 
-                fontSize:5, 
-                textColor: grayColor,
-                keepCase: true 
-             });
             y += hHeaderSmall;
 
             // === FILA 2: PAG ===
@@ -2000,16 +1991,9 @@ const generatePDF = () => {
             cell("", xContent + wLabel, y, wBox, hHeaderSmall, {border:true});
             
             cell("OFICINA GENERAL DE ESTADÍSTICA E INFORMÁTICA", mx, y, fullW, hHeaderSmall, {align:'center', fontSize:7, border:false});
-            
-            cell("DEL PERSONAL DE SALUD", mx + 161, y, 40, hHeaderSmall, {
-                align:'center', 
-                border:false, 
-                fontSize:5, 
-                textColor: grayColor
-            });
             y += hHeaderSmall;
 
-            // === SEPARADOR DOBLE LÍNEA (Visual) ===
+            // === SEPARADOR DOBLE LÍNEA ===
             y += 0.2; 
 
             // === FILA 3: REG ===
@@ -2018,15 +2002,27 @@ const generatePDF = () => {
             
             cell("Registro Diario de Atención y Otras Actividades de Salud", mx, y, fullW, hHeaderSmall, {align:'center', fontSize:7, border:false});
             
-            // Cuadro de Firma (Rectángulo gris vacío a la derecha)
+            // === CUADRO DE FIRMA (AJUSTADO A LA NUEVA ALTURA) ===
+            const grayColor = [180, 180, 180];
             doc.setDrawColor(180, 180, 180);
-            doc.rect(mx + 161, y - (hHeaderSmall*2) - 0.2, 40, (hHeaderSmall*4)); 
-            doc.setDrawColor(50, 50, 50); 
             
-            // --- AQUÍ ESTÁ EL CAMBIO DE ESPACIO (0.7cm extra) ---
-            // Antes era hHeaderSmall + 2. Ahora sumamos 7mm extra -> + 9
-            y += hHeaderSmall + 1; 
-            // ----------------------------------------------------
+            // Dibujamos el rectángulo grande de la derecha (Alto total = 3 filas + separador)
+            const signatureHeight = (hHeaderSmall * 3) + 0.2;
+            doc.rect(mx + 161, currY, 40, signatureHeight); 
+            
+            // Texto de Firma (Centrado verticalmente)
+            doc.setTextColor(180, 180, 180);
+            doc.setFontSize(5);
+            doc.text("FIRMA Y SELLO", mx + 161 + 20, currY + (signatureHeight * 0.4), {align:'center'});
+            doc.text("DEL PERSONAL DE SALUD", mx + 161 + 20, currY + (signatureHeight * 0.6), {align:'center'});
+            
+            doc.setTextColor(0, 0, 0); // Restaurar negro
+            doc.setDrawColor(50, 50, 50); // Restaurar borde negro
+            
+            y += hHeaderSmall; 
+            
+            // Espacio final antes de los encabezados de tabla
+            y += 1; 
 
             const bgHead = [230, 230, 230]; 
             const hMeta = 6; 
@@ -2074,6 +2070,7 @@ const generatePDF = () => {
 
             return y + hTable;
         };
+
         const BLOCKS_PER_PAGE = 11;
         const totalPages = Math.ceil(visualBlocks.length / BLOCKS_PER_PAGE) || 1;
 
@@ -2086,8 +2083,7 @@ const generatePDF = () => {
                 const block = visualBlocks[globalIdx] || null;
                 
                 const p = block ? block.patient : {};
-                const c = block ?
-                block.clinical : {};
+                const c = block ? block.clinical : {};
                 const a = block ? block.age : {};
                 const dxs = block ? block.diagnoses : [{},{},{}];
                 const isFirst = block ? block.isFirstChunk : false;
@@ -2101,28 +2097,48 @@ const generatePDF = () => {
                 const idxText = (block && isFirst) ? block.index : "";
                 cell(idxText, cx, y, w.idx, hBlock, {align:'center', bold:true, vAlign:'middle', border:false, fontSize:8}); 
                 cx += w.idx;
+                
+                // --- BLOQUE CORREGIDO CON FECHAS Y wFNVal ---
 		if (isFirst) {
+                    // 1. NOMBRE DEL PACIENTE (Se mantiene igual, ocupa las primeras 4 columnas)
                     const wName = w.dia + w.dni + w.fin + w.dist;
-                    cell(p.paciente, cx, y, wName, hRowName, {bold:true, align:'left', fontSize: 7.5, border: false}); cx += wName;
+                    cell(p.paciente, cx, y, wName, hRowName, {font: 'helvetica', bold:true, align:'left', fontSize: 7.5, border: false});
+                    cx += wName;
                     
-                    const wFNLabel = w.edad + w.sex;
-                    cell("F.N:", cx, y, wFNLabel, hRowName, {align:'right', bold:true, border: false, fontSize:6}); cx += wFNLabel;
+                    // --- CAMBIO: MOVER F.N. A LA DERECHA ---
                     
-                    // CORRECCIÓN DEL ERROR: Primero definimos la variable wFNVal
-                    const wFNVal = w.antL + w.antV;
+                    // 2. DIBUJAMOS CELDAS VACÍAS (Saltamos EDAD y SEXO donde antes estaba F.N.)
+                    // Esto crea el espacio en blanco de "2 casillas"
+                    const wEmptySpace = w.edad + w.sex; 
+                    cell("", cx, y, wEmptySpace, hRowName, {border: false}); 
+                    cx += wEmptySpace;
 
-                    // Y AHORA LA USAMOS (Con el formato de fecha invertido)
+                    // 3. AHORA SÍ DIBUJAMOS "F.N:" (Alineado bajo Antropometría)
+                    // Usamos el ancho de las primeras 2 columnas de antropometría para la etiqueta
+                    const wFNLabel = w.antL + w.antV; 
+                    cell("F.N:", cx, y, wFNLabel, hRowName, {align:'right', bold:true, border: false, fontSize:6}); 
+                    cx += wFNLabel;
+                    
+                    // 4. DIBUJAMOS EL VALOR DE LA FECHA (Alineado siguiente bloque)
+                    const wFNVal = w.antL + w.antV;
                     cell(p.fecNac ? p.fecNac.split('-').reverse().join('/') : "", cx, y, wFNVal, hRowName, {align:'center', fill:[240,240,240], border:true, bold:true, fontSize:7}); 
                     cx += wFNVal;
 
-                    const wCenter = w.antL + w.antV + w.est + w.serv + w.dx + w.tipo;
-                    cell(c.dosaje ? `DOSAJE: ${c.dosaje}` : "", cx, y, wCenter, hRowName, {align:'center', fontSize:6, border: false}); cx += wCenter;
+                    // ---------------------------------------
+
+                    // 5. RESTO DE LA FILA (DOSAJE, FUR, ETC.)
+                    // Calculamos el espacio restante para DOSAJE.
+                    // Antes era w.antL + w.antV + w.est + w.serv... 
+                    // Como hemos "gastado" 2 bloques de antropometría en F.N., ajustamos el ancho de DOSAJE.
+                    const wCenter = w.est + w.serv + w.dx + w.tipo;
+                    cell(c.dosaje ? `DOSAJE: ${c.dosaje}` : "", cx, y, wCenter, hRowName, {align:'center', fontSize:6, border: false}); 
+                    cx += wCenter;
 
                     const wFURLabel = w.lab * 2;
-                    cell("FUR:", cx, y, wFURLabel, hRowName, {align:'right', bold:true, border: false, fontSize:6}); cx += wFURLabel;
+                    cell("FUR:", cx, y, wFURLabel, hRowName, {align:'right', bold:true, border: false, fontSize:6}); 
+                    cx += wFURLabel;
 
                     const wFURVal = w.lab + w.cie;
-                    // Formato de fecha invertido para FUR también
                     cell(p.fur ? p.fur.split('-').reverse().join('/') : "", cx, y, wFURVal, hRowName, {align:'center', fill:[240,240,240], border:true, bold:true, fontSize:7});
                 } else {
                     let cxEmpty = cx;
@@ -2135,7 +2151,10 @@ const generatePDF = () => {
                     cxEmpty += (w.antL + w.antV + w.est + w.serv + w.dx + w.tipo);
                     cell("", cxEmpty, y, w.lab * 2, hRowName, {border: true}); cxEmpty += (w.lab * 2);
                     cell("", cxEmpty, y, w.lab + w.cie, hRowName, {fill:[240,240,240], border:true});
+                    
+	                                
                 }
+                // --------------------------------------------
                 
                 const yData = y + hRowName;
                 const hDataBlock = hRowData * 3; 
@@ -2149,19 +2168,17 @@ const generatePDF = () => {
                 cx += w.dni;
                 const fRaw = (p.financiador || '').toString().trim().toUpperCase();
 
-		// 1. Buscamos si el texto empieza con un número (Regex: ^ significa inicio, \d+ significa dígitos)
-		const numeroEncontrado = fRaw.match(/^(\d+)/);
+                // 1. Buscamos si el texto empieza con un número
+                const numeroEncontrado = fRaw.match(/^(\d+)/);
+                let codigoFinanciador = '1'; 
+                if (numeroEncontrado) {
+                    codigoFinanciador = numeroEncontrado[1]; 
+                } else if (fRaw === 'SIS') {
+                    codigoFinanciador = '2'; 
+                }
 
-		let codigoFinanciador = '1'; // Valor por defecto (PAGANTE)
-
-		if (numeroEncontrado) {
-    		codigoFinanciador = numeroEncontrado[1]; // Usamos el número encontrado (ej: "2", "3")
-		} else if (fRaw === 'SIS') {
-    		codigoFinanciador = '2'; // Respaldo por si escriben solo "SIS"
-		}
-
-		// Dibujamos solo el número en el PDF
-		cell(codigoFinanciador, cx, yData, w.fin, hDataBlock, {align:'center', vAlign:'middle', fontSize:7, bold:false});
+                // Dibujamos solo el número en el PDF
+                cell(codigoFinanciador, cx, yData, w.fin, hDataBlock, {align:'center', vAlign:'middle', fontSize:7, bold:false});
                 cx += w.fin;
                 cell(p.distrito, cx, yData, w.dist, hRowData, {align:'left', fontSize:5, bold:false});
                 let direccionTexto = p.direccion || "";
@@ -2235,21 +2252,45 @@ const generatePDF = () => {
 
                 y += hBlock;
             }
+               // ==================================================================
+            // PIE DE PÁGINA: CÍRCULO DERECHA + NUMERACIÓN IZQUIERDA
+            // ==================================================================
+            
+            // 1. Configuración de posición vertical (común para ambos)
+            const centerY = 290; // 290mm (Muy pegado abajo, alto A4=297)
+
+            // 2. DIBUJAR CÍRCULO (EXTREMO DERECHO)
+            const radius = 5.1; 
+            const centerX = 200; // 205mm (Derecha)
+
+            doc.setDrawColor(120, 120, 120); 
+            doc.setLineWidth(0.4); 
+            doc.circle(centerX, centerY, radius);
+            
+            // 3. DIBUJAR NUMERACIÓN DE PÁGINA (EXTREMO IZQUIERDO)
+            // Formato: "1/3", "2/3", etc.
+            doc.setFontSize(7); // Tamaño pequeño
+            doc.setTextColor(80, 80, 80); // Color gris oscuro
+            doc.text(`${page + 1}/${totalPages}`, 5, centerY + 1); // x=5 (Margen izq), y ajustado para alinear texto
+            
+            // 4. Restaurar estilos para siguiente página
+            doc.setDrawColor(50, 50, 50); 
+            doc.setLineWidth(0.15);
+            doc.setTextColor(0, 0, 0);
         }
 
         doc.save(`HIS_${adminData.mes}_${allPatients.length}_PACIENTES.pdf`);
         setSavedPatients([]);
-        // Limpia la lista
-        resetForm();                // Resetea el formulario
-        setStep(1);                 // Vuelve al paso 1
-        setIsBatchFinished(false);  // Reactiva botones de edición
+        resetForm();               
+        setStep(1);                 
+        setIsBatchFinished(false);  
         setIsCalendarOpen(true);
-        // Abre calendario
+        
     } catch(err) { 
         alert("Error al generar PDF: " + err.message);
         console.error(err);
     }
-  };
+};
   const generateExcel = () => {
     try {
         if (typeof global === 'undefined') window.global = window;
