@@ -310,7 +310,6 @@ const CredFollowUpModal = ({ isOpen, onClose }) => {
   );
 };
 
-// --- COMPONENTE VISOR INTEGRADO ---
 // --- COMPONENTE VISOR INTEGRADO (CON BOTÓN DE OJO) ---
 const InlineFollowUpViewer = ({ type, data, onClose, onFileUpload, externalFilter, onView }) => {
   const [filter, setFilter] = useState(externalFilter || "");
@@ -709,7 +708,9 @@ export default function App() {
   });
   const initialPatient = { dni: '', paciente: '', hc: '', fecNac: '', sexo: '', financiador: '', direccion: '', distrito: '', estAtencion: 'PACAIPAMPA', fecAtencion: '', condicion: '', fur: '', estOrigen: '', condEst: '', condServ: '' };
   const [patientData, setPatientData] = useState(initialPatient);
+  //const [showNewBtn, setShowNewBtn] = useState(false);
   const [savedPatients, setSavedPatients] = useState([]);
+  const [showNewBtn, setShowNewBtn] = useState(false);
   // CAMBIO: Formato de edad extendido
   const ageString = useMemo(() => { 
       const { y, m, d } = getAgeComponents(patientData.fecNac, patientData.fecAtencion); 
@@ -1175,6 +1176,7 @@ export default function App() {
   } };
   
   const handlePatient = (e) => {
+      setShowNewBtn(false);
       const { name, value } = e.target;
       let finalValue = value;
 
@@ -1762,6 +1764,7 @@ export default function App() {
   
   const handleBack = () => { setDxErrors({}); setStep(s => s - 1); };
   const resetForm = () => { 
+      setShowNewBtn(false);
       setPatientData({ ...initialPatient, fecAtencion: '', estAtencion: adminData.establecimiento, condEst: '', condServ: '' });
       setClinicalData(initialClinical); 
       setDiagnoses([{ desc: '', tipo: '-', lab1: '', lab2: '', lab3: '', codigo: '' }]); 
@@ -1795,7 +1798,7 @@ export default function App() {
   // 2. FUNCIÓN PARA EL BOTÓN "SÍ, DESEO GUARDAR"
 // 2. FUNCIÓN PARA EL BOTÓN "SÍ, DESEO GUARDAR" (LÓGICA HIS CORREGIDA)
     // 2. FUNCIÓN PARA EL BOTÓN "SÍ, DESEO GUARDAR" (LÓGICA INTELIGENTE)
-   const confirmSavePatient = () => {
+  const confirmSavePatient = () => {
       // 1. Empaquetamos los datos actuales
       const newRecord = { 
           patient: { ...patientData }, 
@@ -1826,8 +1829,20 @@ export default function App() {
           updateToContinuador(patientData.id);
       } 
       
-      // 4. Limpiamos y cerramos
-      resetForm();
+      // --- CAMBIO CLAVE AQUÍ ---
+      // NO usamos resetForm() completo porque nos mandaría al paso 1.
+      // En su lugar, limpiamos los datos del formulario MANUALMENTE para evitar duplicados en la vista previa
+      // pero mantenemos el STEP en 4 para ver el botón.
+      
+      setPatientData({ ...initialPatient, fecAtencion: patientData.fecAtencion, estAtencion: adminData.establecimiento, condEst: '', condServ: '' });
+      setClinicalData(initialClinical);
+      setDiagnoses([{ desc: '', tipo: '-', lab1: '', lab2: '', lab3: '', codigo: '' }]);
+      setSearchTerm("");
+      
+      // ACTIVAMOS EL BOTÓN VERDE
+      setShowNewBtn(true);
+      
+      // Cerramos el modal de confirmación
       setShowSaveConfirm(false); 
       alert("✅ Registro guardado exitosamente."); 
   };
@@ -1889,11 +1904,11 @@ export default function App() {
         const hBlock = hRowName + (hRowData * 3);
         const w = {
             idx: 6,   dia: 6,   dni: 14,  fin: 5,   dist: 25, 
-            edad: 11,  sex: 5,   
+            edad: 10,  sex: 5,   
             antL: 7,  antV: 8,
-            est: 5,   serv: 5,
+            est: 4,   serv: 4,
             dx: 55,   
-            tipo: 6,  lab: 5,   cie: 13
+            tipo: 4,  lab: 5.9,   cie: 13
         };
 
         // --- CAMBIO 1: AUMENTAR ALTURA DE CASILLAS IZQUIERDAS (De 4 a 7) ---
@@ -2001,10 +2016,10 @@ export default function App() {
             y += 0.2; 
 
             // === FILA 3: REG ===
-            cell("Reg:", xContent, y, wLabel, hHeaderSmall, {bold:true, border:true, align:'left', fontSize:7});
+            cell("Reg", xContent, y, wLabel, hHeaderSmall, {bold:true, border:true, align:'left', fontSize:7});
             cell("", xContent + wLabel, y, wBox, hHeaderSmall, {border:true});
             
-            cell("Registro Diario de Atención y Otras Actividades de Salud", mx, y, fullW, hHeaderSmall, {align:'center', fontSize:9, border:false});
+            cell("Registro Diario de Atención y Otras Actividades de Salud", mx, y, fullW, hHeaderSmall, {align:'center', fontSize:8, border:false});
             
             // === CUADRO DE FIRMA (AJUSTADO A LA NUEVA ALTURA) ===
             const grayColor = [180, 180, 180];
@@ -4055,13 +4070,19 @@ export default function App() {
               {/* CASO A: AÚN NO SE HA TERMINADO EL LOTE (isBatchFinished = false) */}
               {!isBatchFinished ? (
                 <>
-                  <button
-                    onClick={() => { setStep(1); resetForm(); setTimeout(() => setIsCalendarOpen(true), 100); }}
-                    className="px-6 py-2 rounded-xl font-bold shadow-lg flex gap-2 items-center transition-all text-xs h-10 bg-slate-100 hover:bg-slate-200 text-slate-700"
-                  >
-                    <UserPlus size={18} /> NUEVO PACIENTE
-                  </button>
-
+                   {showNewBtn && (
+    <button
+        onClick={() => {
+            resetForm();
+            setStep(1);
+            setTimeout(() => setIsCalendarOpen(true), 100); // Agregué esto para que abra el calendario igual que antes
+        }}
+        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-6 rounded-lg shadow-lg flex items-center gap-2 transition-all duration-300 animate-fadeIn text-xs h-10"
+    >
+        <UserPlus size={18} />
+        NUEVO PACIENTE
+    </button>
+)}
                   <button
                     onClick={() => setShowSaveConfirm(true)}
                     className="px-6 py-2 rounded-xl font-bold shadow-lg flex gap-2 items-center transition-all text-xs h-10 bg-blue-600 hover:bg-blue-700 text-white"
@@ -4095,15 +4116,17 @@ export default function App() {
                     onClick={generateExcel}
                     className="px-10 py-2 rounded-xl font-bold shadow-xl flex gap-2 items-center transition-all text-xs h-10 bg-emerald-600 hover:bg-emerald-700 text-white hover:-translate-y-1 animate-in zoom-in"
                   >
-                    <Download size={20} /> EXPORTAR EXCEL ({savedPatients.filter(p => p.patient.paciente).length})
+                    {/* AQUI ESTA EL CAMBIO: Usamos consolidatedPatients.length */}
+                    <Download size={20} /> EXPORTAR EXCEL ({consolidatedPatients.length})
                   </button>
 
-                  {/* BOTÓN EXPORTAR PDF */}
+                  {/* BOTÓN EXPORTAR PDF (CORREGIDO) */}
                   <button
                     onClick={generatePDF}
                     className="px-6 py-2 rounded-xl font-bold shadow-xl flex gap-2 items-center transition-all text-xs h-10 bg-red-600 hover:bg-red-700 text-white hover:-translate-y-1 ml-2 animate-in zoom-in"
                   >
-                    <FileText size={20} /> EXPORTAR PDF ({savedPatients.filter(p => p.patient.paciente).length})
+                    {/* AQUI ESTA EL CAMBIO: Usamos consolidatedPatients.length */}
+                    <FileText size={20} /> EXPORTAR PDF ({consolidatedPatients.length})
                   </button>
                 </>
               )}
