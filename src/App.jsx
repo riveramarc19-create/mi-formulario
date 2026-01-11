@@ -703,6 +703,10 @@ export default function App() {
   const [isPremature, setIsPremature] = useState(false);
 
   const [adminData, setAdminData] = useState({ anio: '2026', mes: 'ENERO', establecimiento: 'E.S I-4 PACAIPAMPA', turno: 'MAÑANA', ups: 'MEDICINA', dniResp: '', nombreResp: '', isConfigured: false });
+  const [printCount, setPrintCount] = useState(() => {
+      const saved = localStorage.getItem('his_print_count');
+      return saved ? parseInt(saved, 10) : 0;
+  });
   const initialPatient = { dni: '', paciente: '', hc: '', fecNac: '', sexo: '', financiador: '', direccion: '', distrito: '', estAtencion: 'PACAIPAMPA', fecAtencion: '', condicion: '', fur: '', estOrigen: '', condEst: '', condServ: '' };
   const [patientData, setPatientData] = useState(initialPatient);
   const [savedPatients, setSavedPatients] = useState([]);
@@ -1983,24 +1987,24 @@ export default function App() {
             cell("Lote:", xContent, y, wLabel, hHeaderSmall, {bold:true, border:true, align:'left', fontSize:6});
             cell("", xContent + wLabel, y, wBox, hHeaderSmall, {border:true});
             
-            cell("MINISTERIO DE SALUD", mx, y, fullW, hHeaderSmall, {bold:true, align:'center', fontSize:8, border:false});
+            cell("MINISTERIO DE SALUD", mx, y, fullW, hHeaderSmall, {bold:true, align:'center', fontSize:11, border:false});
             y += hHeaderSmall;
 
             // === FILA 2: PAG ===
             cell("Pag:", xContent, y, wLabel, hHeaderSmall, {bold:true, border:true, align:'left', fontSize:6});
             cell("", xContent + wLabel, y, wBox, hHeaderSmall, {border:true});
             
-            cell("OFICINA GENERAL DE ESTADÍSTICA E INFORMÁTICA", mx, y, fullW, hHeaderSmall, {align:'center', fontSize:7, border:false});
+            cell("OFICINA GENERAL DE ESTADÍSTICA E INFORMÁTICA", mx, y, fullW, hHeaderSmall, {align:'center', fontSize:10, border:false});
             y += hHeaderSmall;
 
             // === SEPARADOR DOBLE LÍNEA ===
             y += 0.2; 
 
             // === FILA 3: REG ===
-            cell("Reg:", xContent, y, wLabel, hHeaderSmall, {bold:true, border:true, align:'left', fontSize:6});
+            cell("Reg:", xContent, y, wLabel, hHeaderSmall, {bold:true, border:true, align:'left', fontSize:7});
             cell("", xContent + wLabel, y, wBox, hHeaderSmall, {border:true});
             
-            cell("Registro Diario de Atención y Otras Actividades de Salud", mx, y, fullW, hHeaderSmall, {align:'center', fontSize:7, border:false});
+            cell("Registro Diario de Atención y Otras Actividades de Salud", mx, y, fullW, hHeaderSmall, {align:'center', fontSize:9, border:false});
             
             // === CUADRO DE FIRMA (AJUSTADO A LA NUEVA ALTURA) ===
             const grayColor = [180, 180, 180];
@@ -2094,8 +2098,39 @@ export default function App() {
                 
                 let cx = mx;
                 
+                // ==================================================================
+                // DIBUJAR CÍRCULO GRIS PARA EL ÍNDICE (Solo en el primer bloque del paciente)
+                // ==================================================================
+                if (block && isFirst) {
+                    // 1. Calcular el centro exacto donde iría el texto
+                    const circleCenterX = cx + (w.idx / 2);
+                    const circleCenterY = y + (hBlock / 2);
+                    
+                    // 2. Definir radio pequeño (donde "quepa justo" el número)
+                    // Radio 2.8mm = Diámetro 5.6mm (Cabe perfecto en la columna de 6mm)
+                    const circleRadius = 2.8; 
+
+                    // 3. Guardar colores actuales
+                    const prevDrawColor = doc.getDrawColor();
+                    const prevFillColor = doc.getFillColor();
+
+                    // 4. Configurar color GRIS y dibujar
+                    doc.setDrawColor(180, 180, 180); // Borde gris medio
+                    doc.setFillColor(220, 220, 220); // Relleno gris claro
+                    // 'FD' significa Fill (rellenar) y Draw (dibujar borde)
+                    doc.circle(circleCenterX, circleCenterY, circleRadius, 'FD');
+
+                    // 5. Restaurar colores originales
+                    doc.setDrawColor(prevDrawColor);
+                    doc.setFillColor(prevFillColor);
+                }
+
+                // DIBUJAR EL NÚMERO ENCIMA (El código original, ligeramente ajustado)
                 const idxText = (block && isFirst) ? block.index : "";
-                cell(idxText, cx, y, w.idx, hBlock, {align:'center', bold:true, vAlign:'middle', border:false, fontSize:8}); 
+                // Bajé un poco el fontSize a 7.5 para asegurar que entre bien en el círculo
+                cell(idxText, cx, y, w.idx, hBlock, {align:'center', bold:true, vAlign:'middle', border:false, fontSize:7.5}); 
+                
+                // Avanzar el cursor X
                 cx += w.idx;
                 
                 // --- BLOQUE CORREGIDO CON FECHAS Y wFNVal ---
@@ -2257,10 +2292,10 @@ export default function App() {
             // ==================================================================
             
             // 1. Configuración de posición vertical (común para ambos)
-            const centerY = 290; // 290mm (Muy pegado abajo, alto A4=297)
+            const centerY = 292; // 290mm (Muy pegado abajo, alto A4=297)
 
             // 2. DIBUJAR CÍRCULO (EXTREMO DERECHO)
-            const radius = 5.1; 
+            const radius = 5.3; 
             const centerX = 200; // 205mm (Derecha)
 
             doc.setDrawColor(120, 120, 120); 
@@ -2279,7 +2314,19 @@ export default function App() {
             doc.setTextColor(0, 0, 0);
         }
 
-        doc.save(`HIS_${adminData.mes}_${allPatients.length}_PACIENTES.pdf`);
+        // === NUEVO NOMBRE DE ARCHIVO ÚNICO ===
+        const nextCount = printCount + 1; // Aumentamos 1 al contador actual
+        
+        // Formato: HIS_cantidadPacientes_PACIENTES_MESnumeroImpresion.pdf
+        const fileName = `HIS_${allPatients.length}_PACIENTES_${adminData.mes}${nextCount}.pdf`;
+        
+        doc.save(fileName); // Guardamos con el nuevo nombre
+
+        // Guardamos el nuevo número en el Estado y en la Memoria del navegador
+        setPrintCount(nextCount);
+        localStorage.setItem('his_print_count', nextCount);
+        // =====================================
+
         setSavedPatients([]);
         resetForm();               
         setStep(1);                 

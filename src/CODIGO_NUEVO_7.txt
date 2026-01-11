@@ -1884,8 +1884,8 @@ export default function App() {
         const hRowData = 5.5; 
         const hBlock = hRowName + (hRowData * 3);
         const w = {
-            idx: 6,   dia: 6,   dni: 14,  fin: 5,   dist: 28, 
-            edad: 8,  sex: 5,   
+            idx: 6,   dia: 6,   dni: 14,  fin: 5,   dist: 25, 
+            edad: 11,  sex: 5,   
             antL: 7,  antV: 8,
             est: 5,   serv: 5,
             dx: 55,   
@@ -1922,7 +1922,7 @@ export default function App() {
                 else doc.setTextColor(0,0,0);
 
                 doc.setFontSize(fontSize || 6);
-                doc.setFont("helvetica", bold ? "bold" : "normal"); 
+                doc.setFont(styles.font ||"helvetica", bold ? "bold" : "normal"); 
                 
                 let text = String(txt);
                 const sensitiveLabels = ["Talla", "Peso", "HB", "P.C.", "P.Abd", "P.Preg", "años", "meses", "días"];
@@ -2099,26 +2099,46 @@ export default function App() {
                 cx += w.idx;
                 
                 // --- BLOQUE CORREGIDO CON FECHAS Y wFNVal ---
-                if (isFirst) {
+		if (isFirst) {
+                    // 1. NOMBRE DEL PACIENTE (Se mantiene igual, ocupa las primeras 4 columnas)
                     const wName = w.dia + w.dni + w.fin + w.dist;
-                    cell(p.paciente, cx, y, wName, hRowName, {bold:true, align:'left', fontSize: 7.5, border: false}); cx += wName;
+                    cell(p.paciente, cx, y, wName, hRowName, {font: 'helvetica', bold:true, align:'left', fontSize: 7.5, border: false});
+                    cx += wName;
                     
-                    const wFNLabel = w.edad + w.sex;
-                    cell("F.N:", cx, y, wFNLabel, hRowName, {align:'right', bold:true, border: false, fontSize:6}); cx += wFNLabel;
+                    // --- CAMBIO: MOVER F.N. A LA DERECHA ---
                     
+                    // 2. DIBUJAMOS CELDAS VACÍAS (Saltamos EDAD y SEXO donde antes estaba F.N.)
+                    // Esto crea el espacio en blanco de "2 casillas"
+                    const wEmptySpace = w.edad + w.sex; 
+                    cell("", cx, y, wEmptySpace, hRowName, {border: false}); 
+                    cx += wEmptySpace;
+
+                    // 3. AHORA SÍ DIBUJAMOS "F.N:" (Alineado bajo Antropometría)
+                    // Usamos el ancho de las primeras 2 columnas de antropometría para la etiqueta
+                    const wFNLabel = w.antL + w.antV; 
+                    cell("F.N:", cx, y, wFNLabel, hRowName, {align:'right', bold:true, border: false, fontSize:6}); 
+                    cx += wFNLabel;
+                    
+                    // 4. DIBUJAMOS EL VALOR DE LA FECHA (Alineado siguiente bloque)
                     const wFNVal = w.antL + w.antV;
-                    // FECHA NACIMIENTO CORREGIDA (DD/MM/AAAA)
                     cell(p.fecNac ? p.fecNac.split('-').reverse().join('/') : "", cx, y, wFNVal, hRowName, {align:'center', fill:[240,240,240], border:true, bold:true, fontSize:7}); 
                     cx += wFNVal;
 
-                    const wCenter = w.antL + w.antV + w.est + w.serv + w.dx + w.tipo;
-                    cell(c.dosaje ? `DOSAJE: ${c.dosaje}` : "", cx, y, wCenter, hRowName, {align:'center', fontSize:6, border: false}); cx += wCenter;
+                    // ---------------------------------------
+
+                    // 5. RESTO DE LA FILA (DOSAJE, FUR, ETC.)
+                    // Calculamos el espacio restante para DOSAJE.
+                    // Antes era w.antL + w.antV + w.est + w.serv... 
+                    // Como hemos "gastado" 2 bloques de antropometría en F.N., ajustamos el ancho de DOSAJE.
+                    const wCenter = w.est + w.serv + w.dx + w.tipo;
+                    cell(c.dosaje ? `DOSAJE: ${c.dosaje}` : "", cx, y, wCenter, hRowName, {align:'center', fontSize:6, border: false}); 
+                    cx += wCenter;
 
                     const wFURLabel = w.lab * 2;
-                    cell("FUR:", cx, y, wFURLabel, hRowName, {align:'right', bold:true, border: false, fontSize:6}); cx += wFURLabel;
+                    cell("FUR:", cx, y, wFURLabel, hRowName, {align:'right', bold:true, border: false, fontSize:6}); 
+                    cx += wFURLabel;
 
                     const wFURVal = w.lab + w.cie;
-                    // FECHA FUR CORREGIDA (DD/MM/AAAA)
                     cell(p.fur ? p.fur.split('-').reverse().join('/') : "", cx, y, wFURVal, hRowName, {align:'center', fill:[240,240,240], border:true, bold:true, fontSize:7});
                 } else {
                     let cxEmpty = cx;
@@ -2131,6 +2151,8 @@ export default function App() {
                     cxEmpty += (w.antL + w.antV + w.est + w.serv + w.dx + w.tipo);
                     cell("", cxEmpty, y, w.lab * 2, hRowName, {border: true}); cxEmpty += (w.lab * 2);
                     cell("", cxEmpty, y, w.lab + w.cie, hRowName, {fill:[240,240,240], border:true});
+                    
+	                                
                 }
                 // --------------------------------------------
                 
@@ -2230,9 +2252,34 @@ export default function App() {
 
                 y += hBlock;
             }
+               // ==================================================================
+            // PIE DE PÁGINA: CÍRCULO DERECHA + NUMERACIÓN IZQUIERDA
+            // ==================================================================
+            
+            // 1. Configuración de posición vertical (común para ambos)
+            const centerY = 292; // 290mm (Muy pegado abajo, alto A4=297)
+
+            // 2. DIBUJAR CÍRCULO (EXTREMO DERECHO)
+            const radius = 5.3; 
+            const centerX = 200; // 205mm (Derecha)
+
+            doc.setDrawColor(120, 120, 120); 
+            doc.setLineWidth(0.4); 
+            doc.circle(centerX, centerY, radius);
+            
+            // 3. DIBUJAR NUMERACIÓN DE PÁGINA (EXTREMO IZQUIERDO)
+            // Formato: "1/3", "2/3", etc.
+            doc.setFontSize(7); // Tamaño pequeño
+            doc.setTextColor(80, 80, 80); // Color gris oscuro
+            doc.text(`${page + 1}/${totalPages}`, 5, centerY + 1); // x=5 (Margen izq), y ajustado para alinear texto
+            
+            // 4. Restaurar estilos para siguiente página
+            doc.setDrawColor(50, 50, 50); 
+            doc.setLineWidth(0.15);
+            doc.setTextColor(0, 0, 0);
         }
 
-        doc.save(`HIS_${adminData.mes}_${allPatients.length}_PACIENTES_OFICIAL.pdf`);
+        doc.save(`HIS_${adminData.mes}_${allPatients.length}_PACIENTES.pdf`);
         setSavedPatients([]);
         resetForm();               
         setStep(1);                 
