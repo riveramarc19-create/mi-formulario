@@ -588,9 +588,52 @@ const SeguimientoIndividualModal = ({ paciente, onClose }) => {
     </div>
   );
 };
+// --- CONFIGURACIÓN MAESTRA DE LABS (Con Etiquetas Personalizadas) ---
+const LAB_CONFIG = {
+    // CASOS SIMPLES (Array = Texto por defecto "LAB")
+    'D509': { 1: ['LEV', 'MOD', 'SEV'] }, 
+    'D649': { 1: ['LEV', 'MOD', 'SEV'] },
+    '99381': { 1: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'] },
+    '99199.17': { 1: ['SF1', 'SF2', 'MN1'] },
+
+    // CASOS CON TEXTO PERSONALIZADO (Objeto con 'label')
+    // Z359 cubre Z3591, Z3592, Z3593 gracias a la búsqueda parcial
+    'Z3591': { 
+        1: { label: 'N° CPN', options: ['1', '2', '3', '4', '5', '6', '7', '8', '9'] }, 
+        2: { label: 'SEM<14', options: [] } // 'SEM' es mejor para el espacio pequeño
+    },
+    'Z3592': { 
+        1: { label: 'N° CPN', options: ['1', '2', '3', '4', '5', '6', '7', '8', '9'] }, 
+        2: { label: 'SEM: 14-27', options: [] } // 'SEM' es mejor para el espacio pequeño
+    },
+
+    'Z3593': { 
+        1: { label: 'N° CPN', options: ['1', '2', '3', '4', '5', '6', '7', '8', '9'] }, 
+        2: { label: 'SEM>27', options: [] } // 'SEM' es mejor para el espacio pequeño
+    },
+
+    // Ejemplo Consejería
+    '99401': {
+        1: { label: 'TIPO', options: ['ANT', 'C.I.', 'L.M.'] },
+        2: { label: 'NRO', options: ['1', '2', '3'] }
+    },
+
+    'Z3493': { 
+        1: { label: 'CPN', options: ['1','2','3','4','5','6','7'] }, 
+        2: { label: 'SEM', options: [] },
+        3: { label: 'TA', options: ['TA'] } // <--- IMPORTANTE: HABILITAR LAB 3
+    },
+    'Z3593': { 
+        1: { label: 'CPN', options: ['1','2','3','4','5','6','7'] }, 
+        2: { label: 'SEM', options: [] },
+        3: { label: 'TA', options: ['TA'] } // <--- IMPORTANTE: HABILITAR LAB 3
+    }
+
+};
 export default function App() {
   const [showNutriModal, setShowNutriModal] = useState(false);
   const [showAnemiaModal, setShowAnemiaModal] = useState(false);
+  const [focusedLab, setFocusedLab] = useState({ rowIndex: null, labNum: null });
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [lastClinicalData, setLastClinicalData] = useState({});
@@ -604,8 +647,19 @@ export default function App() {
   const [isBatchFinished, setIsBatchFinished] = useState(false);
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (isCalendarOpen && calendarRef.current && !calendarRef.current.contains(event.target) && event.target.tagName !== 'BUTTON') setIsCalendarOpen(false);
+      // 1. Lógica del Calendario (Mantenemos la que tenías)
+      if (isCalendarOpen && calendarRef.current && !calendarRef.current.contains(event.target) && event.target.tagName !== 'BUTTON') {
+          setIsCalendarOpen(false);
+      }
+
+      // 2. Lógica de Sugerencias LAB (NUEVO)
+      // Si haces clic en cualquier sitio que NO sea un Input ni un Botón, se cierran las sugerencias.
+      // Usamos .closest('button') por si haces clic en un ícono dentro de un botón.
+      if (event.target.tagName !== 'INPUT' && !event.target.closest('button')) {
+          setFocusedLab({ rowIndex: null, labNum: null });
+      }
     };
+
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isCalendarOpen]);
@@ -1739,6 +1793,94 @@ export default function App() {
     // PASO 3: VALIDACIÓN CIE-10
     // ========================================================================
     if (step === 3) {
+         // >>> PEGA ESTO AQUÍ (VALIDACIÓN MAESTRA DE LABS) <<<
+       for (let i = 0; i < diagnoses.length; i++) {
+           const d = diagnoses[i];
+           if (!d.codigo) continue;
+
+           const currentCode = d.codigo.trim().toUpperCase();
+           // Buscamos la configuración igual que en los inputs (Exacta o 4 caracteres)
+           const config = LAB_CONFIG[currentCode] || LAB_CONFIG[currentCode.substring(0, 4)];
+
+           if (config) {
+               // Validar LAB 1
+               if (config[1] !== undefined && (!d.lab1 || d.lab1.trim() === '')) {
+                   setValidationAlert({
+                       isOpen: true,
+                       type: 'LAB_MISSING',
+                       title: `Falta LAB 1 en Fila ${i + 1}`,
+                       message: `El diagnóstico ${currentCode} requiere obligatoriamente un valor en el primer campo LAB.`,
+                       details: 'El campo se muestra en rojo o habilitado. Por favor complételo.'
+                   });
+                   return; // DETIENE EL AVANCE
+               }
+
+               // Validar LAB 2
+               if (config[2] !== undefined && (!d.lab2 || d.lab2.trim() === '')) {
+                   setValidationAlert({
+                       isOpen: true,
+                       type: 'LAB_MISSING',
+                       title: `Falta LAB 2 en Fila ${i + 1}`,
+                       message: `El diagnóstico ${currentCode} requiere obligatoriamente un valor en el segundo campo LAB.`,
+                       details: 'Este código exige múltiples valores LAB.'
+                   });
+                   return; // DETIENE EL AVANCE
+               }
+
+               // Validar LAB 3
+               if (config[3] !== undefined && (!d.lab3 || d.lab3.trim() === '')) {
+                   setValidationAlert({
+                       isOpen: true,
+                       type: 'LAB_MISSING',
+                       title: `Falta LAB 3 en Fila ${i + 1}`,
+                       message: `El diagnóstico ${currentCode} requiere obligatoriamente un valor en el tercer campo LAB.`,
+                       details: 'Este código exige completar todos los campos LAB.'
+                   });
+                   return; // DETIENE EL AVANCE
+               }
+           }
+
+              // Lógica para Z3493 / Z3593 + Lab 7 -> TA
+           const codigoActual = d.codigo ? d.codigo.trim().toUpperCase() : "";
+           const valorLab1 = d.lab1 ? d.lab1.trim().toUpperCase() : "";
+           const valorLab3 = d.lab3 ? d.lab3.trim().toUpperCase() : "";
+
+           if (codigoActual === 'Z3493' || codigoActual === 'Z3593') {
+               if (valorLab1 === '7') {
+                   if (valorLab3 !== 'TA') {
+                       setValidationAlert({
+                           isOpen: true,
+                           type: 'LAB_MISSING',
+                           title: 'Validación de Tamizaje (TA)',
+                           message: `En la fila ${i + 1}, para el diagnóstico ${codigoActual} con Control Nº 7, es OBLIGATORIO registrar "TA" en el 3er LAB.`,
+                           details: '⚠️ REGLA:\nEn el 7mo control de gestante, se debe registrar el Tamizaje de Violencia o Alcohol.\n\nPor favor escriba "TA" en el campo LAB 3.'
+                       });
+                       return; 
+                   }
+               }
+           }
+       }
+                // VALIDACIÓN CRUZADA GESTANTE (Z359/Z349)
+       const hasEmbarazoCode = diagnoses.some(d => 
+           d.codigo && (d.codigo.toUpperCase().startsWith('Z359') || d.codigo.toUpperCase().startsWith('Z349'))
+       );
+
+       if (hasEmbarazoCode) {
+           // Si tiene código de embarazo, ES OBLIGATORIO que sea GESTANTE y tenga FUR
+           if (patientData.condicion !== 'GESTANTE' || !patientData.fur || patientData.fur.trim() === '') {
+                setValidationAlert({
+                   isOpen: true,
+                   type: 'GESTANTE_REQUIRED',
+                   title: 'Inconsistencia de Datos Maternos',
+                   message: 'Ha registrado códigos de Embarazo (Z359... o Z349...), pero faltan Datos.',
+                   // Fíjate en la comilla simple al inicio y al final
+                   details: '⚠️ REGLA:\nPara usar estos diagnósticos, es OBLIGATORIO:\n1. Que la Condición sea "GESTANTE".\n2. Que tenga registrada la FUR.\n\nEl sistema lo llevará al Paso 1 para corregirlo.'
+               });
+               return; // Detener avance
+           }
+       }
+
+
        // Si hay paciente pero no diagnósticos -> Alerta
        if ((patientData.dni || patientData.paciente) && diagnoses.length === 0) { 
            alert("⚠️ FALTAN DIAGNÓSTICOS"); return; 
@@ -3261,14 +3403,12 @@ export default function App() {
 
       {/* BOTÓN */}
       <div className="px-8 py-5 bg-slate-50 border-t border-slate-100 flex justify-end">
-        <button 
+         <button 
             onClick={() => { 
                 setValidationAlert({ ...validationAlert, isOpen: false }); 
-                // Si es falta de laboratorio, saltar al paso 2
-                if (validationAlert.type === 'LAB_MISSING') { 
-                    setStep(2); 
-                    setShowHbError(true); 
-                } 
+                
+                // NOTA: ELIMINÉ LA LÍNEA setStep(2) PARA QUE TE QUEDES EN DIAGNÓSTICOS A CORREGIR EL LAB
+                
                 // Si es transferencia, enfocar la HC
                 if (validationAlert.type === 'TRANSFER') {
                     setTimeout(() => {
@@ -3276,7 +3416,11 @@ export default function App() {
                         if (hcInput) { hcInput.focus(); hcInput.select(); }
                     }, 100);
                 }
-            }} 
+                // >>> AGREGAR ESTO: SI EL ERROR ES DE GESTANTE, IR AL PASO 1 <<<
+                if (validationAlert.type === 'GESTANTE_REQUIRED') {
+                    setStep(1); // Regresamos al Paso 1 para que pueda poner la FUR
+                }
+            }}
             className={`px-8 py-3 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-sm tracking-wide text-white 
                 ${validationAlert.type === 'GESTANTE' ? 'bg-pink-500 hover:bg-pink-600' : validationAlert.type === 'TRANSFER' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-orange-500 hover:bg-orange-600'}`}
         >
@@ -3856,7 +4000,8 @@ export default function App() {
                 </div>
               )}
               {/* PASO 3: DIAGNÓSTICOS */}
-               {/* PASO 3: DIAGNÓSTICOS CON LAB INTERACTIVO */}
+              {/* PASO 3: DIAGNÓSTICOS CON LAB INTERACTIVO */}
+              {/* PASO 3: DIAGNÓSTICOS CON LAB INTERACTIVO (CORREGIDO) */}
       {step === 3 && (
         <div className="animate-in fade-in slide-in-from-right-8 duration-300 w-full max-w-[95%] mx-auto">
            <div className={`flex justify-between items-end mb-6 p-5 rounded-2xl border ${getTheme(3).bgLight} ${getTheme(3).border}`}>
@@ -3870,10 +4015,10 @@ export default function App() {
               const errorBorder = hasError ? "border-red-500 ring-2 ring-red-100" : "border-slate-200"; 
               const showAddButton = (idx === diagnoses.length - 1);
               
-              // OBTENER SUGERENCIAS PARA ESTE CÓDIGO (Busca coincidencia exacta o parcial)
+              // 1. OBTENER CÓDIGO ACTUAL (Limpiamos espacios)
               const currentCode = dx.codigo ? dx.codigo.trim().toUpperCase() : "";
-              // Primero intenta exacto, luego intenta los primeros 4 caracteres (ej: Z3591 -> busca Z359)
-              const suggestions = LAB_SUGGESTIONS[currentCode] || LAB_SUGGESTIONS[currentCode.substring(0, 4)] || [];
+              
+              // NOTA: Aquí borré la línea que causaba el error (LAB_SUGGESTIONS)
 
               return (
               <div key={idx} className={`grid grid-cols-12 gap-3 items-center bg-white p-3 rounded-xl border ${errorBorder} hover:shadow-lg transition-all group relative z-0`}>
@@ -3884,29 +4029,42 @@ export default function App() {
                 {/* DESCRIPCIÓN */}
                 <div className="col-span-6 relative" onClick={() => openDxSearch(idx)}><div className={`w-full h-10 px-3 border-2 rounded-xl flex items-center bg-slate-50 cursor-pointer hover:bg-white hover:border-${stepColors[2]}-300 transition-colors`}>{dx.desc ? <span className="text-xs font-bold text-slate-700 truncate uppercase">{dx.desc}</span> : <span className="text-xs text-slate-400 italic">Clic para buscar diagnóstico...</span>}</div></div>
                 
-                {/* TIPO (P/D/R) */}
+                               {/* TIPO (P/D/R) */}
                 <div className="col-span-1 flex justify-center"><div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black text-base text-white shadow-sm ${dx.tipo === 'P' ? 'bg-amber-500' : dx.tipo === 'D' ? 'bg-blue-600' : dx.tipo === 'R' ? 'bg-emerald-500' : 'bg-slate-300'}`}>{dx.tipo}</div></div>
                 
-                {/* --- CAMPOS LAB INTERACTIVOS --- */}
+                {/* --- CAMPOS LAB INTERACTIVOS (MULTI-LAB 1, 2, 3) --- */}
+                 {/* --- CAMPOS LAB INTERACTIVOS (CON TEXTO PERSONALIZADO) --- */}
                 <div className="col-span-2 flex gap-2 justify-center relative">
                     {[1, 2, 3].map((n) => {
-                        const isFocused = focusedLab.rowIndex === idx && focusedLab.labNum === n;
+                        // 1. OBTENER CONFIGURACIÓN
+                        const currentCode = dx.codigo ? dx.codigo.trim().toUpperCase() : "";
+                        const codeConfig = LAB_CONFIG[currentCode] || LAB_CONFIG[currentCode.substring(0, 4)];
                         
+                        // 2. EXTRAER DATOS DE LA CASILLA (Soporta Array o Objeto)
+                        const configItem = codeConfig ? codeConfig[n] : undefined;
+                        const isSlotActive = configItem !== undefined;
+                        
+                        // Si es Array, es simple. Si es Objeto, tiene label y options.
+                        const slotOptions = Array.isArray(configItem) ? configItem : (configItem?.options || []);
+                        const slotLabel = (!Array.isArray(configItem) && configItem?.label) ? configItem.label : "LAB";
+
+                        const isFocused = focusedLab.rowIndex === idx && focusedLab.labNum === n;
+                        const hasValue = dx[`lab${n}`] && dx[`lab${n}`].length > 0;
+
                         return (
                             <div key={n} className="relative">
-                                {/* MENÚ DE SUGERENCIAS FLOTANTE (Solo si hay sugerencias y está enfocado) */}
-                                {isFocused && suggestions.length > 0 && (
+                                {/* MENÚ FLOTANTE */}
+                                {isFocused && isSlotActive && slotOptions.length > 0 && (
                                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white border border-slate-200 shadow-xl rounded-xl p-1.5 flex gap-1 z-50 animate-in zoom-in duration-200 min-w-[120px] justify-center flex-wrap">
-                                        <div className="w-full text-[8px] text-center text-slate-400 font-bold mb-1 uppercase">Sugerencias</div>
-                                        {suggestions.map(sug => (
+                                        {slotOptions.map(sug => (
                                             <button 
                                                 key={sug}
                                                 onMouseDown={(e) => {
-                                                    e.preventDefault(); // Evita perder el foco antes del click
+                                                    e.preventDefault();
                                                     const newDx = [...diagnoses];
                                                     newDx[idx][`lab${n}`] = sug;
                                                     setDiagnoses(newDx);
-                                                    setFocusedLab({ rowIndex: null, labNum: null }); // Cierra menú
+                                                    setFocusedLab({ rowIndex: null, labNum: null });
                                                 }}
                                                 className="px-2 py-1 bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-700 text-[10px] font-bold rounded-lg transition-colors border border-blue-100"
                                             >
@@ -3916,28 +4074,25 @@ export default function App() {
                                     </div>
                                 )}
 
-                                {/* INPUT LAB FINAL: SOLO SE ACTIVA SI EL CÓDIGO LO REQUIERE (Y SOLO EL 1) */}
+                                {/* INPUT INTELIGENTE */}
                                 <input 
-                                    className={`w-12 h-12 border-2 rounded-xl text-center text-xs font-black outline-none transition-all uppercase
-                                        ${isFocused 
-                                            ? 'border-blue-500 ring-4 ring-blue-100 bg-white z-20 relative' // 1. FOCO
-                                            : (dx[`lab${n}`] && dx[`lab${n}`].length > 0) 
-                                                ? 'border-emerald-500 bg-emerald-100 text-emerald-800 shadow-sm' // 2. LLENO
-                                                : (n === 1 && suggestions.length > 0) 
-                                                    ? 'border-red-300 bg-red-50 placeholder-red-300 text-red-900 animate-pulse' // 3. VACÍO Y OBLIGATORIO
-                                                    : 'border-slate-100 bg-slate-100 text-slate-300 cursor-not-allowed' // 4. BLOQUEADO (Gris claro)
-                                        }`}
+                                    className={`w-16 h-12 border-2 rounded-xl text-center text-xs font-black outline-none transition-all uppercase
+                                        ${!isSlotActive 
+                                            ? 'border-slate-100 bg-slate-100 text-slate-300 cursor-not-allowed' 
+                                            : isFocused 
+                                                ? 'border-blue-500 ring-4 ring-blue-100 bg-white z-20 relative placeholder:text-blue-300' 
+                                                : hasValue
+                                                    ? 'border-emerald-500 bg-emerald-100 text-emerald-800 shadow-sm' 
+                                                    : 'border-red-300 bg-red-50 placeholder-red-400 text-red-900 animate-pulse' 
+                                        } 
+                                        placeholder:text-[9px] placeholder:font-extrabold`} // AJUSTE DE TEXTO AQUÍ
                                     
-                                    placeholder={(n === 1 && suggestions.length > 0) ? "LAB" : "-"}
-                                    
-                                    // AQUI ESTA EL CAMBIO QUE PIDES (BLOQUEO LÓGICO):
-                                    // Solo se activa si es la casilla 1 Y si hay sugerencias para este código.
-                                    disabled={!(n === 1 && suggestions.length > 0)}
-                                    
+                                    placeholder={isSlotActive ? slotLabel : "-"}
+                                    disabled={!isSlotActive}
                                     maxLength={4}
                                     value={dx[`lab${n}`] || ''}
                                     onFocus={() => setFocusedLab({ rowIndex: idx, labNum: n })}
-                                    onBlur={() => setTimeout(() => setFocusedLab({ rowIndex: null, labNum: null }), 200)}
+                                    // SIN onBlur PARA QUE FUNCIONE EL CLIC DEL MENÚ
                                     onChange={(e) => {
                                         const val = e.target.value.toUpperCase().slice(0, 4);
                                         const newDx = [...diagnoses];
@@ -3948,8 +4103,7 @@ export default function App() {
                             </div>
                         );
                     })}
-                </div>
-
+                </div>                
                 {/* CÓDIGO CIE-10 + BOTONES ACCIÓN */}
                 <div className="col-span-2 flex justify-center items-center gap-2 relative">
                     <div className="font-black text-slate-800 text-sm bg-slate-100 px-3 py-2 rounded-lg min-w-[60px] text-center">{dx.codigo || '---'}</div>
@@ -4192,15 +4346,17 @@ export default function App() {
                     onClick={generateExcel}
                     className="px-10 py-2 rounded-xl font-bold shadow-xl flex gap-2 items-center transition-all text-xs h-10 bg-emerald-600 hover:bg-emerald-700 text-white hover:-translate-y-1 animate-in zoom-in"
                   >
-                    <Download size={20} /> EXPORTAR EXCEL ({savedPatients.filter(p => p.patient.paciente).length})
+                    {/* AQUI ESTA EL CAMBIO: Usamos consolidatedPatients.length */}
+                    <Download size={20} /> EXPORTAR EXCEL ({consolidatedPatients.length})
                   </button>
 
-                  {/* BOTÓN EXPORTAR PDF */}
+                  {/* BOTÓN EXPORTAR PDF (CORREGIDO) */}
                   <button
                     onClick={generatePDF}
                     className="px-6 py-2 rounded-xl font-bold shadow-xl flex gap-2 items-center transition-all text-xs h-10 bg-red-600 hover:bg-red-700 text-white hover:-translate-y-1 ml-2 animate-in zoom-in"
                   >
-                    <FileText size={20} /> EXPORTAR PDF ({savedPatients.filter(p => p.patient.paciente).length})
+                    {/* AQUI ESTA EL CAMBIO: Usamos consolidatedPatients.length */}
+                    <FileText size={20} /> EXPORTAR PDF ({consolidatedPatients.length})
                   </button>
                 </>
               )}
