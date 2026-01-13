@@ -4,8 +4,8 @@
 // Archivo: PersonalData.js
 export const PERSONAL_LIST = [
 
-  { dni: "70582012", nombre: "RIVERA QUISPE PETER", password: "123", ups: "ENFERMERIA"},
+  { dni: "40958276", nombre: "TRONCOS DIAS GABY LIZETH", password: "G2026", ups: "OBSTETRICIA"},
   { dni: "02860100", nombre: "CORDOVA MAZA ENOE", password: "1234", ups: "MEDICINA" },
-  { dni: "45314363", nombre: "VILELA ALVA JEHISON ANDRE", password: "123", ups: "ODONTOLOGIA" },
+  { dni: "45314363", nombre: "MARCO", password: "123", ups: "ODONTOLOGIA" },
 
 ];

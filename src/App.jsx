@@ -3025,7 +3025,8 @@ export default function App() {
                         { id: 'HIPER', label: 'HIPERTENSOS', icon: <Heart size={16}/>, color: 'orange' },
                         { id: 'DIABETES', label: 'DIABETES', icon: <Droplets size={16}/>, color: 'blue' },
                         { id: 'PSICOLOGIA', label: 'PSICOLOGÍA', icon: <Brain size={16}/>, color: 'indigo' },
-                        { id: 'BUCAL', label: 'ODONTO', icon: <span className="text-base leading-none grayscale">🦷</span>, color: 'cyan' },
+                      //{ id: 'BUCAL', label: 'ODONTO', icon: <span className="text-base leading-none grayscale">🦷</span>, color: 'cyan' },
+			{ id: 'BUCAL', label: 'ODONTO', icon: null, color: 'cyan' },
                         { id: 'VACUNAS', label: 'VACUNAS', icon: <Syringe size={16}/>, color: 'purple' },
                     ].map((item) => (
                         <button 

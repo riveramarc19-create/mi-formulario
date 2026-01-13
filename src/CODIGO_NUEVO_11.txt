@@ -593,8 +593,22 @@ const LAB_CONFIG = {
     // CASOS SIMPLES (Array = Texto por defecto "LAB")
     'D509': { 1: ['LEV', 'MOD', 'SEV'] }, 
     'D649': { 1: ['LEV', 'MOD', 'SEV'] },
-    '99381': { 1: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'] },
-    '99199.17': { 1: ['SF1', 'SF2', 'MN1'] },
+    'O990': { 1: ['LEV', 'MOD', 'SEV'] },
+   //'Z001': { 1: [''] },
+   //'Z002': { 1: [''] },
+   //'Z003': { 1: [''] },
+    '99381.01': { 1: ['1', '2', '3', '4'] },
+    '99381': { 1: ['1', '2', '3', '4', '5', '6', '7'] },
+    '99382': { 1: ['1', '2', '3', '4', '5', '6'] },
+    '99383': { 1: ['1', '2'] },
+    '99199.17': { 1: ['1', '2', '3', '4', '5', '6', '7', '8', 'TA'] },
+    '99199.18': { 1: ['1', '2', '3', '4', '5', '6', '7', '8'] },
+    '99199.19': { 1: ['1', '2', '3', '4', '5', '6', '7', '8'] },
+    '99199.26': { 1: ['1', '2', '3', '4', '5', '6', '7', '8'] },
+    '99199.27': { 1: ['1', '2', '3'] },
+    '59401.05': { 1: ['1', '2', '3'] },
+    '59401.06': { 1: ['1', '2', '3', 'TA'] },
+    'R456': { 1: ['G'] },
 
     // CASOS CON TEXTO PERSONALIZADO (Objeto con 'label')
     // Z359 cubre Z3591, Z3592, Z3593 gracias a la búsqueda parcial
@@ -627,6 +641,11 @@ const LAB_CONFIG = {
         1: { label: 'CPN', options: ['1','2','3','4','5','6','7'] }, 
         2: { label: 'SEM', options: [] },
         3: { label: 'TA', options: ['TA'] } // <--- IMPORTANTE: HABILITAR LAB 3
+    },
+
+    '99199.22': { 
+        1: { label: 'DIAST', options: [] }, 
+        2: { label: 'SIST', options: [] }
     }
 
 };
@@ -3006,7 +3025,8 @@ export default function App() {
                         { id: 'HIPER', label: 'HIPERTENSOS', icon: <Heart size={16}/>, color: 'orange' },
                         { id: 'DIABETES', label: 'DIABETES', icon: <Droplets size={16}/>, color: 'blue' },
                         { id: 'PSICOLOGIA', label: 'PSICOLOGÍA', icon: <Brain size={16}/>, color: 'indigo' },
-                        { id: 'BUCAL', label: 'ODONTO', icon: <span className="text-base leading-none grayscale">🦷</span>, color: 'cyan' },
+                      //{ id: 'BUCAL', label: 'ODONTO', icon: <span className="text-base leading-none grayscale">🦷</span>, color: 'cyan' },
+			{ id: 'BUCAL', label: 'ODONTO', icon: null, color: 'cyan' },
                         { id: 'VACUNAS', label: 'VACUNAS', icon: <Syringe size={16}/>, color: 'purple' },
                     ].map((item) => (
                         <button 
@@ -4136,166 +4156,166 @@ export default function App() {
               {/* PASO 4: EXCEL PREVIEW */}
               {/* PASO 4: EXCEL PREVIEW (MEJORADO PRO) */}
       {/* PASO 4: EXCEL PREVIEW (ALINEACIÓN PERFECTA) */}
+      {/* PASO 4: VISTA PREVIA FORMATO HIS (TABLA REAL CON CELDAS FUSIONADAS) */}
+                {/* PASO 4: VISTA PREVIA FORMATO HIS (CON NOMBRE DE PACIENTE) */}
+      {/* PASO 4: VISTA PREVIA FORMATO HIS (OPTIMIZADO PARA ESPACIO DE DIAGNÓSTICO) */}
+      {/* PASO 4: VISTA PREVIA FORMATO HIS (CORREGIDO: ANTROPOMETRÍA ESTRECHA, DIAGNÓSTICO ANCHO) */}
+      {/* PASO 4: VISTA PREVIA DEFINITIVA (HEADERS MINIMIZADOS) */}
       {step === 4 && (
-        <div className="w-full h-full bg-slate-100 flex flex-col animate-in fade-in zoom-in duration-300 font-sans">
+        <div className="w-full h-full bg-gray-100 flex flex-col animate-in fade-in duration-300 font-sans">
           
-          {/* BARRA SUPERIOR VERDE */}
-          <div className="h-12 bg-[#107C41] flex items-center px-5 justify-between shrink-0 shadow-md z-20">
-            <div className="flex items-center gap-3 text-white text-xs font-bold tracking-wide">
-                <FileSpreadsheet size={18} />
-                <span>VISTA PREVIA HIS (FINAL)</span>
-                <span className="opacity-40">|</span>
-                <span className="uppercase opacity-90">{adminData.establecimiento || 'ESTABLECIMIENTO'} - {adminData.mes || 'MES'}</span>
-            </div>
+          {/* CABECERA VERDE */}
+          <div className="h-12 bg-emerald-800 flex items-center px-6 justify-between shrink-0 shadow-md text-white z-20">
+             <div className="flex items-center gap-3 font-bold text-sm">
+                <FileSpreadsheet size={20} />
+                <span>VISTA PREVIA HIS (FORMATO COMPACTO)</span>
+             </div>
+             <div className="text-xs opacity-80 uppercase font-mono">
+                {adminData.establecimiento} | {adminData.mes}
+             </div>
           </div>
 
-          {/* BARRA DE FÓRMULAS */}
-          <div className="h-10 bg-white border-b border-slate-300 flex items-center px-4 gap-3 shrink-0 text-xs text-slate-500 shadow-sm z-10">
-              <div className="flex items-center gap-2 bg-slate-100 px-2 py-1 rounded border border-slate-200"><Grid size={14}/> <span>A1</span></div>
-              <div className="h-4 w-px bg-slate-300"></div>
-              <span className="font-mono text-[11px] truncate w-full flex items-center gap-2">
-                 <span className="font-serif italic font-black text-slate-400">fx</span> 
-                 {patientData.paciente || ""}
-              </span>
-          </div>
-
-          {/* TABLA SCROLLABLE */}
-          <div className="flex-1 overflow-auto bg-[#e6e6e6] p-6 flex justify-center items-start">
-            <div className="bg-white shadow-2xl border border-slate-400 w-fit flex flex-col">
-              
-              {/* --- ENCABEZADOS (ANCHOS FIJOS PARA ALINEACIÓN) --- */}
-              <div className="flex border-b border-slate-300 bg-[#f3f3f3] text-[9px] font-bold text-slate-600 text-center sticky top-0 z-30 shadow-sm h-9">
-                <div className="w-8 border-r border-slate-300 flex items-center justify-center bg-slate-200 text-slate-500">#</div>
-                <div className="w-10 border-r border-slate-300 flex items-center justify-center">DÍA</div>
-                <div className="w-20 border-r border-slate-300 flex items-center justify-center">DNI</div>
-                <div className="w-8 border-r border-slate-300 flex items-center justify-center">FIN</div>
-                <div className="w-[180px] border-r border-slate-300 flex items-center justify-center">DISTRITO DE PROCEDENCIA</div>
-                <div className="w-10 border-r border-slate-300 flex items-center justify-center">EDAD</div>
-                <div className="w-8 border-r border-slate-300 flex items-center justify-center">SEX</div>
+          <div className="flex-1 overflow-auto p-8 flex justify-center bg-gray-200">
+            <div className="bg-white shadow-2xl w-full max-w-[1900px] min-h-[800px] p-8 border border-gray-300">
                 
-                {/* GRUPO CLÍNICO */}
-                <div className="w-12 border-r border-slate-300 flex items-center justify-center bg-slate-50">TALLA</div>
-                <div className="w-12 border-r border-slate-300 flex items-center justify-center bg-slate-50">PESO</div>
-                <div className="w-12 border-r border-slate-300 flex items-center justify-center bg-slate-50">O.ANT</div>
-                <div className="w-12 border-r border-slate-300 flex items-center justify-center bg-slate-50">HB</div>
-                <div className="w-10 border-r border-slate-300 flex items-center justify-center">EST</div>
-                <div className="w-10 border-r border-slate-300 flex items-center justify-center">SER</div>
-                
-                {/* GRUPO DIAGNÓSTICO */}
-                <div className="w-[350px] border-r border-slate-300 flex items-center justify-start pl-4">DIAGNÓSTICO MOTIVO DE CONSULTA</div>
-                <div className="w-10 border-r border-slate-300 flex items-center justify-center">TIPO</div>
-                <div className="w-12 border-r border-slate-300 flex items-center justify-center">LAB</div>
-                <div className="w-12 border-r border-slate-300 flex items-center justify-center">LAB</div>
-                <div className="w-12 border-r border-slate-300 flex items-center justify-center">LAB</div>
-                <div className="w-14 flex items-center justify-center">CIE</div>
-              </div>
+                {/* TABLA: table-fixed es CLAVE para que respete los anchos */}
+                <table className="w-full border-collapse border border-black font-sans table-fixed">
+                    
+                    {/* DEFINICIÓN DE ANCHOS DE COLUMNA (Colgroup) */}
+                    <colgroup>
+                        <col className="w-6" />  {/* DÍA */}
+                        <col className="w-16" /> {/* DNI */}
+                        <col className="w-48" /> {/* NOMBRES */}
+                        <col className="w-6" />  {/* FIN */}
+                        <col className="w-24" /> {/* DISTRITO */}
+                        <col className="w-6" />  {/* EDAD */}
+                        <col className="w-6" />  {/* SEXO */}
+                        <col className="w-8" />  {/* PESO (Muy angosto) */}
+                        <col className="w-8" />  {/* TALLA */}
+                        <col className="w-8" />  {/* P.C */}
+                        <col className="w-8" />  {/* P.AB */}
+                        <col className="w-6" />  {/* HB */}
+                        <col className="w-6" />  {/* EST */}
+                        <col className="w-6" />  {/* SER */}
+                        <col className="w-auto" /> {/* DIAGNÓSTICO (El resto del espacio) */}
+                        <col className="w-6" />  {/* TIPO */}
+                        <col className="w-8" />  {/* LAB 1 */}
+                        <col className="w-8" />  {/* LAB 2 */}
+                        <col className="w-8" />  {/* LAB 3 */}
+                        <col className="w-10" /> {/* CIE */}
+                    </colgroup>
 
-              {/* --- CUERPO --- */}
-              <div className="flex flex-col bg-white min-h-[500px]">
-                {consolidatedPatients.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-40 text-slate-300 text-xs font-bold gap-2">
-                        <FileSpreadsheet size={40} strokeWidth={1}/>
-                        SIN DATOS REGISTRADOS
-                    </div>
-                ) : (
-                    consolidatedPatients.map((rec, idx) => {
-                        const p = rec.patient; 
-                        const c = rec.clinical; 
-                        const dxs = rec.diagnoses; 
-                        const a = rec.ageObj;
-                        const totalDxs = Math.max(1, dxs.length); 
-                        const chunks = []; 
-                        for (let i = 0; i < totalDxs; i += 3) { chunks.push(dxs.slice(i, i + 3)); }
-                        if (chunks.length === 0) chunks.push([{},{},{}]);
+                    <thead>
+                        <tr className="bg-gray-100 text-gray-800 font-bold text-center uppercase text-[9px]">
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>DÍA</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>DNI</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>PACIENTE</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>FIN</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>DISTRITO</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>EDAD</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>SEX</th>
+                            
+                            {/* CABECERA ANTROPOMETRÍA */}
+                            <th className="border border-black p-0 h-4 align-middle" colSpan={4}>ANTROPOMETRÍA</th>
+                            
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>HB</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>EST</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>SER</th>
+                            <th className="border border-black p-1 align-middle text-[10px]" rowSpan={2}>DIAGNÓSTICO MOTIVO DE CONSULTA</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>TIPO</th>
+                            <th className="border border-black p-0 align-middle" colSpan={3}>LAB</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>CIE</th>
+                        </tr>
+                        
+                        {/* SUB-CABECERAS MUY PEQUEÑAS (text-[7px]) PARA QUE QUEPAN */}
+                        <tr className="bg-gray-50 text-gray-700 font-bold text-center uppercase text-[7px]">
+                            <th className="border border-black p-0 h-4 align-middle">PESO</th>
+                            <th className="border border-black p-0 h-4 align-middle">TALLA</th>
+                            <th className="border border-black p-0 h-4 align-middle">P.C.</th>
+                            <th className="border border-black p-0 h-4 align-middle">P.AB</th>
+                            <th className="border border-black p-0 h-4 align-middle">1</th>
+                            <th className="border border-black p-0 h-4 align-middle">2</th>
+                            <th className="border border-black p-0 h-4 align-middle">3</th>
+                        </tr>
+                    </thead>
 
-                        return chunks.map((chunk, chunkIdx) => {
-                             // Rellenar chunk con vacíos si faltan
-                             while(chunk.length < 3) chunk.push({}); 
-                             const isFirst = chunkIdx === 0;
-
-                             return (
-                            <div key={`${idx}-${chunkIdx}`} className="flex border-b border-slate-200 hover:bg-blue-50 transition-colors group text-[10px] text-slate-700 h-auto min-h-[28px]">
+                    <tbody className="text-[10px]">
+                        {consolidatedPatients.length === 0 ? (
+                             <tr><td colSpan={20} className="text-center p-10 font-bold text-gray-400 border border-black">SIN DATOS</td></tr>
+                        ) : (
+                            consolidatedPatients.map((rec, idx) => {
+                                const p = rec.patient;
+                                const c = rec.clinical;
+                                const dxs = rec.diagnoses;
+                                const a = rec.ageObj;
                                 
-                                {/* # NUMERACIÓN */}
-                                <div className="w-8 border-r border-slate-300 bg-slate-50 text-slate-400 font-mono flex items-center justify-center text-[9px]">
-                                    {idx * 10 + chunkIdx + 1}
-                                </div>
+                                const totalRows = Math.ceil(Math.max(dxs.length, 1) / 3) * 3;
+                                const dxRows = Array.from({length: totalRows}, (_, i) => dxs[i] || { desc: '', tipo: '', lab1: '', lab2: '', lab3: '', codigo: '' });
+                                const blocks = [];
+                                for (let i = 0; i < dxRows.length; i += 3) blocks.push(dxRows.slice(i, i + 3));
 
-                                {/* DATOS PACIENTE (SOLO EN PRIMERA FILA DEL BLOQUE) */}
-                                <div className="w-10 border-r border-slate-200 flex items-center justify-center">
-                                    {isFirst ? (p.fecAtencion || "").split('-')[2] : ""}
-                                </div>
-                                <div className="w-20 border-r border-slate-200 flex items-center justify-center font-bold text-slate-900">
-                                    {isFirst ? p.dni : ""}
-                                </div>
-                                <div className="w-8 border-r border-slate-200 flex items-center justify-center">
-                                    {isFirst ? (p.financiador === 'SIS' ? '2' : '1') : ""}
-                                </div>
-                                <div className="w-[180px] border-r border-slate-200 flex items-center px-2 truncate" title={p.distrito}>
-                                    {isFirst ? p.distrito : ""}
-                                </div>
-                                <div className="w-10 border-r border-slate-200 flex items-center justify-center font-bold">
-                                    {isFirst ? (a.y > 0 ? a.y : a.m > 0 ? a.m + 'm' : a.d + 'd') : ""}
-                                </div>
-                                <div className="w-8 border-r border-slate-200 flex items-center justify-center font-bold">
-                                    {isFirst ? p.sexo : ""}
-                                </div>
+                                return blocks.map((block, blockIdx) => (
+                                    <React.Fragment key={`${idx}-${blockIdx}`}>
+                                        
+                                        {/* FILA 1 */}
+                                        <tr className="hover:bg-blue-50 transition-colors h-5">
+                                            <td className="border border-black text-center font-bold align-middle bg-white" rowSpan={3}>{(p.fecAtencion || "").split('-')[2]}</td>
+                                            <td className="border border-black text-center font-bold align-middle bg-white text-[9px]" rowSpan={3}>{p.dni}</td>
+                                            <td className="border border-black px-1 align-middle font-bold bg-white uppercase truncate text-[9px]" rowSpan={3} title={p.paciente}>{p.paciente}</td>
+                                            <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.financiador === 'SIS' ? '2' : '1'}</td>
+                                            <td className="border border-black px-1 align-middle text-[8px] bg-white truncate" rowSpan={3} title={p.distrito}>{p.distrito}</td>
+                                            <td className="border border-black text-center font-bold align-middle bg-white" rowSpan={3}>{a.y > 0 ? a.y : a.m > 0 ? a.m + 'm' : a.d + 'd'}</td>
+                                            <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.sexo}</td>
+                                            
+                                            {/* ANTROPOMETRÍA (SOLO NÚMEROS PEQUEÑOS) */}
+                                            <td className="border border-black text-center align-middle bg-white font-mono text-[9px]" rowSpan={3}>{c.peso}</td>
+                                            <td className="border border-black text-center align-middle bg-white font-mono text-[9px]" rowSpan={3}>{c.talla}</td>
+                                            <td className="border border-black text-center align-middle bg-white font-mono text-[9px]" rowSpan={3}>{c.pCef}</td>
+                                            <td className="border border-black text-center align-middle bg-white font-mono text-[9px]" rowSpan={3}>{c.pAbd}</td>
+                                            
+                                            <td className="border border-black text-center font-bold align-middle bg-white" rowSpan={3}>{c.hb}</td>
+                                            <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.condEst}</td>
+                                            <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.condServ}</td>
 
-                                {/* DATOS CLÍNICOS (ALINEADOS PERFECTAMENTE) */}
-                                <div className="w-12 border-r border-slate-200 flex items-center justify-center bg-slate-50/30">
-                                    {isFirst && c.talla ? c.talla : ""}
-                                </div>
-                                <div className="w-12 border-r border-slate-200 flex items-center justify-center bg-slate-50/30">
-                                    {isFirst && c.peso ? c.peso : ""}
-                                </div>
-                                <div className="w-12 border-r border-slate-200 flex flex-col justify-center items-center leading-none text-[9px] bg-slate-50/30">
-                                    {isFirst && c.pCef && <span>PC:{c.pCef}</span>}
-                                    {isFirst && c.pAbd && <span>PA:{c.pAbd}</span>}
-                                    {isFirst && !c.pCef && !c.pAbd && p.orientacion ? p.orientacion : ""}
-                                </div>
-                                <div className="w-12 border-r border-slate-200 flex items-center justify-center bg-slate-50/30 font-bold">
-                                    {isFirst && c.hb ? c.hb : ""}
-                                </div>
-                                <div className="w-10 border-r border-slate-200 flex items-center justify-center">
-                                    {isFirst ? p.condEst : ""}
-                                </div>
-                                <div className="w-10 border-r border-slate-200 flex items-center justify-center">
-                                    {isFirst ? p.condServ : ""}
-                                </div>
+                                            {/* DIAGNÓSTICO 1 (EXPANDIDO) */}
+                                            <td className="border border-black px-1 align-middle uppercase text-[9px] truncate">{block[0].desc}</td>
+                                            <td className="border border-black text-center font-bold align-middle">{block[0].tipo}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[0].lab1}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[0].lab2}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[0].lab3}</td>
+                                            <td className="border border-black text-center font-bold align-middle text-[9px]">{block[0].codigo}</td>
+                                        </tr>
 
-                                {/* ZONA DE DIAGNÓSTICOS (SUB-TABLA VERTICAL) */}
-                                <div className="flex flex-col flex-1">
-                                    {chunk.map((d, i) => (
-                                        <div key={i} className={`flex h-7 items-center ${i < 2 ? 'border-b border-slate-100' : ''}`}>
-                                            <div className="w-[350px] px-2 truncate font-medium text-slate-700 uppercase border-r border-slate-100 flex items-center h-full" title={d.desc}>
-                                                {d.desc}
-                                            </div>
-                                            <div className={`w-10 border-r border-slate-100 text-center font-bold flex items-center justify-center h-full
-                                                ${d.tipo === 'D' ? 'text-blue-600' : d.tipo === 'P' ? 'text-amber-500' : d.tipo === 'R' ? 'text-emerald-500' : ''}
-                                            `}>
-                                                {d.tipo}
-                                            </div>
-                                            <div className="w-12 border-r border-slate-100 text-center font-mono text-slate-500 flex items-center justify-center h-full">{d.lab1}</div>
-                                            <div className="w-12 border-r border-slate-100 text-center font-mono text-slate-500 flex items-center justify-center h-full">{d.lab2}</div>
-                                            <div className="w-12 border-r border-slate-100 text-center font-mono text-slate-500 flex items-center justify-center h-full">{d.lab3}</div>
-                                            <div className="w-14 text-center font-black text-slate-800 bg-yellow-50/50 flex items-center justify-center h-full">
-                                                {d.codigo}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )});
-                    })
-                )}
-                {/* RELLENO DE HOJA VACÍA */}
-                {Array.from({ length: Math.max(0, 15 - consolidatedPatients.length * 2) }).map((_, i) => (
-                    <div key={`empty-${i}`} className="flex border-b border-slate-100 h-6">
-                        <div className="w-8 border-r border-slate-200 bg-slate-50/50"></div>
-                        <div className="flex-1"></div>
-                    </div>
-                ))}
-              </div>
+                                        {/* FILA 2 */}
+                                        <tr className="hover:bg-blue-50 transition-colors h-5">
+                                            <td className="border border-black px-1 align-middle uppercase text-[9px] truncate">{block[1].desc}</td>
+                                            <td className="border border-black text-center font-bold align-middle">{block[1].tipo}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[1].lab1}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[1].lab2}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[1].lab3}</td>
+                                            <td className="border border-black text-center font-bold align-middle text-[9px]">{block[1].codigo}</td>
+                                        </tr>
+
+                                        {/* FILA 3 */}
+                                        <tr className="hover:bg-blue-50 transition-colors h-5">
+                                            <td className="border border-black px-1 align-middle uppercase text-[9px] truncate">{block[2].desc}</td>
+                                            <td className="border border-black text-center font-bold align-middle">{block[2].tipo}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[2].lab1}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[2].lab2}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[2].lab3}</td>
+                                            <td className="border border-black text-center font-bold align-middle text-[9px]">{block[2].codigo}</td>
+                                        </tr>
+                                        
+                                        <tr className="h-[2px] bg-black"><td colSpan={20} className="bg-black p-0 border-0"></td></tr>
+                                    </React.Fragment>
+                                ));
+                            })
+                        )}
+                        {consolidatedPatients.length < 5 && Array.from({length: 3}).map((_, i) => (
+                             <tr key={`filler-${i}`}><td className="border border-black h-16" colSpan={7}></td><td className="border border-black" colSpan={4}></td><td className="border border-black" colSpan={3}></td><td className="border border-black" colSpan={6}></td></tr>
+                        ))}
+                    </tbody>
+                </table>
             </div>
           </div>
         </div>
