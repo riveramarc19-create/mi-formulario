@@ -694,6 +694,9 @@ const LAB_CONFIG = {
 '99402.08': { 
         1: { label: 'N°', options: ['1','2'] }, 
             },
+'99402.04': { 
+        1: { label: 'N°', options: ['1','2'] }, 
+            },
 'E45X': { 
         1: { label: 'RESULT', options: ['TE'] }, 
             },
