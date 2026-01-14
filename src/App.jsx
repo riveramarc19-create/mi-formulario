@@ -692,7 +692,7 @@ const LAB_CONFIG = {
         1: { label: 'RESULT', options: ['IMC','VACIO'] }, 
             },
 '99403.01': { 
-        1: { label: 'TIPO', options: ['VACIO','RD','PD'] }, 
+        1: { label: 'TIPO', options: ['','RD','PD'] }, 
             },
 '99402.08': { 
         1: { label: 'N°', options: ['1','2'] }, 
