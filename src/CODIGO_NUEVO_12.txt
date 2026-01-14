@@ -608,22 +608,10 @@ const LAB_CONFIG = {
     '99199.27': { 1: ['1', '2', '3'] },
     '59401.05': { 1: ['1', '2', '3'] },
     '59401.06': { 1: ['1', '2', '3', 'TA'] },
-
+    'R456': { 1: ['G'] },
 
     // CASOS CON TEXTO PERSONALIZADO (Objeto con 'label')
     // Z359 cubre Z3591, Z3592, Z3593 gracias a la búsqueda parcial
-
-    'R456': {
-         1: { label: ['TIPO'] , options: ['G', '']}
-            },
-    '88141': {
-         1: { label: ['TIPO'] , options: ['N', '','A']}
-            },
-    '88141.01': {
-         1: { label: ['TIPO'] , options: ['N','A']}
-            },
-
-
     'Z3591': { 
         1: { label: 'N° CPN', options: ['1', '2', '3', '4', '5', '6', '7', '8', '9'] }, 
         2: { label: 'SEM<14', options: [] } // 'SEM' es mejor para el espacio pequeño
@@ -650,8 +638,8 @@ const LAB_CONFIG = {
     },
 
     '99199.22': { 
-        1: { label: 'SISTOLICA', options: [] }, 
-        2: { label: 'DIASTOLICA', options: [] }
+        1: { label: 'DIAST', options: [] }, 
+        2: { label: 'SIST', options: [] }
     }
 
 };
@@ -1852,58 +1840,20 @@ export default function App() {
            if (!d.codigo) continue;
 
            const currentCode = d.codigo.trim().toUpperCase();
-           // A. BUSCAR CONFIGURACIÓN DE LABS
            const config = LAB_CONFIG[currentCode] || LAB_CONFIG[currentCode.substring(0, 4)];
 
            if (config) {
-               // Función auxiliar para saber si el campo permite estar vacío
-               const permiteVacio = (conf) => {
-                   if (!conf) return false; // No configurado
-                   const opciones = Array.isArray(conf) ? conf : (conf.options || []);
-                   return opciones.includes(''); // ¿Existe la opción vacía en la lista?
-               };
-
-               // Validar LAB 1
-               if (config[1] !== undefined) {
-                   // Si NO tiene valor Y NO permite vacío -> Error
-                   if ((!d.lab1 || d.lab1.trim() === '') && !permiteVacio(config[1])) {
-                       setValidationAlert({
-                           isOpen: true, type: 'LAB_MISSING',
-                           title: `Falta LAB 1 en Fila ${i + 1}`,
-                           message: `El diagnóstico ${currentCode} requiere valor en el LAB 1.`,
-                           details: 'Seleccione una opción.'
-                       });
-                       return; 
-                   }
+               if (config[1] !== undefined && (!d.lab1 || d.lab1.trim() === '')) {
+                   setValidationAlert({ isOpen: true, type: 'LAB_MISSING', title: `Falta LAB 1 en Fila ${i + 1}`, message: `El diagnóstico ${currentCode} requiere obligatoriamente un valor en el primer campo LAB.`, details: 'El campo se muestra en rojo o habilitado. Por favor complételo.' });
+                   return;
                }
-
-               // Validar LAB 2
-               if (config[2] !== undefined) {
-                   if ((!d.lab2 || d.lab2.trim() === '') && !permiteVacio(config[2])) {
-                       setValidationAlert({
-                           isOpen: true, type: 'LAB_MISSING',
-                           title: `Falta LAB 2 en Fila ${i + 1}`,
-                           message: `El diagnóstico ${currentCode} requiere valor en el LAB 2.`,
-                           details: 'Seleccione una opción.'
-                       });
-                       return; 
-                   }
+               if (config[2] !== undefined && (!d.lab2 || d.lab2.trim() === '')) {
+                   setValidationAlert({ isOpen: true, type: 'LAB_MISSING', title: `Falta LAB 2 en Fila ${i + 1}`, message: `El diagnóstico ${currentCode} requiere obligatoriamente un valor en el segundo campo LAB.`, details: 'Este código exige múltiples valores LAB.' });
+                   return;
                }
-
-               // Validar LAB 3 (CON EXCEPCIÓN GESTANTES)
-               if (config[3] !== undefined) {
-                   const esExcepcionGestante = (currentCode === 'Z3593' || currentCode === 'Z3493' || currentCode === 'Z3591' || currentCode === 'Z3592');
-                   
-                   // Si NO tiene valor, NO es excepción gestante Y NO permite vacío -> Error
-                   if ((!d.lab3 || d.lab3.trim() === '') && !esExcepcionGestante && !permiteVacio(config[3])) {
-                       setValidationAlert({
-                           isOpen: true, type: 'LAB_MISSING',
-                           title: `Falta LAB 3 en Fila ${i + 1}`,
-                           message: `El diagnóstico ${currentCode} requiere valor en el LAB 3.`,
-                           details: 'Complete el campo.'
-                       });
-                       return; 
-                   }
+               if (config[3] !== undefined && (!d.lab3 || d.lab3.trim() === '')) {
+                   setValidationAlert({ isOpen: true, type: 'LAB_MISSING', title: `Falta LAB 3 en Fila ${i + 1}`, message: `El diagnóstico ${currentCode} requiere obligatoriamente un valor en el tercer campo LAB.`, details: 'Este código exige completar todos los campos LAB.' });
+                   return;
                }
            }
 
@@ -4047,109 +3997,61 @@ export default function App() {
               {/* PASO 3: DIAGNÓSTICOS */}
               {/* PASO 3: DIAGNÓSTICOS CON LAB INTERACTIVO */}
               {/* PASO 3: DIAGNÓSTICOS CON LAB INTERACTIVO (CORREGIDO) */}
-        {/* PASO 3: DIAGNÓSTICOS (DISEÑO MEJORADO + PRIMERA FILA PROTEGIDA) */}
       {step === 3 && (
-        <div className="animate-in fade-in slide-in-from-right-8 duration-300 w-full max-w-[95%] mx-auto pb-10">
-           
-           {/* CABECERA */}
-           <div className="flex justify-between items-end mb-6 p-6 rounded-3xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-white shadow-sm">
-              <div>
-                  <h3 className="font-black text-indigo-900 text-xl tracking-tight">Diagnósticos y Procedimientos (CIE-10)</h3>
-                  <p className="text-xs mt-1.5 font-bold text-indigo-400 uppercase tracking-wider">
-                      Registre los diagnósticos.
-                  </p>
-              </div>
-              <div className="bg-white px-4 py-2 rounded-xl border border-indigo-100 shadow-sm">
-                  <span className="text-[10px] font-black text-slate-400 uppercase">Registros:</span>
-                  <span className="ml-2 text-lg font-black text-indigo-600">{diagnoses.length}</span>
-              </div>
+        <div className="animate-in fade-in slide-in-from-right-8 duration-300 w-full max-w-[95%] mx-auto">
+           <div className={`flex justify-between items-end mb-6 p-5 rounded-2xl border ${getTheme(3).bgLight} ${getTheme(3).border}`}>
+              <div><h3 className="font-extrabold text-slate-700 text-lg">Diagnósticos CIE-10</h3><p className={`text-xs mt-1 font-medium ${getTheme(3).labelText}`}>Haga clic en las filas para buscar y editar</p></div>
            </div>
-
-           {/* ENCABEZADOS DE LA TABLA */}
-           <div className="hidden md:grid grid-cols-12 gap-4 px-4 mb-2 text-[9px] font-extrabold text-slate-400 uppercase tracking-widest">
-              <div className="col-span-1 text-center">Buscar</div>
-              <div className="col-span-6 pl-2">Descripción del Diagnóstico</div>
-              <div className="col-span-1 text-center">Tipo</div>
-              <div className="col-span-2 text-center">Campos LAB</div>
-              <div className="col-span-2 text-center">Código / Acción</div>
-           </div>
-
            <div className="space-y-3">
+              <div className={`grid grid-cols-12 gap-3 text-[10px] font-bold uppercase px-3 items-center ${getTheme(3).labelText}`}><div className="col-span-1 text-center">Opción</div><div className="col-span-6">Diagnóstico Seleccionado</div><div className="col-span-1 text-center">Tipo</div><div className="col-span-2 text-center">Lab</div><div className="col-span-2 text-center">CIE-10</div></div>
+            
             {diagnoses.map((dx, idx) => {
               const hasError = dxErrors[idx];
-              const containerClass = hasError 
-                  ? "border-red-500 ring-2 ring-red-100 bg-red-50/10" 
-                  : "border-slate-200 bg-white hover:border-indigo-300 hover:shadow-md";
-              
+              const errorBorder = hasError ? "border-red-500 ring-2 ring-red-100" : "border-slate-200"; 
               const showAddButton = (idx === diagnoses.length - 1);
               
-              // --- ESTA VARIABLE PROTEGE LA PRIMERA FILA ---
-              const isFirstRow = idx === 0; 
+              // 1. OBTENER CÓDIGO ACTUAL (Limpiamos espacios)
+              const currentCode = dx.codigo ? dx.codigo.trim().toUpperCase() : "";
+              
+              // NOTA: Aquí borré la línea que causaba el error (LAB_SUGGESTIONS)
 
               return (
-              <div key={idx} className={`grid grid-cols-12 gap-4 items-center p-2 pr-4 rounded-2xl border transition-all duration-300 group relative ${containerClass}`}>
+              <div key={idx} className={`grid grid-cols-12 gap-3 items-center bg-white p-3 rounded-xl border ${errorBorder} hover:shadow-lg transition-all group relative z-0`}>
                 
-                {/* 1. BOTÓN LUPA */}
-                <div className="col-span-1 flex justify-center">
-                    <button 
-                        onClick={() => openDxSearch(idx)} 
-                        className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-500 hover:bg-indigo-600 hover:text-white border border-indigo-100 flex items-center justify-center transition-all active:scale-95 shadow-sm"
-                    >
-                        <Search size={18} strokeWidth={2.5}/>
-                    </button>
-                </div>
+                {/* BOTÓN BUSCAR */}
+                <div className="col-span-1 flex justify-center"><button onClick={() => openDxSearch(idx)} className={`w-10 h-10 rounded-xl bg-${stepColors[2]}-50 text-${stepColors[2]}-600 flex items-center justify-center border border-${stepColors[2]}-200 hover:bg-${stepColors[2]}-600 hover:text-white transition-colors`}><Search size={18}/></button></div>
                 
-                {/* 2. BARRA DE DESCRIPCIÓN */}
-                <div className="col-span-6 relative group/input" onClick={() => openDxSearch(idx)}>
-                    <div className="absolute inset-y-0 left-0 w-1 bg-indigo-500 rounded-l-xl opacity-0 group-hover/input:opacity-100 transition-opacity"></div>
-                    <div className="w-full h-12 px-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center cursor-pointer group-hover/input:bg-white group-hover/input:border-indigo-300 transition-all shadow-sm">
-                        {dx.desc ? (
-                            <span className="text-xs font-bold text-slate-700 truncate uppercase tracking-tight">{dx.desc}</span>
-                        ) : (
-                            <span className="text-xs font-bold text-slate-300 italic flex items-center gap-2">
-                                <Search size={12}/> Seleccionar diagnóstico...
-                            </span>
-                        )}
-                    </div>
-                </div>
+                {/* DESCRIPCIÓN */}
+                <div className="col-span-6 relative" onClick={() => openDxSearch(idx)}><div className={`w-full h-10 px-3 border-2 rounded-xl flex items-center bg-slate-50 cursor-pointer hover:bg-white hover:border-${stepColors[2]}-300 transition-colors`}>{dx.desc ? <span className="text-xs font-bold text-slate-700 truncate uppercase">{dx.desc}</span> : <span className="text-xs text-slate-400 italic">Clic para buscar diagnóstico...</span>}</div></div>
                 
-                {/* 3. TIPO */}
-                <div className="col-span-1 flex justify-center">
-                    <div className={`
-                        w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm text-white shadow-sm border-2 border-white ring-2 ring-opacity-50 transition-all cursor-pointer hover:scale-110
-                        ${dx.tipo === 'P' ? 'bg-amber-500 ring-amber-100' : 
-                          dx.tipo === 'D' ? 'bg-blue-600 ring-blue-100' : 
-                          dx.tipo === 'R' ? 'bg-emerald-500 ring-emerald-100' : 'bg-slate-200 text-slate-400 ring-slate-100'}
-                    `}
-                    onClick={() => openDxSearch(idx)}
-                    >
-                        {dx.tipo || '-'}
-                    </div>
-                </div>
+                               {/* TIPO (P/D/R) */}
+                <div className="col-span-1 flex justify-center"><div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black text-base text-white shadow-sm ${dx.tipo === 'P' ? 'bg-amber-500' : dx.tipo === 'D' ? 'bg-blue-600' : dx.tipo === 'R' ? 'bg-emerald-500' : 'bg-slate-300'}`}>{dx.tipo}</div></div>
                 
-                {/* 4. CAMPOS LAB */}
-                {/* 4. CAMPOS LAB (REDSEÑADOS: ETIQUETA ADENTRO + ALERTA ROJA) */}
-                <div className="col-span-2 flex gap-1.5 justify-center">
+                {/* --- CAMPOS LAB INTERACTIVOS (MULTI-LAB 1, 2, 3) --- */}
+                 {/* --- CAMPOS LAB INTERACTIVOS (CON TEXTO PERSONALIZADO) --- */}
+                <div className="col-span-2 flex gap-2 justify-center relative">
                     {[1, 2, 3].map((n) => {
-                        // 1. Obtener configuración
+                        // 1. OBTENER CONFIGURACIÓN
                         const currentCode = dx.codigo ? dx.codigo.trim().toUpperCase() : "";
                         const codeConfig = LAB_CONFIG[currentCode] || LAB_CONFIG[currentCode.substring(0, 4)];
+                        
+                        // 2. EXTRAER DATOS DE LA CASILLA (Soporta Array o Objeto)
                         const configItem = codeConfig ? codeConfig[n] : undefined;
-                        
-                        // Determinar estado
                         const isSlotActive = configItem !== undefined;
-                        const slotLabel = (!Array.isArray(configItem) && configItem?.label) ? configItem.label : `LAB ${n}`;
                         
+                        // Si es Array, es simple. Si es Objeto, tiene label y options.
+                        const slotOptions = Array.isArray(configItem) ? configItem : (configItem?.options || []);
+                        const slotLabel = (!Array.isArray(configItem) && configItem?.label) ? configItem.label : "LAB";
+
                         const isFocused = focusedLab.rowIndex === idx && focusedLab.labNum === n;
                         const hasValue = dx[`lab${n}`] && dx[`lab${n}`].length > 0;
 
                         return (
-                            <div key={n} className="relative group/lab">
-                                
-                                {/* MENÚ DE SUGERENCIAS (Se mantiene igual) */}
-                                {isFocused && isSlotActive && ((Array.isArray(configItem) ? configItem : (configItem?.options||[])).length > 0) && (
-                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white border border-slate-200 shadow-xl rounded-xl p-1.5 flex gap-1 z-50 animate-in zoom-in duration-200 min-w-[80px] justify-center flex-wrap">
-                                        {(Array.isArray(configItem) ? configItem : configItem.options).map(sug => (
+                            <div key={n} className="relative">
+                                {/* MENÚ FLOTANTE */}
+                                {isFocused && isSlotActive && slotOptions.length > 0 && (
+                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white border border-slate-200 shadow-xl rounded-xl p-1.5 flex gap-1 z-50 animate-in zoom-in duration-200 min-w-[120px] justify-center flex-wrap">
+                                        {slotOptions.map(sug => (
                                             <button 
                                                 key={sug}
                                                 onMouseDown={(e) => {
@@ -4159,34 +4061,33 @@ export default function App() {
                                                     setDiagnoses(newDx);
                                                     setFocusedLab({ rowIndex: null, labNum: null });
                                                 }}
-                                                className="px-2 py-1 bg-indigo-50 hover:bg-indigo-500 hover:text-white text-indigo-700 text-[9px] font-bold rounded-md transition-colors"
+                                                className="px-2 py-1 bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-700 text-[10px] font-bold rounded-lg transition-colors border border-blue-100"
                                             >
-                                                {sug === '' ? '(VACÍO)' : sug}
+                                                {sug}
                                             </button>
                                         ))}
                                     </div>
                                 )}
 
-                                {/* INPUT CON LÓGICA DE COLORES Y PLACEHOLDER */}
+                                {/* INPUT INTELIGENTE */}
                                 <input 
-                                    className={`
-                                        w-14 h-11 border-2 rounded-xl text-center text-[10px] font-black outline-none transition-all uppercase shadow-sm
+                                    className={`w-16 h-12 border-2 rounded-xl text-center text-xs font-black outline-none transition-all uppercase
                                         ${!isSlotActive 
-                                            ? 'border-slate-50 bg-slate-50 text-transparent cursor-default' // 1. Deshabilitado (Invisible)
+                                            ? 'border-slate-100 bg-slate-100 text-slate-300 cursor-not-allowed' 
                                             : isFocused 
-                                                ? 'border-indigo-500 bg-white ring-4 ring-indigo-100 z-20 relative placeholder:text-indigo-200' // 2. Escribiendo (Azul)
+                                                ? 'border-blue-500 ring-4 ring-blue-100 bg-white z-20 relative placeholder:text-blue-300' 
                                                 : hasValue
-                                                    ? 'border-emerald-500 bg-emerald-50 text-emerald-800' // 3. Completo (Verde)
-                                                    : 'border-red-300 bg-red-50 text-red-900 placeholder:text-red-400/70' // 4. VACÍO Y REQUERIDO (Rojo)
+                                                    ? 'border-emerald-500 bg-emerald-100 text-emerald-800 shadow-sm' 
+                                                    : 'border-red-300 bg-red-50 placeholder-red-400 text-red-900 animate-pulse' 
                                         } 
-                                    `}
-                                    // AQUI ESTA LA MAGIA: El texto se ve DENTRO
-                                    placeholder={isSlotActive ? slotLabel : ""}
+                                        placeholder:text-[9px] placeholder:font-extrabold`} // AJUSTE DE TEXTO AQUÍ
                                     
+                                    placeholder={isSlotActive ? slotLabel : "-"}
                                     disabled={!isSlotActive}
                                     maxLength={4}
                                     value={dx[`lab${n}`] || ''}
                                     onFocus={() => setFocusedLab({ rowIndex: idx, labNum: n })}
+                                    // SIN onBlur PARA QUE FUNCIONE EL CLIC DEL MENÚ
                                     onChange={(e) => {
                                         const val = e.target.value.toUpperCase().slice(0, 4);
                                         const newDx = [...diagnoses];
@@ -4198,44 +4099,18 @@ export default function App() {
                         );
                     })}
                 </div>                
-                {/* 5. CÓDIGO + ACCIONES */}
-                <div className="col-span-2 flex justify-end items-center gap-3">
-                    <div className={`px-3 py-2 rounded-lg font-black text-xs min-w-[70px] text-center shadow-sm border
-                        ${dx.codigo ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-100 text-slate-300 border-slate-200'}`}>
-                        {dx.codigo || '---'}
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                        {showAddButton && ( 
-                            <button 
-                                onClick={addDx} 
-                                title="Agregar nueva fila" 
-                                className="w-9 h-9 bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-full flex items-center justify-center transition-all shadow-md hover:shadow-lg hover:scale-110 active:scale-95 animate-in zoom-in"
-                            >
-                                <Plus size={18} strokeWidth={3} />
-                            </button> 
-                        )}
-                        
-                        {/* BOTÓN ELIMINAR (SOLO SI NO ES LA PRIMERA FILA) */}
-                        {!isFirstRow ? (
-                            <button 
-                                onClick={(e) => { e.stopPropagation(); removeDx(idx); }} 
-                                className="w-9 h-9 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full flex items-center justify-center transition-all"
-                                title="Eliminar fila"
-                            >
-                                <Trash2 size={18}/>
-                            </button>
-                        ) : (
-                            <div className="w-9 h-9"></div> // Espacio vacío
-                        )}
-                    </div>
+                {/* CÓDIGO CIE-10 + BOTONES ACCIÓN */}
+                <div className="col-span-2 flex justify-center items-center gap-2 relative">
+                    <div className="font-black text-slate-800 text-sm bg-slate-100 px-3 py-2 rounded-lg min-w-[60px] text-center">{dx.codigo || '---'}</div>
+                    {showAddButton && ( <button onClick={addDx} title="Agregar siguiente fila" className="w-8 h-8 bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-full flex items-center justify-center transition-colors shadow-sm animate-in zoom-in"><Plus size={16} strokeWidth={3} /></button> )}
+                    <button onClick={(e) => { e.stopPropagation(); removeDx(idx); }} className="absolute -right-2 top-2 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={16}/></button>
                   </div>
                </div>
             )})}
-            <div ref={dxBottomRef} className="h-32 w-full bg-transparent"></div>
+            <div ref={dxBottomRef} className="h-24 w-full bg-transparent"></div>
           </div>
         </div>
-      )}     
+      )}
               {/* PASO 4: EXCEL PREVIEW */}
               {/* PASO 4: EXCEL PREVIEW (MEJORADO PRO) */}
       {/* PASO 4: EXCEL PREVIEW (ALINEACIÓN PERFECTA) */}
