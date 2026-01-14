@@ -631,6 +631,10 @@ const LAB_CONFIG = {
     '11975': {
          1: { label: ['INSUMOS'] , options: ['1','']}
             },
+    '99208.13': {
+         1: { label: ['INSUMOS'] , options: ['1','4']}
+            },
+
     'R456': {
          1: { label: ['TIPO'] , options: ['G', '']}
             },
