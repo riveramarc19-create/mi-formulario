@@ -697,6 +697,9 @@ const LAB_CONFIG = {
 '99402.08': { 
         1: { label: 'N°', options: ['1','2'] }, 
             },
+'U2142': { 
+        1: [''] , 
+            },
 '99402.04': { 
         1: { label: 'N°', options: ['1','2'] }, 
             },
@@ -4202,19 +4205,49 @@ export default function App() {
                 </div>
                 
                 {/* 2. BARRA DE DESCRIPCIÓN */}
+                {/* 2. BARRA DE DESCRIPCIÓN (CON BORRADOR TIPO "X") */}
                 <div className="col-span-6 relative group/input" onClick={() => openDxSearch(idx)}>
                     <div className="absolute inset-y-0 left-0 w-1 bg-indigo-500 rounded-l-xl opacity-0 group-hover/input:opacity-100 transition-opacity"></div>
-                    <div className="w-full h-12 px-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center cursor-pointer group-hover/input:bg-white group-hover/input:border-indigo-300 transition-all shadow-sm">
+                    
+                    {/* Contenedor principal */}
+                    <div className="w-full h-12 pl-4 pr-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center cursor-pointer group-hover/input:bg-white group-hover/input:border-indigo-300 transition-all shadow-sm relative">
+                        
+                        {/* Texto del Diagnóstico */}
                         {dx.desc ? (
-                            <span className="text-xs font-bold text-slate-700 truncate uppercase tracking-tight">{dx.desc}</span>
+                            <span className="text-xs font-bold text-slate-700 truncate uppercase tracking-tight w-full">
+                                {dx.desc}
+                            </span>
                         ) : (
                             <span className="text-xs font-bold text-slate-300 italic flex items-center gap-2">
                                 <Search size={12}/> Seleccionar diagnóstico...
                             </span>
                         )}
+
+                        {/* --- BOTÓN DE BORRAR (X) --- */}
+                        {/* Solo aparece si hay un diagnóstico seleccionado */}
+                        {dx.desc && (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation(); // ¡IMPORTANTE! Evita que se abra el modal al borrar
+                                    
+                                    // Reseteamos esta fila a valores vacíos
+                                    const newDx = [...diagnoses];
+                                    newDx[idx] = { 
+                                        desc: '', 
+                                        tipo: '', // O el valor por defecto que prefieras
+                                        lab1: '', lab2: '', lab3: '', 
+                                        codigo: '' 
+                                    };
+                                    setDiagnoses(newDx);
+                                }}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full text-slate-400 hover:bg-red-100 hover:text-red-500 transition-all z-10 hover:scale-110"
+                                title="Borrar selección"
+                            >
+                                <X size={16} strokeWidth={2.5} />
+                            </button>
+                        )}
                     </div>
                 </div>
-                
                 {/* 3. TIPO */}
                 <div className="col-span-1 flex justify-center">
                     <div className={`
@@ -4231,6 +4264,8 @@ export default function App() {
                 
                 {/* 4. CAMPOS LAB */}
                 {/* 4. CAMPOS LAB (REDSEÑADOS: ETIQUETA ADENTRO + ALERTA ROJA) */}
+		{/* 4. CAMPOS LAB (TEXTO LIBRE, SIN ETIQUETAS, O CON MENÚ) */}
+                {/* 4. CAMPOS LAB (CON LÓGICA DE COLOR PARA "VACÍO") */}
                 <div className="col-span-2 flex gap-1.5 justify-center">
                     {[1, 2, 3].map((n) => {
                         // 1. Obtener configuración
@@ -4238,8 +4273,14 @@ export default function App() {
                         const codeConfig = LAB_CONFIG[currentCode] || LAB_CONFIG[currentCode.substring(0, 4)];
                         const configItem = codeConfig ? codeConfig[n] : undefined;
                         
-                        // Determinar estado
+                        // 2. Determinar estado y opciones
                         const isSlotActive = configItem !== undefined;
+                        const slotOptions = Array.isArray(configItem) ? configItem : (configItem?.options || []);
+                        
+                        // ¿Este campo permite estar vacío?
+                        const canBeEmpty = slotOptions.includes('');
+
+                        // Etiqueta (Placeholder)
                         const slotLabel = (!Array.isArray(configItem) && configItem?.label) ? configItem.label : `LAB ${n}`;
                         
                         const isFocused = focusedLab.rowIndex === idx && focusedLab.labNum === n;
@@ -4248,10 +4289,10 @@ export default function App() {
                         return (
                             <div key={n} className="relative group/lab">
                                 
-                                {/* MENÚ DE SUGERENCIAS (Se mantiene igual) */}
-                                {isFocused && isSlotActive && ((Array.isArray(configItem) ? configItem : (configItem?.options||[])).length > 0) && (
+                                {/* MENÚ DE SUGERENCIAS */}
+                                {isFocused && isSlotActive && slotOptions.length > 0 && (
                                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white border border-slate-200 shadow-xl rounded-xl p-1.5 flex gap-1 z-50 animate-in zoom-in duration-200 min-w-[80px] justify-center flex-wrap">
-                                        {(Array.isArray(configItem) ? configItem : configItem.options).map(sug => (
+                                        {slotOptions.map(sug => (
                                             <button 
                                                 key={sug}
                                                 onMouseDown={(e) => {
@@ -4261,7 +4302,11 @@ export default function App() {
                                                     setDiagnoses(newDx);
                                                     setFocusedLab({ rowIndex: null, labNum: null });
                                                 }}
-                                                className="px-2 py-1 bg-indigo-50 hover:bg-indigo-500 hover:text-white text-indigo-700 text-[9px] font-bold rounded-md transition-colors"
+                                                className={`px-2 py-1 text-[9px] font-bold rounded-md transition-colors border
+                                                    ${sug === '' 
+                                                        ? 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200' 
+                                                        : 'bg-indigo-50 hover:bg-indigo-500 hover:text-white text-indigo-700 border-indigo-100'
+                                                    }`}
                                             >
                                                 {sug === '' ? '(VACÍO)' : sug}
                                             </button>
@@ -4269,20 +4314,22 @@ export default function App() {
                                     </div>
                                 )}
 
-                                {/* INPUT CON LÓGICA DE COLORES Y PLACEHOLDER */}
+                                {/* INPUT CON LÓGICA TRICOLOR (VERDE, ROJO, GRIS) */}
                                 <input 
                                     className={`
                                         w-14 h-11 border-2 rounded-xl text-center text-[10px] font-black outline-none transition-all uppercase shadow-sm
                                         ${!isSlotActive 
-                                            ? 'border-slate-50 bg-slate-50 text-transparent cursor-default' // 1. Deshabilitado (Invisible)
+                                            ? 'border-slate-50 bg-slate-50 text-transparent cursor-default' // Deshabilitado
                                             : isFocused 
-                                                ? 'border-indigo-500 bg-white ring-4 ring-indigo-100 z-20 relative placeholder:text-indigo-200' // 2. Escribiendo (Azul)
+                                                ? 'border-indigo-500 bg-white ring-4 ring-indigo-100 z-20 relative placeholder:text-indigo-200' // Foco
                                                 : hasValue
-                                                    ? 'border-emerald-500 bg-emerald-50 text-emerald-800' // 3. Completo (Verde)
-                                                    : 'border-red-300 bg-red-50 text-red-900 placeholder:text-red-400/70' // 4. VACÍO Y REQUERIDO (Rojo)
+                                                    ? 'border-emerald-500 bg-emerald-50 text-emerald-800' // Lleno (Verde)
+                                                    : canBeEmpty
+                                                        ? 'border-slate-300 bg-white text-slate-600 placeholder:text-slate-300' // Vacío PERMITIDO (Gris) <--- ESTO PEDISTE
+                                                        : 'border-red-300 bg-red-50 text-red-900 placeholder:text-red-400/70' // Vacío OBLIGATORIO (Rojo)
                                         } 
                                     `}
-                                    // AQUI ESTA LA MAGIA: El texto se ve DENTRO
+                                    // Placeholder visible si está activo
                                     placeholder={isSlotActive ? slotLabel : ""}
                                     
                                     disabled={!isSlotActive}
@@ -4299,7 +4346,7 @@ export default function App() {
                             </div>
                         );
                     })}
-                </div>                
+                </div>
                 {/* 5. CÓDIGO + ACCIONES */}
                 <div className="col-span-2 flex justify-end items-center gap-3">
                     <div className={`px-3 py-2 rounded-lg font-black text-xs min-w-[70px] text-center shadow-sm border
