@@ -629,6 +629,31 @@ const LAB_CONFIG = {
         '88141.01': {
          1: { label: ['TIPO'] , options: ['N','A']}
             },
+  '85018.01': {
+         1: { label: ['N°'] , options: ['1','2','3','4']}
+            },
+'85018': {
+         1: { label: ['N°'] , options: ['1','2','3','4']}
+            },
+
+   '99401.33': {
+         1: { label: ['N°'] , options: ['1','2','']}
+            },
+    '99401.34': {
+         1: { label: ['N°'] , options: ['1','2','']}
+            },
+'86318.01': { 
+        1: { label: 'R.VIH', options: ['RN','RP'] }, 
+        2: { label: 'R.SIFILIS', options: ['RN','RP'] } // 'SEM' es mejor para el espacio pequeño
+    },
+'86803.01': { 
+        1: { label: 'RESULT', options: ['RN','RP'] }, 
+            },
+'99386.03': { 
+        1: { label: 'RESULT', options: ['N','A'] }, 
+            },
+
+
 
     'Z3591': { 
         1: { label: 'N° CPN', options: ['1', '2', '3', '4', '5', '6', '7', '8', '9'] }, 
