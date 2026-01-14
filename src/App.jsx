@@ -610,12 +610,36 @@ const LAB_CONFIG = {
     '59401.06': { 1: ['1', '2', '3', 'TA'] },
 
 
+
+
     // CASOS CON TEXTO PERSONALIZADO (Objeto con 'label')
     // Z359 cubre Z3591, Z3592, Z3593 gracias a la búsqueda parcial
-
+    '99208': {
+         1: { label: ['TIPO'] , options: ['TA', '']}
+            },
+    '99208.02': {
+         1: { label: ['INSUMOS'] , options: ['10', '30']}
+            },
+    '99208.04': {
+         1: { label: ['INSUMOS'] , options: ['1']}
+            },
+    '99208.05': {
+         1: { label: ['INSUMOS'] , options: ['1']}
+            },
+    '11975': {
+         1: { label: ['INSUMOS'] , options: ['1','']}
+            },
     'R456': {
          1: { label: ['TIPO'] , options: ['G', '']}
             },
+'99402.05': {
+         1: { label: ['N°'] , options: ['1','2']}
+            },
+
+'87342': {
+         1: { label: ['TIPO'] , options: ['RN', 'RP']}
+            },
+
     '88141': {
          1: { label: ['TIPO'] , options: ['N', '','A']}
             },
@@ -652,7 +676,21 @@ const LAB_CONFIG = {
 '99386.03': { 
         1: { label: 'RESULT', options: ['N','A'] }, 
             },
-
+'Z006': { 
+        1: { label: 'RESULT', options: ['IMC','VACIO'] }, 
+            },
+'O261': { 
+        1: { label: 'RESULT', options: ['IMC','VACIO'] }, 
+            },
+'E669': { 
+        1: { label: 'RESULT', options: ['IMC','VACIO'] }, 
+            },
+'99402.08': { 
+        1: { label: 'N°', options: ['1','2'] }, 
+            },
+'E45X': { 
+        1: { label: 'RESULT', options: ['TE'] }, 
+            },
 
 
     'Z3591': { 
