@@ -619,10 +619,16 @@ const LAB_CONFIG = {
     '88141': {
          1: { label: ['TIPO'] , options: ['N', '','A']}
             },
-    '88141.01': {
-         1: { label: ['TIPO'] , options: ['N','A']}
+    '81000.02': {
+         1: { label: ['TIPO'] , options: ['RN','RP']}
+            },
+    '82044': {
+         1: { label: ['TIPO'] , options: ['RN','RP']}
             },
 
+        '88141.01': {
+         1: { label: ['TIPO'] , options: ['N','A']}
+            },
 
     'Z3591': { 
         1: { label: 'N° CPN', options: ['1', '2', '3', '4', '5', '6', '7', '8', '9'] }, 
