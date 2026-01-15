@@ -650,6 +650,16 @@ const LAB_CONFIG = {
 '99501': {
          1: { label: ['N°'] , options: ['1','2']}
             },
+
+'C0010': {
+         1: { label: ['TIPO'] , options: ['']},
+         2: { label: ['TIPO'] , options: ['']}
+            },
+'C0009': {
+         1: { label: ['TIPO'] , options: ['']},
+         2: { label: ['TIPO'] , options: ['']}
+            },
+
 '99502': {
          1: { label: ['N°'] , options: ['1','2']}
             },
