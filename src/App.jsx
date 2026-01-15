@@ -644,7 +644,16 @@ const LAB_CONFIG = {
 '99401.02': {
          1: { label: ['N°'] , options: ['1','2','3']}
             },
+'99208.14': {
+         1: { label: ['TIPO'] , options: ['RSM','RSR','RSA']}
+            },
+'9940.14': {
+         1: { label: ['TIPO'] , options: ['RSM','RSR','RSA']}
+            },
 '99402.01': {
+         1: { label: ['N°'] , options: ['1','2','3']}
+            },
+'99402.03': {
          1: { label: ['N°'] , options: ['1','2','3']}
             },
 '99209': {
