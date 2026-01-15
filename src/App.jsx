@@ -591,7 +591,7 @@ const SeguimientoIndividualModal = ({ paciente, onClose }) => {
 // --- CONFIGURACIÓN MAESTRA DE LABS (Con Etiquetas Personalizadas) ---
 const LAB_CONFIG = {
     // CASOS SIMPLES (Array = Texto por defecto "LAB")
-    'D509': { 1: ['LEV', 'MOD', 'SEV'] }, 
+    'D509': { 1: ['LEV', 'MOD', 'SEV','PR'] }, 
     'D649': { 1: ['LEV', 'MOD', 'SEV'] },
     'O990': { 1: ['LEV', 'MOD', 'SEV'] },
    //'Z001': { 1: [''] },
@@ -640,6 +640,12 @@ const LAB_CONFIG = {
             },
 '99402.05': {
          1: { label: ['N°'] , options: ['1','2']}
+            },
+'99401.02': {
+         1: { label: ['N°'] , options: ['1','2','3']}
+            },
+'99209': {
+         1: { label: ['N°'] , options: ['1','2','3','4','5','6','7','8','9','10']}
             },
 '99501': {
          1: { label: ['N°'] , options: ['1','2']}
@@ -703,6 +709,9 @@ const LAB_CONFIG = {
 'E669': { 
         1: { label: 'RESULT', options: ['IMC','VACIO'] }, 
             },
+'E440': { 
+        1: [''], 
+            },
 '99403.01': { 
         1: { label: 'TIPO', options: ['','RD','PD'] }, 
             },
@@ -712,6 +721,13 @@ const LAB_CONFIG = {
 'U2142': { 
         1: [''] , 
             },
+'99207': { 
+        1: { label: 'N°', options: ['1','2','3','4','5'] }, 
+            },
+'99207.01': { 
+        1: { label: 'N°', options: ['1','2','3','4','5'] }, 
+            },
+
 'T743': { 
         1: [''] , 
             },
