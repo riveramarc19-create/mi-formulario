@@ -725,6 +725,10 @@ const LAB_CONFIG = {
 'Z006': { 
         1:  ['IMC','']  
             },
+'Z019': { 
+        1:  ['ALT','']  
+            },
+
 'O261': { 
         1: { label: 'RESULT', options: ['IMC','VACIO'] }, 
             },
