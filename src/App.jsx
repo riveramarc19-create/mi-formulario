@@ -954,7 +954,16 @@ export default function App() {
   const initialPatient = { dni: '', paciente: '', hc: '', fecNac: '', sexo: '', financiador: '', direccion: '', distrito: '', estAtencion: 'PACAIPAMPA', fecAtencion: '', condicion: '', fur: '', estOrigen: '', condEst: '', condServ: '' };
   const [patientData, setPatientData] = useState(initialPatient);
   //const [showNewBtn, setShowNewBtn] = useState(false);
-  const [savedPatients, setSavedPatients] = useState([]);
+  // --- CARGA DE DATOS GUARDADOS (PERSISTENCIA) ---
+  const [savedPatients, setSavedPatients] = useState(() => {
+      try {
+          const datosGuardados = localStorage.getItem('HIS_LOTE_PENDIENTE');
+          return datosGuardados ? JSON.parse(datosGuardados) : [];
+      } catch (e) {
+          console.error("Error cargando lote guardado", e);
+          return [];
+      }
+  });
   const [showNewBtn, setShowNewBtn] = useState(false);
   // CAMBIO: Formato de edad extendido
   const ageString = useMemo(() => { 
@@ -2150,6 +2159,7 @@ export default function App() {
   // 2. FUNCIÓN PARA EL BOTÓN "SÍ, DESEO GUARDAR"
 // 2. FUNCIÓN PARA EL BOTÓN "SÍ, DESEO GUARDAR" (LÓGICA HIS CORREGIDA)
     // 2. FUNCIÓN PARA EL BOTÓN "SÍ, DESEO GUARDAR" (LÓGICA INTELIGENTE)
+   // 2. FUNCIÓN PARA EL BOTÓN "SÍ, DESEO GUARDAR" (CON PERSISTENCIA DE DATOS)
   const confirmSavePatient = () => {
       // 1. Empaquetamos los datos actuales
       const newRecord = { 
@@ -2159,7 +2169,7 @@ export default function App() {
           ageObj: { ...ageObj } 
       };
 
-      // 2. Actualizamos la lista con filtro inteligente
+      // 2. Actualizamos la lista Y GUARDAMOS EN EL DISCO (LocalStorage)
       setSavedPatients(prev => {
           const index = prev.findIndex(p => 
               p.patient.dni === newRecord.patient.dni &&
@@ -2167,38 +2177,37 @@ export default function App() {
               JSON.stringify(p.diagnoses) === JSON.stringify(newRecord.diagnoses)
           );
 
+          let updatedList; // Creamos una variable temporal
+
           if (index >= 0) {
-              const updated = [...prev];
-              updated[index] = newRecord;
-              return updated;
+              updatedList = [...prev];
+              updatedList[index] = newRecord;
           } else {
-              return [...prev, newRecord];
+              updatedList = [...prev, newRecord];
           }
+
+          // >>> AQUÍ ESTÁ EL CAMBIO CLAVE: GUARDAR EN MEMORIA DEL NAVEGADOR <<<
+          localStorage.setItem('HIS_LOTE_PENDIENTE', JSON.stringify(updatedList));
+          
+          return updatedList; // Retornamos la lista actualizada para que se vea en pantalla
       });
 
-      // 3. Actualizamos estado de "Continuador" en base de datos
+      // 3. Actualizamos estado de "Continuador" en base de datos local
       if (patientData.id) {
           updateToContinuador(patientData.id);
       } 
       
-      // --- CAMBIO CLAVE AQUÍ ---
-      // NO usamos resetForm() completo porque nos mandaría al paso 1.
-      // En su lugar, limpiamos los datos del formulario MANUALMENTE para evitar duplicados en la vista previa
-      // pero mantenemos el STEP en 4 para ver el botón.
-      
+      // Limpieza del formulario visual
       setPatientData({ ...initialPatient, fecAtencion: patientData.fecAtencion, estAtencion: adminData.establecimiento, condEst: '', condServ: '' });
       setClinicalData(initialClinical);
       setDiagnoses([{ desc: '', tipo: '-', lab1: '', lab2: '', lab3: '', codigo: '' }]);
       setSearchTerm("");
       
-      // ACTIVAMOS EL BOTÓN VERDE
+      // Reactivamos botones y cerramos modal
       setShowNewBtn(true);
-      
-      // Cerramos el modal de confirmación
       setShowSaveConfirm(false); 
-      alert("✅ Registro guardado exitosamente."); 
-  };
-
+      alert("✅ Registro guardado. (Se mantendrá en memoria si cierra el navegador)."); 
+  }; 
   const generatePDF = () => {
     try {
         const allPatients = [...savedPatients];
@@ -2693,7 +2702,9 @@ export default function App() {
         setPrintCount(nextCount);
         localStorage.setItem('his_print_count', nextCount);
         // =====================================
-
+        // --- LIMPIEZA DE MEMORIA ---
+        localStorage.removeItem('HIS_LOTE_PENDIENTE'); // <--- AGREGA ESTO
+        
         setSavedPatients([]);
         resetForm();               
         setStep(1);                 
@@ -2960,6 +2971,13 @@ export default function App() {
         XLSX.writeFile(wb, `HIS_${adminData.mes}_${allPatients.length}_PACIENTES.xlsx`);
     
         // --- INICIO DEL CAMBIO: LIMPIEZA AUTOMÁTICA SIN PREGUNTAR ---
+        localStorage.removeItem('HIS_LOTE_PENDIENTE'); // <--- AGREGA ESTO
+        setSavedPatients([]);
+        
+        resetForm();
+        setStep(1);
+        setIsBatchFinished(false);
+        setIsCalendarOpen(true);
         setSavedPatients([]);
         // 1. Borra la lista de pacientes (Limpia el visor)
         resetForm();

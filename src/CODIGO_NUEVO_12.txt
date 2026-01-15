@@ -604,7 +604,7 @@ const LAB_CONFIG = {
     '99199.17': { 1: ['1', '2', '3', '4', '5', '6', '7', '8', 'TA'] },
     '99199.18': { 1: ['1', '2', '3', '4', '5', '6', '7', '8'] },
     '99199.19': { 1: ['1', '2', '3', '4', '5', '6', '7', '8'] },
-    '99199.26': { 1: ['1', '2', '3', '4', '5', '6', '7', '8'] },
+    '99199.26': { 1: ['1', '2', '3', '4', '5', '6', '7', '8','TA'] },
     '99199.27': { 1: ['1', '2', '3'] },
     '59401.05': { 1: ['1', '2', '3'] },
     '59401.06': { 1: ['1', '2', '3', 'TA'] },
@@ -613,7 +613,7 @@ const LAB_CONFIG = {
 
 
 
-
+//==============================================================================================
     // CASOS CON TEXTO PERSONALIZADO (Objeto con 'label')
     // Z359 cubre Z3591, Z3592, Z3593 gracias a la búsqueda parcial
     '99208': {
@@ -639,6 +639,18 @@ const LAB_CONFIG = {
          1: { label: ['TIPO'] , options: ['G', '']}
             },
 '99402.05': {
+         1: { label: ['N°'] , options: ['1','2']}
+            },
+'99501': {
+         1: { label: ['N°'] , options: ['1','2']}
+            },
+'99502': {
+         1: { label: ['N°'] , options: ['1','2']}
+            },
+'36416': {
+         1: { label: ['N°'] , options: ['1','2']}
+            },
+'99199.28': {
          1: { label: ['N°'] , options: ['1','2']}
             },
 
@@ -700,9 +712,51 @@ const LAB_CONFIG = {
 'U2142': { 
         1: [''] , 
             },
+'T743': { 
+        1: [''] , 
+            },
+'T748': { 
+        1: [''] , 
+            },
+'F930': { 
+        1: [''] , 
+            },
+'F931': { 
+        1: [''] , 
+            },
+'F932': { 
+        1: [''] , 
+            },
+'F064': { 
+        1: [''] , 
+            },
+'D2392': { 
+        1: [''] , 
+            },
+'K040': { 
+        1: [''] , 
+            },
+
+'D0150': { 
+        1: [''] , 
+            },
+'D0120': { 
+        1: [''] , 
+            },
+'D1110': { 
+        1: { label: 'N°', options: ['1','2'] }, 
+            },
+'D1310': { 
+        1: { label: 'N°', options: ['1','2'] }, 
+            },
+'D1330': { 
+        1: { label: 'N°', options: ['1','2'] }, 
+            },
+
 '99402.04': { 
         1: { label: 'N°', options: ['1','2'] }, 
             },
+
 'E45X': { 
         1: { label: 'RESULT', options: ['TE'] }, 
             },
@@ -719,15 +773,22 @@ const LAB_CONFIG = {
 '99209.04': { 
         1: { label: 'RIESGO', options: ['RSA','RSM','RSR'] }, 
             },
+'99384': { 
+        1: { label: 'N°', options: ['1','2','3'] }, 
+            },
 
+//==============================================================================================================
 '99801': { 
         1: { label: 'N°', options: ['TA','1','2',] },
         2: { label: 'TIPO', options: ['1','2'] },
         3: { label: 'ESCEN.', options: ['1','2','3'] }, 
             },
-'99384': { 
-        1: { label: 'N°', options: ['1','2','3'] }, 
-            },
+
+
+'99173': { 
+        1: { label: 'OJO DERECH', options: [''] }, 
+        2: { label: 'OJO IZQU.', options: [] } 
+    },
 
     'Z3591': { 
         1: { label: 'N° CPN', options: ['1', '2', '3', '4', '5', '6', '7', '8', '9'] }, 
@@ -893,7 +954,16 @@ export default function App() {
   const initialPatient = { dni: '', paciente: '', hc: '', fecNac: '', sexo: '', financiador: '', direccion: '', distrito: '', estAtencion: 'PACAIPAMPA', fecAtencion: '', condicion: '', fur: '', estOrigen: '', condEst: '', condServ: '' };
   const [patientData, setPatientData] = useState(initialPatient);
   //const [showNewBtn, setShowNewBtn] = useState(false);
-  const [savedPatients, setSavedPatients] = useState([]);
+  // --- CARGA DE DATOS GUARDADOS (PERSISTENCIA) ---
+  const [savedPatients, setSavedPatients] = useState(() => {
+      try {
+          const datosGuardados = localStorage.getItem('HIS_LOTE_PENDIENTE');
+          return datosGuardados ? JSON.parse(datosGuardados) : [];
+      } catch (e) {
+          console.error("Error cargando lote guardado", e);
+          return [];
+      }
+  });
   const [showNewBtn, setShowNewBtn] = useState(false);
   // CAMBIO: Formato de edad extendido
   const ageString = useMemo(() => { 
@@ -2089,6 +2159,7 @@ export default function App() {
   // 2. FUNCIÓN PARA EL BOTÓN "SÍ, DESEO GUARDAR"
 // 2. FUNCIÓN PARA EL BOTÓN "SÍ, DESEO GUARDAR" (LÓGICA HIS CORREGIDA)
     // 2. FUNCIÓN PARA EL BOTÓN "SÍ, DESEO GUARDAR" (LÓGICA INTELIGENTE)
+   // 2. FUNCIÓN PARA EL BOTÓN "SÍ, DESEO GUARDAR" (CON PERSISTENCIA DE DATOS)
   const confirmSavePatient = () => {
       // 1. Empaquetamos los datos actuales
       const newRecord = { 
@@ -2098,7 +2169,7 @@ export default function App() {
           ageObj: { ...ageObj } 
       };
 
-      // 2. Actualizamos la lista con filtro inteligente
+      // 2. Actualizamos la lista Y GUARDAMOS EN EL DISCO (LocalStorage)
       setSavedPatients(prev => {
           const index = prev.findIndex(p => 
               p.patient.dni === newRecord.patient.dni &&
@@ -2106,38 +2177,37 @@ export default function App() {
               JSON.stringify(p.diagnoses) === JSON.stringify(newRecord.diagnoses)
           );
 
+          let updatedList; // Creamos una variable temporal
+
           if (index >= 0) {
-              const updated = [...prev];
-              updated[index] = newRecord;
-              return updated;
+              updatedList = [...prev];
+              updatedList[index] = newRecord;
           } else {
-              return [...prev, newRecord];
+              updatedList = [...prev, newRecord];
           }
+
+          // >>> AQUÍ ESTÁ EL CAMBIO CLAVE: GUARDAR EN MEMORIA DEL NAVEGADOR <<<
+          localStorage.setItem('HIS_LOTE_PENDIENTE', JSON.stringify(updatedList));
+          
+          return updatedList; // Retornamos la lista actualizada para que se vea en pantalla
       });
 
-      // 3. Actualizamos estado de "Continuador" en base de datos
+      // 3. Actualizamos estado de "Continuador" en base de datos local
       if (patientData.id) {
           updateToContinuador(patientData.id);
       } 
       
-      // --- CAMBIO CLAVE AQUÍ ---
-      // NO usamos resetForm() completo porque nos mandaría al paso 1.
-      // En su lugar, limpiamos los datos del formulario MANUALMENTE para evitar duplicados en la vista previa
-      // pero mantenemos el STEP en 4 para ver el botón.
-      
+      // Limpieza del formulario visual
       setPatientData({ ...initialPatient, fecAtencion: patientData.fecAtencion, estAtencion: adminData.establecimiento, condEst: '', condServ: '' });
       setClinicalData(initialClinical);
       setDiagnoses([{ desc: '', tipo: '-', lab1: '', lab2: '', lab3: '', codigo: '' }]);
       setSearchTerm("");
       
-      // ACTIVAMOS EL BOTÓN VERDE
+      // Reactivamos botones y cerramos modal
       setShowNewBtn(true);
-      
-      // Cerramos el modal de confirmación
       setShowSaveConfirm(false); 
-      alert("✅ Registro guardado exitosamente."); 
-  };
-
+      alert("✅ Registro guardado. (Se mantendrá en memoria si cierra el navegador)."); 
+  }; 
   const generatePDF = () => {
     try {
         const allPatients = [...savedPatients];
@@ -2632,7 +2702,9 @@ export default function App() {
         setPrintCount(nextCount);
         localStorage.setItem('his_print_count', nextCount);
         // =====================================
-
+        // --- LIMPIEZA DE MEMORIA ---
+        localStorage.removeItem('HIS_LOTE_PENDIENTE'); // <--- AGREGA ESTO
+        
         setSavedPatients([]);
         resetForm();               
         setStep(1);                 
@@ -2899,6 +2971,13 @@ export default function App() {
         XLSX.writeFile(wb, `HIS_${adminData.mes}_${allPatients.length}_PACIENTES.xlsx`);
     
         // --- INICIO DEL CAMBIO: LIMPIEZA AUTOMÁTICA SIN PREGUNTAR ---
+        localStorage.removeItem('HIS_LOTE_PENDIENTE'); // <--- AGREGA ESTO
+        setSavedPatients([]);
+        
+        resetForm();
+        setStep(1);
+        setIsBatchFinished(false);
+        setIsCalendarOpen(true);
         setSavedPatients([]);
         // 1. Borra la lista de pacientes (Limpia el visor)
         resetForm();
@@ -4205,19 +4284,49 @@ export default function App() {
                 </div>
                 
                 {/* 2. BARRA DE DESCRIPCIÓN */}
+                {/* 2. BARRA DE DESCRIPCIÓN (CON BORRADOR TIPO "X") */}
                 <div className="col-span-6 relative group/input" onClick={() => openDxSearch(idx)}>
                     <div className="absolute inset-y-0 left-0 w-1 bg-indigo-500 rounded-l-xl opacity-0 group-hover/input:opacity-100 transition-opacity"></div>
-                    <div className="w-full h-12 px-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center cursor-pointer group-hover/input:bg-white group-hover/input:border-indigo-300 transition-all shadow-sm">
+                    
+                    {/* Contenedor principal */}
+                    <div className="w-full h-12 pl-4 pr-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center cursor-pointer group-hover/input:bg-white group-hover/input:border-indigo-300 transition-all shadow-sm relative">
+                        
+                        {/* Texto del Diagnóstico */}
                         {dx.desc ? (
-                            <span className="text-xs font-bold text-slate-700 truncate uppercase tracking-tight">{dx.desc}</span>
+                            <span className="text-xs font-bold text-slate-700 truncate uppercase tracking-tight w-full">
+                                {dx.desc}
+                            </span>
                         ) : (
                             <span className="text-xs font-bold text-slate-300 italic flex items-center gap-2">
                                 <Search size={12}/> Seleccionar diagnóstico...
                             </span>
                         )}
+
+                        {/* --- BOTÓN DE BORRAR (X) --- */}
+                        {/* Solo aparece si hay un diagnóstico seleccionado */}
+                        {dx.desc && (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation(); // ¡IMPORTANTE! Evita que se abra el modal al borrar
+                                    
+                                    // Reseteamos esta fila a valores vacíos
+                                    const newDx = [...diagnoses];
+                                    newDx[idx] = { 
+                                        desc: '', 
+                                        tipo: '', // O el valor por defecto que prefieras
+                                        lab1: '', lab2: '', lab3: '', 
+                                        codigo: '' 
+                                    };
+                                    setDiagnoses(newDx);
+                                }}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full text-slate-400 hover:bg-red-100 hover:text-red-500 transition-all z-10 hover:scale-110"
+                                title="Borrar selección"
+                            >
+                                <X size={16} strokeWidth={2.5} />
+                            </button>
+                        )}
                     </div>
                 </div>
-                
                 {/* 3. TIPO */}
                 <div className="col-span-1 flex justify-center">
                     <div className={`
