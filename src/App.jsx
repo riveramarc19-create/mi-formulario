@@ -699,11 +699,11 @@ const LAB_CONFIG = {
         '88141.01': {
          1: { label: ['TIPO'] , options: ['N','A']}
             },
-  '85018.01': {
-         1: { label: ['N°'] , options: ['1','2','3','4']}
+'85018.01': {
+         1: { label: ['LAB1'] , options: ['']}
             },
 '85018': {
-         1: { label: ['N°'] , options: ['1','2','3','4']}
+         1: { label: ['LAB1'] , options: ['']}
             },
 
    '99401.33': {
@@ -4677,7 +4677,7 @@ export default function App() {
                                             <td className="border border-black px-1 align-middle font-bold bg-white uppercase truncate text-[9px]" rowSpan={3} title={p.paciente}>{p.paciente}</td>
                                             <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.financiador === 'SIS' ? '2' : '1'}</td>
                                             <td className="border border-black px-1 align-middle text-[8px] bg-white truncate" rowSpan={3} title={p.distrito}>{p.distrito}</td>
-                                            <td className="border border-black text-center font-bold align-middle bg-white" rowSpan={3}>{a.y > 0 ? a.y : a.m > 0 ? a.m + 'm' : a.d + d}</td>
+                                            <td className="border border-black text-center font-bold align-middle bg-white" rowSpan={3}>{a.y > 0 ? a.y : a.m > 0 ? a.m + 'm' : a.d + 'd'}</td>
                                             <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.sexo}</td>
                                             
                                             {/* ANTROPOMETRÍA (SOLO NÚMEROS PEQUEÑOS) */}
