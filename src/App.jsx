@@ -1754,14 +1754,14 @@ export default function App() {
         const code = d.codigo.trim().toUpperCase();
 
         if (code === 'D509') {
-            const validLabs = ['LEV', 'MOD', 'SEV'];
+            const validLabs = ['LEV', 'MOD', 'SEV', 'PR'];
             if (!validLabs.includes(d.lab1)) {
                 setValidationAlert({
                     isOpen: true,
                     type: 'ANEMIA',
                     title: 'Validación de Anemia (D509)',
                     message: `En la fila ${i + 1}, el diagnóstico ANEMIA (D509) requiere especificar la severidad en el campo LAB 1.`,
-                    details: 'Valores permitidos: LEV, MOD o SEV.'
+                    details: 'Valores permitidos: LEV, MOD, SEV o PR.'
                 });
                 return false;
             }
@@ -3686,22 +3686,34 @@ export default function App() {
 
       {/* BOTÓN */}
       <div className="px-8 py-5 bg-slate-50 border-t border-slate-100 flex justify-end">
+         {/* BOTÓN DE ACCIÓN EN LA ALERTA */}
          <button 
             onClick={() => { 
-                setValidationAlert({ ...validationAlert, isOpen: false }); 
+                setValidationAlert({ ...validationAlert, isOpen: false });
                 
-                // NOTA: ELIMINÉ LA LÍNEA setStep(2) PARA QUE TE QUEDES EN DIAGNÓSTICOS A CORREGIR EL LAB
-                
-                // Si es transferencia, enfocar la HC
+                // --- LÓGICA NUEVA: SI ES ERROR DE HEMOGLOBINA ---
+                if (validationAlert.title.includes('Hemoglobina')) {
+                    setStep(2); // 1. Te lleva al Paso 2 (Datos Clínicos)
+                    setShowHbError(true); // 2. Activa la "Alarma" visual para pintar de rojo
+                    
+                    // Pequeño delay para enfocar el input automáticamente
+                    setTimeout(() => {
+                        const hbInput = document.querySelector('input[name="hb"]');
+                        if(hbInput) hbInput.focus();
+                    }, 300);
+                    return;
+                }
+
+                // Lógica existente de Transferencia
                 if (validationAlert.type === 'TRANSFER') {
                     setTimeout(() => {
                         const hcInput = document.querySelector('input[name="hc"]');
                         if (hcInput) { hcInput.focus(); hcInput.select(); }
                     }, 100);
                 }
-                // >>> AGREGAR ESTO: SI EL ERROR ES DE GESTANTE, IR AL PASO 1 <<<
+                // Lógica existente de Gestante
                 if (validationAlert.type === 'GESTANTE_REQUIRED') {
-                    setStep(1); // Regresamos al Paso 1 para que pueda poner la FUR
+                    setStep(1); 
                 }
             }}
             className={`px-8 py-3 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-sm tracking-wide text-white 
@@ -4191,31 +4203,67 @@ export default function App() {
                                         }
                                     }
                                     const isHbAlert = (item.isHb && showHbError && !clinicalData.hb);
+				    return (
+        <div key={idx} className={`relative group transition-all ${isLocked ? 'opacity-60 grayscale' : ''}`}>
+            <div className="flex items-center gap-3 p-2 rounded-[2rem] border border-slate-100 bg-white shadow-sm hover:shadow-md transition-all h-[5.5rem]">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ml-1 ${isLocked ? 'bg-slate-200 text-slate-400' : `bg-${item.color}-100 text-${item.color}-600`}`}>
+                    {item.icon}
+                </div>
+                <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
+                    <div className="flex justify-between items-center px-1">
+                        <label className="text-[9px] font-bold text-slate-500 uppercase truncate">{item.label}</label>
+                        {item.specialBtn && !clinicalData[item.name] && !isLocked && ( <button onClick={() => { if(item.name==='pAbd') setIgnorePAbdValidation(true); if(item.name==='pCef') setIgnorePCefValidation(true); if(item.name==='pPreGest') setIgnorePreGestValidation(true); }} className="text-[8px] bg-slate-100 text-slate-400 hover:bg-red-100 hover:text-red-500 px-2 py-0.5 rounded-full font-bold transition-colors">OMITIR</button> )}
+                        {pAbdStatus.text && ( <span className={`text-[8px] font-black px-2 py-0.5 rounded-lg ${pAbdStatus.bg} ${pAbdStatus.textCol} animate-in fade-in zoom-in`}>{pAbdStatus.text}</span> )}
+                    </div>
+                    <div className="relative">
+                        {/* --- AQUÍ ESTÁ LA LÓGICA DE COLORES CORREGIDA --- */}
+                        {(() => {
+                            // Variables de estado visual
+                            const isHbError = item.isHb && showHbError && !clinicalData.hb;
+                            const isHbSuccess = item.isHb && clinicalData.hb && clinicalData.hb.length > 0;
+                            const isPAbdError = item.name === 'pAbd' && !isLocked && pAbdStatus.color.includes('red');
+                            
+                            // Definir clases base
+                            let inputClasses = "w-full h-10 border-2 rounded-2xl px-3 text-xl font-black outline-none transition-all placeholder-slate-300 disabled:cursor-not-allowed ";
+                            
+                            // Aplicar estilos condicionales
+                            if (isHbError) {
+                                // ROJO: Si falta HB y se activó el error
+                                inputClasses += "border-red-500 bg-red-50 text-red-600 placeholder-red-300 animate-pulse";
+                            } else if (isHbSuccess) {
+                                // VERDE: Si es HB y ya tiene valor
+                                inputClasses += "border-emerald-500 bg-emerald-50 text-emerald-700";
+                            } else if (item.name === 'pAbd' && !isLocked) {
+                                // Lógica especial P. Abdominal
+                                inputClasses += `${pAbdStatus.bg} ${pAbdStatus.color} ${pAbdStatus.textCol}`;
+                            } else {
+                                // Estilo por defecto (Azul/Slate)
+                                inputClasses += `bg-slate-50 border-slate-200 text-slate-700 focus:border-${item.color}-400 focus:bg-white focus:ring-4 focus:ring-${item.color}-50`;
+                            }
 
-                                    return (
-                                        <div key={idx} className={`relative group transition-all ${isLocked ? 'opacity-60 grayscale' : ''}`}>
-                                            <div className="flex items-center gap-3 p-2 rounded-[2rem] border border-slate-100 bg-white shadow-sm hover:shadow-md transition-all h-[5.5rem]">
-                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ml-1 ${isLocked ? 'bg-slate-200 text-slate-400' : `bg-${item.color}-100 text-${item.color}-600`}`}>
-                                                    {item.icon}
-                                                </div>
-                                                <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
-                                                    <div className="flex justify-between items-center px-1">
-                                                        <label className="text-[9px] font-bold text-slate-500 uppercase truncate">{item.label}</label>
-                                                        {item.specialBtn && !clinicalData[item.name] && !isLocked && ( <button onClick={() => { if(item.name==='pAbd') setIgnorePAbdValidation(true); if(item.name==='pCef') setIgnorePCefValidation(true); if(item.name==='pPreGest') setIgnorePreGestValidation(true); }} className="text-[8px] bg-slate-100 text-slate-400 hover:bg-red-100 hover:text-red-500 px-2 py-0.5 rounded-full font-bold transition-colors">OMITIR</button> )}
-                                                        {pAbdStatus.text && ( <span className={`text-[8px] font-black px-2 py-0.5 rounded-lg ${pAbdStatus.bg} ${pAbdStatus.textCol} animate-in fade-in zoom-in`}>{pAbdStatus.text}</span> )}
-                                                    </div>
-                                                    <div className="relative">
-                                                        <input name={item.name} disabled={isLocked} value={clinicalData[item.name] || ''} onChange={(e) => handleNumericInput(e, item.min, item.max)} placeholder="0.0" className={`w-full h-10 border-2 rounded-2xl px-3 text-xl font-black outline-none transition-all placeholder-slate-300 disabled:cursor-not-allowed ${isHbAlert ? 'border-red-300 bg-red-50 text-red-500 placeholder-red-300' : ''} ${item.name === 'pAbd' && !isLocked ? `${pAbdStatus.bg} ${pAbdStatus.color} ${pAbdStatus.textCol}` : `bg-slate-50 border-slate-200 text-slate-700 focus:border-${item.color}-400 focus:bg-white focus:ring-4 focus:ring-${item.color}-50`}`}/>
-                                                        <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold uppercase pointer-events-none ${item.name === 'pAbd' && !isLocked && clinicalData.pAbd ? pAbdStatus.textCol : 'text-slate-400'}`}>{item.unit}</span>
-                                                    </div>
-                                                </div>
-                                                <div className="w-20 flex flex-col items-end justify-center border-l border-slate-200 pl-2 h-14 mr-1">
-                                                    {hasHist ? ( <><span className="text-[8px] text-slate-400 leading-none mb-1.5">{item.hist.date}</span><div className="text-sm font-black text-teal-700 bg-teal-100 px-2 py-1.5 rounded-2xl border border-teal-200 text-center w-full shadow-sm flex items-center justify-center">{item.hist.val}</div></>) : ( <span className="text-[8px] font-bold text-slate-300 bg-slate-100 px-3 py-1.5 rounded-2xl block text-center w-full">---</span> )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
+                            return (
+                                <input 
+                                    name={item.name} 
+                                    disabled={isLocked} 
+                                    value={clinicalData[item.name] || ''} 
+                                    onChange={(e) => handleNumericInput(e, item.min, item.max)} 
+                                    placeholder="0.0" 
+                                    className={inputClasses}
+                                />
+                            );
+                        })()}
+                        
+                        <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold uppercase pointer-events-none ${item.name === 'pAbd' && !isLocked && clinicalData.pAbd ? pAbdStatus.textCol : 'text-slate-400'}`}>{item.unit}</span>
+                    </div>
+                </div>
+                <div className="w-20 flex flex-col items-end justify-center border-l border-slate-200 pl-2 h-14 mr-1">
+                    {hasHist ? ( <><span className="text-[8px] text-slate-400 leading-none mb-1.5">{item.hist.date}</span><div className="text-sm font-black text-teal-700 bg-teal-100 px-2 py-1.5 rounded-2xl border border-teal-200 text-center w-full shadow-sm flex items-center justify-center">{item.hist.val}</div></>) : ( <span className="text-[8px] font-bold text-slate-300 bg-slate-100 px-3 py-1.5 rounded-2xl block text-center w-full">---</span> )}
+                </div>
+            </div>
+        </div>
+    );
+                                    
+                                 })}
                               </div>
                           </div>
                       </div>
@@ -4629,7 +4677,7 @@ export default function App() {
                                             <td className="border border-black px-1 align-middle font-bold bg-white uppercase truncate text-[9px]" rowSpan={3} title={p.paciente}>{p.paciente}</td>
                                             <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.financiador === 'SIS' ? '2' : '1'}</td>
                                             <td className="border border-black px-1 align-middle text-[8px] bg-white truncate" rowSpan={3} title={p.distrito}>{p.distrito}</td>
-                                            <td className="border border-black text-center font-bold align-middle bg-white" rowSpan={3}>{a.y > 0 ? a.y : a.m > 0 ? a.m + 'm' : a.d + 'd'}</td>
+                                            <td className="border border-black text-center font-bold align-middle bg-white" rowSpan={3}>{a.y > 0 ? a.y : a.m > 0 ? a.m + 'm' : a.d + d}</td>
                                             <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.sexo}</td>
                                             
                                             {/* ANTROPOMETRÍA (SOLO NÚMEROS PEQUEÑOS) */}
