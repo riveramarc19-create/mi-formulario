@@ -1177,7 +1177,7 @@ export default function App() {
     }));
 
   }, [clinicalData.peso, clinicalData.talla, ageObj.y]);
-  useEffect(() => { if (patientData.condicion !== 'GESTANTE') setPatientData(prev => ({...prev, fur: ''})); }, [patientData.condicion]);
+  //useEffect(() => { if (patientData.condicion !== 'GESTANTE') setPatientData(prev => ({...prev, fur: ''})); }, [patientData.condicion]);
   useEffect(() => { if (adminData.isConfigured) setPatientData(prev => ({...prev, estAtencion: adminData.establecimiento})); }, [adminData.isConfigured, adminData.establecimiento]);
   useEffect(() => { setAnemiaResult(""); setAnemiaColor("bg-slate-200 text-slate-500"); setHbAdjusted(null); }, [patientData.dni]);
     // --- NUEVA LÓGICA PROACTIVA: DETECTAR GESTANTE POR FUR ---
@@ -1403,7 +1403,8 @@ export default function App() {
       if (isSameJurisdiction || isActivityAPP) {
           
           const esContinuador = p.historialEst.some(h => cleanStr(h).includes(cleanStr(keyword)));
-          
+          const furEncontrada = p.last_fur ? parseExcelDate(p.last_fur) : '';
+
           setPatientData(prev => ({ 
               ...prev,
               id: p.id, 
@@ -1415,9 +1416,9 @@ export default function App() {
               financiador: p.financiador || '2-SIS', 
               direccion: p.direccion || '', 
               distrito: p.distrito || '', 
-              estOrigen: p.estOrigen || '', 
-              condicion: '', 
-              fur: p.last_fur ? parseExcelDate(p.last_fur) : '', 
+              estOrigen: p.estOrigen || '',  
+              fur: furEncontrada, 
+	      condicion: furEncontrada ? 'GESTANTE' : '',
               // Si es APP, forzamos que parezca Continuador para evitar rojos
               condEst: isActivityAPP ? "C" : (esContinuador ? "C" : "R"), 
               condServ: '' 
@@ -1536,6 +1537,10 @@ export default function App() {
       setShowNewBtn(false);
       const { name, value } = e.target;
       let finalValue = value;
+      if (name === 'condicion' && value !== 'GESTANTE') {
+          setPatientData(prev => ({ ...prev, [name]: finalValue, fur: '' }));
+          return; // Cortamos aquí para no repetir el setPatientData abajo
+      }
 
       // --- VALIDACIÓN DE GESTANTE / PUÉRPERA ---
       if (name === "condicion" && (value === "GESTANTE" || value === "PUERPERA")) {
