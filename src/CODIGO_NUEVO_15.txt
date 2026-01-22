@@ -4315,32 +4315,7 @@ export default function App() {
                                       <div className="text-base font-black text-slate-700">{clinicalData.imc || '--'}</div>
                                   </div>
                                   <div className="flex-1">
-					<div 
-    className="w-full h-full border-2 rounded-2xl px-3 flex items-center justify-center text-[10px] font-black uppercase shadow-sm transition-all"
-    style={{
-        /* LÓGICA DE COLOR SÓLIDO (USANDO UN DIV NO FALLA) */
-        backgroundColor: clinicalData.riesgo === 'NORMAL' 
-            ? '#10b981'  // VERDE SÓLIDO
-            : (clinicalData.riesgo && clinicalData.riesgo.includes('TABLA')) 
-                ? '#fcd34d' // AMARILLO SÓLIDO
-                : (clinicalData.riesgo && clinicalData.riesgo.length > 0)
-                    ? '#dc2626' // ROJO SÓLIDO (Obesidad, Sobrepeso...)
-                    : '#f8fafc', // GRIS (Vacío)
-
-        color: (clinicalData.riesgo && !clinicalData.riesgo.includes('TABLA') && clinicalData.riesgo.length > 0)
-            ? '#ffffff'  // TEXTO BLANCO (Para Rojo y Verde)
-            : '#475569', // TEXTO GRIS (Para Amarillo o Vacío)
-
-        borderColor: clinicalData.riesgo === 'NORMAL' 
-            ? '#047857' 
-            : (clinicalData.riesgo && !clinicalData.riesgo.includes('TABLA') && clinicalData.riesgo.length > 0)
-                ? '#991b1b' 
-                : '#cbd5e1'
-    }}
->
-    {clinicalData.riesgo || "DIAGNÓSTICO..."} </div>
-        
-                                      
+                                      <input name="riesgo" value={clinicalData.riesgo} onChange={handleClinical} className={`w-full h-full border-2 rounded-2xl px-3 text-[10px] font-bold outline-none uppercase text-center transition-all duration-300 ${clinicalData.riesgo === 'NORMAL' ? 'bg-emerald-100 border-emerald-300 text-emerald-800 shadow-inner' : (clinicalData.riesgo && clinicalData.riesgo.includes('TABLA')) ? 'bg-amber-100 border-amber-300 text-amber-800' : clinicalData.riesgo ? 'bg-red-100 border-red-300 text-red-800 animate-pulse' : 'bg-slate-50 border-slate-200 text-slate-700 placeholder-slate-300 focus:border-teal-500'}`} placeholder="DIAGNÓSTICO..." />
                                   </div>
                               </div>
                           </div>

@@ -1192,8 +1192,8 @@ export default function App() {
                   `⚠️ ATENCIÓN: Sra. ${patientData.paciente}\n\n` +
                   `El sistema detectó una Fecha de Última Regla (FUR): ${patientData.fur}\n\n` +
                   `¿La paciente continúa con la condición de GESTANTE?\n` +
-                  `[Aceptar] = SÍ, marcar como GESTANTE.\n` +
-                  `[Cancelar] = NO, borrar fecha y continuar.`
+                  `[SÍ] = SÍ, marcar como GESTANTE.\n` +
+                  `[NO, Ya no es gestante] = borrar FUR y continuar.`
               );
 
               if (confirmacion) {
@@ -1418,7 +1418,8 @@ export default function App() {
               distrito: p.distrito || '', 
               estOrigen: p.estOrigen || '',  
               fur: furEncontrada, 
-	      condicion: furEncontrada ? 'GESTANTE' : '',
+	      //condicion: furEncontrada ? 'GESTANTE' : '',
+	      condicion: '',
               // Si es APP, forzamos que parezca Continuador para evitar rojos
               condEst: isActivityAPP ? "C" : (esContinuador ? "C" : "R"), 
               condServ: '' 
