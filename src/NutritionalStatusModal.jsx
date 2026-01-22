@@ -2,22 +2,33 @@ import React, { useState, useEffect } from 'react';
 import { X, Calendar, Ruler, Activity, Calculator, Baby, ChevronRight, CheckCircle, AlertTriangle, Info } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot, ComposedChart } from 'recharts';
 
-// --- DATOS SIMULADOS OMS (Para TALLA/EDAD) ---
-// NOTA: Reemplaza esto con tus JSON reales de la OMS cuando los tengas.
-// sd0 = Media, sd2 = +2 Desviaciones (Alto), sd2neg = -2 Desviaciones (Bajo)
-const MOCK_WHO_BOYS = Array.from({ length: 61 }, (_, i) => ({
-    month: i,
-    sd0: 50 + (i * 0.8), 
-    sd2: 54 + (i * 0.85), 
-    sd2neg: 46 + (i * 0.75) 
-}));
+// --- CORRECCIÓN DEFINITIVA DE DATOS PARA GENERAR CURVA ---
+// Usamos Math.log (Logaritmo) para simular el crecimiento rápido de los bebés
+// y que la línea se curve igual que en la imagen de la OMS.
 
-const MOCK_WHO_GIRLS = Array.from({ length: 61 }, (_, i) => ({
-    month: i,
-    sd0: 49 + (i * 0.8),
-    sd2: 53 + (i * 0.85),
-    sd2neg: 45 + (i * 0.75)
-}));
+const generateCurveData = (baseHeight, growthFactor) => {
+    return Array.from({ length: 61 }, (_, i) => {
+        // Fórmula de crecimiento curva (no lineal)
+        // Crecimiento rápido al inicio (0-12 meses) y se aplana después
+        const curve = (20 * Math.log10(i + 1)) + (i * 0.45);
+        
+        return {
+            month: i,
+            // Media (Curva Central)
+            sd0: parseFloat((baseHeight + curve).toFixed(2)), 
+            // +2 SD (Curva Superior - más alta)
+            sd2: parseFloat((baseHeight + 4 + (curve * 1.05)).toFixed(2)), 
+            // -2 SD (Curva Inferior - más baja)
+            sd2neg: parseFloat((baseHeight - 4 + (curve * 0.95)).toFixed(2)) 
+        };
+    });
+};
+
+// Datos Curvos para Niños (Base 50cm)
+const MOCK_WHO_BOYS = generateCurveData(50, 1);
+
+// Datos Curvos para Niñas (Base 49cm)
+const MOCK_WHO_GIRLS = generateCurveData(49, 1);
 
 const NutritionalStatusModal = ({ isOpen, onClose, initialData }) => {
     // 1. ESTADOS
@@ -29,7 +40,7 @@ const NutritionalStatusModal = ({ isOpen, onClose, initialData }) => {
     
     // Estado para la gráfica y el resultado
     const [chartPoint, setChartPoint] = useState(null);
-    const [classification, setClassification] = useState(null); // { label: '', color: '', icon: ... }
+    const [classification, setClassification] = useState(null); 
 
     // Seleccionar datos según sexo
     const chartData = sexo === 'M' ? MOCK_WHO_BOYS : MOCK_WHO_GIRLS;
@@ -51,7 +62,6 @@ const NutritionalStatusModal = ({ isOpen, onClose, initialData }) => {
         } else {
             setEdadMeses('');
         }
-        // Limpiar resultado si cambian las fechas
         setChartPoint(null);
         setClassification(null);
     }, [fecNac, fecAtencion]);
@@ -63,25 +73,18 @@ const NutritionalStatusModal = ({ isOpen, onClose, initialData }) => {
 
         if (isNaN(m) || isNaN(t)) return;
 
-        // A. Poner punto en gráfica
         setChartPoint({ x: m, y: t });
 
-        // B. Clasificar según datos OMS
-        // Buscamos el mes más cercano en la tabla de datos
+        // Clasificar buscando el mes exacto
         const refData = chartData.find(d => d.month === Math.round(m)) || chartData[chartData.length - 1];
 
         if (refData) {
             let result = {};
-            
-            // Reglas de Clasificación Talla/Edad (OMS/MINSA)
             if (t < refData.sd2neg) {
-                // Menor a -2 DE
                 result = { label: 'TALLA BAJA', color: 'bg-red-500', text: 'text-white', icon: <AlertTriangle size={24} /> };
             } else if (t > refData.sd2) {
-                // Mayor a +2 DE
                 result = { label: 'TALLA ALTA', color: 'bg-blue-500', text: 'text-white', icon: <Info size={24} /> };
             } else {
-                // Rango Normal
                 result = { label: 'NORMAL', color: 'bg-emerald-500', text: 'text-white', icon: <CheckCircle size={24} /> };
             }
             setClassification(result);
@@ -94,28 +97,22 @@ const NutritionalStatusModal = ({ isOpen, onClose, initialData }) => {
         <div className="fixed inset-0 z-[200] bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
             <div className="bg-white w-full max-w-5xl rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col md:flex-row border border-white/50 max-h-[90vh]">
                 
-                {/* --- COLUMNA IZQUIERDA: DATOS --- */}
+                {/* --- COLUMNA IZQUIERDA --- */}
                 <div className="w-full md:w-1/3 bg-slate-50 p-8 flex flex-col gap-5 border-r border-slate-200 overflow-y-auto">
-                    
                     <div className="flex justify-between items-center md:hidden">
                         <h3 className="font-black text-slate-700">Calculadora Z</h3>
                         <button onClick={onClose}><X className="text-slate-400"/></button>
                     </div>
-
                     <div className="space-y-1">
                         <h2 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
                             <Activity className="text-emerald-500" /> Talla / Edad
                         </h2>
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Patrones OMS (0-5 Años)</p>
                     </div>
-
-                    {/* SEXO */}
                     <div className="flex gap-2 bg-white p-1 rounded-2xl shadow-sm border border-slate-200">
                         <button onClick={() => setSexo('M')} className={`flex-1 py-3 rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-all ${sexo === 'M' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-50'}`}><Baby size={18} /> NIÑO</button>
                         <button onClick={() => setSexo('F')} className={`flex-1 py-3 rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-all ${sexo === 'F' ? 'bg-pink-500 text-white shadow-md' : 'text-slate-400 hover:bg-slate-50'}`}><Baby size={18} /> NIÑA</button>
                     </div>
-
-                    {/* INPUTS */}
                     <div className="space-y-3">
                         <div className="relative group">
                             <label className="text-[9px] font-extrabold text-slate-400 uppercase ml-2 mb-1 block">F. Nacimiento</label>
@@ -136,12 +133,9 @@ const NutritionalStatusModal = ({ isOpen, onClose, initialData }) => {
                             </div>
                         </div>
                     </div>
-
                     <button onClick={handleCalculate} disabled={!edadMeses || !talla} className="w-full py-4 rounded-xl bg-slate-800 text-white font-black text-xs tracking-widest shadow-lg hover:bg-slate-700 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 flex justify-center items-center gap-2">
                         <Calculator size={16}/> CALCULAR
                     </button>
-
-                    {/* --- AQUÍ ESTÁ EL RECUADRO DE RESULTADO QUE PEDISTE --- */}
                     {classification && (
                         <div className={`mt-2 rounded-2xl p-4 shadow-xl animate-in zoom-in slide-in-from-bottom-2 duration-300 flex items-center justify-between border border-white/20 ${classification.color} ${classification.text}`}>
                             <div>
@@ -155,7 +149,7 @@ const NutritionalStatusModal = ({ isOpen, onClose, initialData }) => {
                     )}
                 </div>
 
-                {/* --- COLUMNA DERECHA: GRÁFICA --- */}
+                {/* --- COLUMNA DERECHA: GRÁFICA CURVA --- */}
                 <div className="w-full md:w-2/3 bg-white p-6 relative flex flex-col">
                     <button onClick={onClose} className="absolute top-6 right-6 p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-red-500 transition-all hidden md:block z-10">
                         <X size={24} />
@@ -173,12 +167,14 @@ const NutritionalStatusModal = ({ isOpen, onClose, initialData }) => {
                                 <YAxis domain={['auto', 'auto']} stroke="#94a3b8" tick={{fontSize: 10}} label={{ value: 'Talla (cm)', angle: -90, position: 'insideLeft', fill: '#64748b', fontSize: 10, fontWeight: 'bold' }} />
                                 <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
                                 
-                                {/* LÍNEAS DE REFERENCIA */}
+                                {/* AQUÍ ES DONDE SUCEDE LA MAGIA DE LA CURVA:
+                                    1. type="monotone": Suaviza la línea
+                                    2. Los datos ahora son logarítmicos, no rectos
+                                */}
                                 <Line type="monotone" dataKey="sd2" stroke="#10b981" strokeWidth={2} dot={false} strokeDasharray="5 5" name="+2 SD" />
                                 <Line type="monotone" dataKey="sd0" stroke="#3b82f6" strokeWidth={3} dot={false} name="Media" />
                                 <Line type="monotone" dataKey="sd2neg" stroke="#fbbf24" strokeWidth={2} dot={false} strokeDasharray="5 5" name="-2 SD" />
 
-                                {/* PUNTO DEL PACIENTE */}
                                 {chartPoint && (
                                     <ReferenceDot x={chartPoint.x} y={chartPoint.y} r={6} fill={sexo === 'M' ? '#2563eb' : '#db2777'} stroke="#fff" strokeWidth={3} />
                                 )}
