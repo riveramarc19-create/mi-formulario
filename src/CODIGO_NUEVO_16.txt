@@ -191,7 +191,6 @@ const CredFollowUpModal = ({ isOpen, onClose }) => {
     }
     return value;
   };
- 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -223,8 +222,6 @@ const CredFollowUpModal = ({ isOpen, onClose }) => {
     };
     reader.readAsBinaryString(file);
   };
-
-
   const filteredData = credData.filter(row => 
     !filterTerm || row.searchStr.includes(filterTerm.toUpperCase())
   ).slice(0, 100);
@@ -925,9 +922,6 @@ export default function App() {
   const handleDateSelect = (date) => setPatientData(prev => ({ ...prev, fecAtencion: date }));
   const [showCredModal, setShowCredModal] = useState(false);
   const [isBatchFinished, setIsBatchFinished] = useState(false);
-  const [isMasterUploadEnabled, setIsMasterUploadEnabled] = useState(false); 
-  const [isProcessingMaster, setIsProcessingMaster] = useState(false);
-  const [padronDate, setPadronDate] = useState(localStorage.getItem('PADRON_DATE') || "");
   useEffect(() => {
     const handleClickOutside = (event) => {
       // 1. Lógica del Calendario (Mantenemos la que tenías)
@@ -1230,109 +1224,6 @@ export default function App() {
           return () => clearTimeout(timer); // Limpieza del timer
       }
   }, [patientData.fur, step]); // Se ejecuta cuando cambia la FUR o el paso
-
-  // --- FUNCIÓN PARA CARGA MASIVA (30K REGISTROS) ---
-  const handleMasterPadronUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    // Confirmación simple
-    if (!window.confirm("⚠️ ¿Estás seguro de reemplazar la Base de Datos con este Padrón?")) {
-        e.target.value = ''; 
-        return;
-    }
-
-    setIsProcessingMaster(true);
-
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        const wb = XLSX.read(evt.target.result, { type: 'binary' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false }); 
-
-        const procesados = rawData.slice(1).map(r => {
-            if (!r[0] && !r[1]) return null;
-            return {
-                dni: r[0] ? String(r[0]).trim().padStart(8, '0') : "", 
-                nombre: r[1] ? String(r[1]).trim().toUpperCase() : "", 
-                fecNac: r[2], 
-                sexo: r[3] ? String(r[3]).trim().toUpperCase() : "M", 
-                financiador: r[4] ? String(r[4]).trim() : "SIS", 
-                hc: r[5] ? String(r[5]).trim() : "", 
-                distrito: r[6] ? String(r[6]).trim().toUpperCase() : "", 
-                direccion: r[7] ? String(r[7]).trim().toUpperCase() : "", 
-                estOrigen: r[8] ? String(r[8]).trim().toUpperCase() : "", 
-                historialEst: [],
-                busqueda: ((r[0]||"") + " " + (r[1]||"")).toUpperCase()
-            };
-        }).filter(p => p !== null);
-
-        await idb.savePatients(procesados);
-        setDbPacientes(procesados);
-        setDbStatus('ready');
-
-        // --- AQUÍ GUARDAMOS LA FECHA Y HORA ACTUAL ---
-        const hoy = new Date();
-        const fechaStr = hoy.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' ' + hoy.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
-        
-        setPadronDate(fechaStr); // Guardar en estado visual
-        localStorage.setItem('PADRON_DATE', fechaStr); // Guardar en memoria del navegador
-        // ---------------------------------------------
-
-        alert(`✅ ÉXITO: Padrón actualizado correctamente.`);
-
-      } catch (err) {
-        alert("❌ Error: " + err.message);
-      } finally {
-        setIsProcessingMaster(false);
-        e.target.value = ''; 
-      }
-    };
-    reader.readAsBinaryString(file);
-  };
-  // --- FUNCIÓN PARA DESCARGAR (EXPORTAR) EL PADRÓN A EXCEL ---
-  const handleExportPadron = () => {
-    if (!dbPacientes || dbPacientes.length === 0) {
-      alert("⚠️ La base de datos está vacía. No hay nada que descargar.");
-      return;
-    }
-
-    const confirmDownload = window.confirm(`¿Deseas descargar el Padrón General con ${dbPacientes.length} registros?`);
-    if (!confirmDownload) return;
-
-    try {
-      // 1. Convertir los datos JSON a Hoja de Cálculo
-      // Mapeamos para que las columnas salgan limpias y ordenadas
-      const dataToExport = dbPacientes.map(p => ({
-          DNI: p.dni,
-          NOMBRE: p.nombre,
-          FEC_NAC: p.fecNac,
-          SEXO: p.sexo,
-          FINANCIADOR: p.financiador,
-          HC: p.hc,
-          DISTRITO: p.distrito,
-          DIRECCION: p.direccion,
-          EST_ORIGEN: p.estOrigen
-      }));
-
-      const ws = XLSX.utils.json_to_sheet(dataToExport);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Padron_General");
-
-      // 2. Generar nombre con fecha actual para que no se pierdan
-      const fechaHoy = new Date().toISOString().split('T')[0];
-      const fileName = `PADRON_GENERAL_${fechaHoy}.xlsx`;
-
-      // 3. Descargar
-      XLSX.writeFile(wb, fileName);
-      alert("✅ Descarga iniciada correctamente.");
-
-    } catch (error) {
-      console.error(error);
-      alert("❌ Error al generar el Excel: " + error.message);
-    }
-  };
   const handleFileUpload = (e, type) => {
     try {
       const file = e.target.files[0];
@@ -3307,8 +3198,8 @@ export default function App() {
       <div className="min-h-screen w-full bg-[#f0f2f5] font-sans flex items-center justify-center p-4">
         <div className="w-full max-w-5xl bg-white shadow-2xl rounded-[30px] overflow-hidden border border-slate-100 animate-in fade-in zoom-in duration-300 mx-auto">
           <div className="bg-[#0F172A] px-10 py-6 flex justify-between items-end">
-            <div><h1 className="text-2xl font-bold text-white tracking-wide">REGISTRO HIS</h1><p className="text-slate-200 text-xs mt-1">Configuración de Sesión</p></div>
-                             <div className="flex gap-2">
+            <div><h1 className="text-2xl font-bold text-white tracking-wide">REGISTRO HIS</h1><p className="text-slate-400 text-xs mt-1">Configuración de Sesión</p></div>
+            <div className="flex gap-2">
               <div className="relative group"><input type="file" id="filePac" className="hidden" onChange={(e) => handleFileUpload(e, 'pacientes')} /><label htmlFor="filePac" className={`cursor-pointer px-5 py-2.5 rounded-xl border ${dbPacientes.length ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-xs font-bold transition-all shadow-lg`}><Database size={16}/> {dbPacientes.length ?
                 `BD OK (${dbPacientes.length})` : "Cargar Pacientes"}</label></div>
               <div className="relative group"><input type="file" id="fileCie" className="hidden" onChange={(e) => handleFileUpload(e, 'cie10')} /><label htmlFor="fileCie" className={`cursor-pointer px-5 py-2.5 rounded-xl border ${dbCie10.length ?
@@ -3318,69 +3209,13 @@ export default function App() {
                 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-xs font-bold transition-all shadow-lg`}><Users size={16}/> {dbPersonal.length ?
                 `Personal OK` : "Cargar Personal"}</label></div>
               
-               {/* BOTÓN 4: BORRAR BD (Altura forzada h-8 y texto en una línea) */}
               {dbStatus === 'ready' && (
-                  <button 
-                      onClick={clearDatabase} 
-                      className="bg-red-500 hover:bg-red-600 text-white px-3 h-8 rounded-xl border border-red-400 flex items-center justify-center gap-2 text-[10px] font-bold transition-all shadow-lg whitespace-nowrap" 
-                      title="Borrar Base de Datos Local"
-                      style={{ minHeight: '52px', maxHeight: '32px' }} /* FORZADO MANUAL */
-                  >
-                      <Trash2 size={14} className="shrink-0"/> 
-                      <span>Borrar BD</span>
+                  <button onClick={clearDatabase} className="bg-red-500 hover:bg-red-600 text-white px-3 py-2.5 rounded-xl border border-red-400 flex items-center gap-2 text-xs font-bold transition-all shadow-lg ml-2" title="Borrar Base de Datos Local de Pacientes">
+                      <Trash2 size={16}/> Borrar BD
                   </button>
               )}
-               {/* --- ZONA DE CARGA MASIVA (PADRÓN GENERAL) --- */}
-               <div className="flex items-center gap-2 border-l border-slate-600 pl-3 ml-1">
-                  
-                  {/* BOTÓN 5: CARGAR PADRÓN (Siempre activo, sin candado) */}
-                  <div className={`relative group transition-all duration-300`}>
-                      <input type="file" id="fileMaster" className="hidden" accept=".xlsx, .xls" onChange={handleMasterPadronUpload} disabled={isProcessingMaster} />
-                      <label 
-                          htmlFor="fileMaster" 
-                          className={`cursor-pointer px-3 h-8 rounded-xl border flex items-center justify-center gap-2 text-[10px] font-bold transition-all shadow-lg whitespace-nowrap
-                              ${isProcessingMaster 
-                                  ? 'bg-purple-800 border-purple-600 text-purple-200 animate-pulse cursor-wait' 
-                                  : 'bg-purple-600 border-purple-500 text-white hover:bg-purple-500 hover:scale-105 active:scale-95'
-                              }`}
-                          style={{ minHeight: '50px', maxHeight: '32px' }}
-                      >
-                          {isProcessingMaster ? (
-                              <>⏳ Procesando...</>
-                          ) : (
-                              <>
-                                  <Database size={14} className="shrink-0"/> 
-                                  <span>CARGAR PADRÓN</span>
-                              </>
-                          )}
-                      </label>
-                  </div>
-
-                  {/* BOTÓN 6: DESCARGAR (Muestra la FECHA guardada) */}
-                  <button 
-                      onClick={handleExportPadron}
-                      className={`px-2 h-8 rounded-xl border flex items-center gap-2 text-[10px] font-bold transition-all shadow-lg whitespace-nowrap
-                          ${dbPacientes.length > 0 
-                              ? 'bg-emerald-600 border-emerald-500 text-white hover:bg-emerald-500 hover:scale-105' 
-                              : 'bg-slate-700 border-slate-600 text-slate-500 cursor-not-allowed'
-                          }`}
-                      disabled={!dbPacientes.length}
-                      title="Descargar base de datos actual"
-                      style={{ minHeight: '50px', maxHeight: '32px' }}
-                  >
-                      <Download size={14} className="shrink-0"/> 
-                      
-                      {/* Aquí mostramos la fecha si existe, o el texto por defecto */}
-                      <div className="flex flex-col items-start leading-none justify-center">
-                          <span className="uppercase text-[10px]">DESCARGAR</span>
-                          {padronDate && <span className="text-[10px] opacity-80 font-medium text-emerald-100">{padronDate}</span>}
-                      </div>
-                  </button>
-
-              </div>               
             </div>
           </div>
-
           <div className="p-10 grid grid-cols-1 md:grid-cols-4 gap-6 bg-white">
             <div className="flex flex-col gap-1"><label className={cfgLabelStyle}>Año</label><select name="anio" className={cfgInputStyle} value={adminData.anio} onChange={handleAdmin}><option>2025</option><option>2026</option></select></div>
             <div className="flex flex-col gap-1"><label className={cfgLabelStyle}>Mes</label><select name="mes" className={cfgInputStyle} value={adminData.mes} onChange={handleAdmin}>{MESES.map(m=><option key={m}>{m}</option>)}</select></div>

@@ -1236,9 +1236,9 @@ export default function App() {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Confirmación simple
-    if (!window.confirm("⚠️ ¿Estás seguro de reemplazar la Base de Datos con este Padrón?")) {
-        e.target.value = ''; 
+    // Pregunta de seguridad doble
+    if (!window.confirm("⚠️ ¿ESTÁS SEGURO?\n\nVas a reemplazar la Base de Datos actual con un Padrón Masivo.\nEsta acción borrará los pacientes locales actuales.")) {
+        e.target.value = ''; // Limpiar input
         return;
     }
 
@@ -1249,10 +1249,15 @@ export default function App() {
       try {
         const wb = XLSX.read(evt.target.result, { type: 'binary' });
         const ws = wb.Sheets[wb.SheetNames[0]];
+        // raw: false asegura que lea todo como texto para evitar problemas con DNIs que empiezan con 0
         const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false }); 
 
+        // Omitimos la cabecera (slice 1) y mapeamos
         const procesados = rawData.slice(1).map(r => {
+            // Validación básica: Si no tiene DNI ni Nombre, saltar
             if (!r[0] && !r[1]) return null;
+
+            // Mapeo según el orden de columnas de tu Excel (Ajusta los índices r[0], r[1] si tu excel es diferente)
             return {
                 dni: r[0] ? String(r[0]).trim().padStart(8, '0') : "", 
                 nombre: r[1] ? String(r[1]).trim().toUpperCase() : "", 
@@ -1263,30 +1268,33 @@ export default function App() {
                 distrito: r[6] ? String(r[6]).trim().toUpperCase() : "", 
                 direccion: r[7] ? String(r[7]).trim().toUpperCase() : "", 
                 estOrigen: r[8] ? String(r[8]).trim().toUpperCase() : "", 
+                
+                // Historial vacío al iniciar
                 historialEst: [],
+                
+                // Campo de búsqueda pre-calculado para velocidad
                 busqueda: ((r[0]||"") + " " + (r[1]||"")).toUpperCase()
             };
         }).filter(p => p !== null);
 
+        // Guardado en IndexedDB (Optimizado para lotes grandes)
         await idb.savePatients(procesados);
+        
         setDbPacientes(procesados);
         setDbStatus('ready');
-
-        // --- AQUÍ GUARDAMOS LA FECHA Y HORA ACTUAL ---
-        const hoy = new Date();
-        const fechaStr = hoy.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' ' + hoy.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
-        
-        setPadronDate(fechaStr); // Guardar en estado visual
-        localStorage.setItem('PADRON_DATE', fechaStr); // Guardar en memoria del navegador
-        // ---------------------------------------------
-
-        alert(`✅ ÉXITO: Padrón actualizado correctamente.`);
+        // >>> PEGA ESTO AQUÍ (Captura fecha y hora actual) <<<
+        const fechaHoy = new Date().toLocaleString('es-PE', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+        setPadronDate(fechaHoy);
+        localStorage.setItem('PADRON_DATE', fechaHoy);
+        // >>> FIN DE LO NUEVO <<<
+        alert(`✅ ÉXITO: Se han cargado ${procesados.length} pacientes al sistema.`);
+        setIsMasterUploadEnabled(false); // Volver a bloquear el botón
 
       } catch (err) {
-        alert("❌ Error: " + err.message);
+        alert("❌ Error procesando el Padrón: " + err.message);
       } finally {
         setIsProcessingMaster(false);
-        e.target.value = ''; 
+        e.target.value = ''; // Limpiar input
       }
     };
     reader.readAsBinaryString(file);
@@ -3331,53 +3339,77 @@ export default function App() {
                   </button>
               )}
                {/* --- ZONA DE CARGA MASIVA (PADRÓN GENERAL) --- */}
-               <div className="flex items-center gap-2 border-l border-slate-600 pl-3 ml-1">
+              <div className="flex items-center gap-2 border-l border-slate-600 pl-4 ml-2">
                   
-                  {/* BOTÓN 5: CARGAR PADRÓN (Siempre activo, sin candado) */}
-                  <div className={`relative group transition-all duration-300`}>
-                      <input type="file" id="fileMaster" className="hidden" accept=".xlsx, .xls" onChange={handleMasterPadronUpload} disabled={isProcessingMaster} />
+                  {/* 1. INTERRUPTOR DE SEGURIDAD (CHECKBOX) */}
+                  <div className="flex flex-col items-center justify-center">
+                      <input 
+                          type="checkbox" 
+                          id="unlockMaster" 
+                          checked={isMasterUploadEnabled}
+                          onChange={(e) => setIsMasterUploadEnabled(e.target.checked)}
+                          className="w-4 h-4 cursor-pointer accent-purple-500"
+                      />
+                      <label htmlFor="unlockMaster" className="text-[9px] text-slate-400 font-bold uppercase mt-1 cursor-pointer select-none">
+                          {isMasterUploadEnabled ? 'HABILITADO' : 'BLOQUEADO'}
+                      </label>
+                  </div>
+
+                  {/* 2. BOTÓN DE CARGA (SOLO ACTIVO SI EL CHECKBOX ESTÁ MARCADO) */}
+                  <div className={`relative group transition-all duration-300 ${!isMasterUploadEnabled ? 'opacity-40 grayscale pointer-events-none' : 'opacity-100'}`}>
+                      <input 
+                          type="file" 
+                          id="fileMaster" 
+                          className="hidden" 
+                          accept=".xlsx, .xls"
+                          onChange={handleMasterPadronUpload} 
+                          disabled={!isMasterUploadEnabled || isProcessingMaster}
+                      />
                       <label 
                           htmlFor="fileMaster" 
-                          className={`cursor-pointer px-3 h-8 rounded-xl border flex items-center justify-center gap-2 text-[10px] font-bold transition-all shadow-lg whitespace-nowrap
+                          className={`cursor-pointer px-5 py-2.5 rounded-xl border flex items-center gap-2 text-xs font-bold transition-all shadow-lg
                               ${isProcessingMaster 
                                   ? 'bg-purple-800 border-purple-600 text-purple-200 animate-pulse cursor-wait' 
                                   : 'bg-purple-600 border-purple-500 text-white hover:bg-purple-500 hover:scale-105 active:scale-95'
                               }`}
-                          style={{ minHeight: '50px', maxHeight: '32px' }}
                       >
                           {isProcessingMaster ? (
                               <>⏳ Procesando...</>
                           ) : (
                               <>
-                                  <Database size={14} className="shrink-0"/> 
-                                  <span>CARGAR PADRÓN</span>
+                                  <Database size={14} className="text-purple-200"/> 
+                                  CARGAR PADRÓN
                               </>
                           )}
                       </label>
+                      
+                      {/* Tooltip informativo al pasar el mouse */}
+                      {!isMasterUploadEnabled && (
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 bg-black text-white text-[10px] p-2 rounded-lg text-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                              Active la casilla para habilitar la carga masiva.
+                          </div>
+                      )}
                   </div>
-
-                  {/* BOTÓN 6: DESCARGAR (Muestra la FECHA guardada) */}
+                     {/* BOTÓN 6: DESCARGAR (Con Fecha de Carga) */}
                   <button 
                       onClick={handleExportPadron}
-                      className={`px-2 h-8 rounded-xl border flex items-center gap-2 text-[10px] font-bold transition-all shadow-lg whitespace-nowrap
+                      className={`px-3 h-8 rounded-xl border flex items-center gap-2 text-[10px] font-bold transition-all shadow-lg whitespace-nowrap
                           ${dbPacientes.length > 0 
-                              ? 'bg-emerald-600 border-emerald-500 text-white hover:bg-emerald-500 hover:scale-105' 
+                              ? 'bg-emerald-600 border-emerald-500 text-white hover:bg-emerald-500' 
                               : 'bg-slate-700 border-slate-600 text-slate-500 cursor-not-allowed'
                           }`}
                       disabled={!dbPacientes.length}
-                      title="Descargar base de datos actual"
-                      style={{ minHeight: '50px', maxHeight: '32px' }}
+                      title={`Base de datos cargada el: ${padronDate || 'Desconocido'}`}
+                      style={{ minHeight: '52px', maxHeight: '32px' }}
                   >
                       <Download size={14} className="shrink-0"/> 
-                      
-                      {/* Aquí mostramos la fecha si existe, o el texto por defecto */}
-                      <div className="flex flex-col items-start leading-none justify-center">
-                          <span className="uppercase text-[10px]">DESCARGAR</span>
-                          {padronDate && <span className="text-[10px] opacity-80 font-medium text-emerald-100">{padronDate}</span>}
+                      <div className="flex flex-col items-start leading-none">
+                          <span>DESCARGAR</span>
+                          {padronDate && <span className="text-[10px] opacity-80 font-medium">{padronDate}</span>}
                       </div>
                   </button>
-
-              </div>               
+              </div>
+               
             </div>
           </div>
 
