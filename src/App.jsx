@@ -3309,57 +3309,50 @@ export default function App() {
           <div className="bg-[#0F172A] px-10 py-6 flex justify-between items-end">
             <div><h1 className="text-2xl font-bold text-white tracking-wide">REGISTRO HIS</h1><p className="text-slate-200 text-xs mt-1">Configuración de Sesión</p></div>
                              <div className="flex gap-2">
-              <div className="relative group"><input type="file" id="filePac" className="hidden" onChange={(e) => handleFileUpload(e, 'pacientes')} /><label htmlFor="filePac" className={`cursor-pointer px-5 py-2.5 rounded-xl border ${dbPacientes.length ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-xs font-bold transition-all shadow-lg`}><Database size={16}/> {dbPacientes.length ?
-                `BD OK (${dbPacientes.length})` : "Cargar Pacientes"}</label></div>
+              <div className="relative group"><input type="file" id="filePac" className="hidden" onChange={(e) => handleFileUpload(e, 'pacientes')} /><label htmlFor="filePac" className={`cursor-pointer px-5 py-2.5 rounded-xl border ${dbPacientes.length ? 'bg-yellow-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-xs font-bold transition-all shadow-lg`}><Database size={16}/> {dbPacientes.length ?
+                `Pacientes (${dbPacientes.length})` : "Cargar Pacientes"}</label></div>
               <div className="relative group"><input type="file" id="fileCie" className="hidden" onChange={(e) => handleFileUpload(e, 'cie10')} /><label htmlFor="fileCie" className={`cursor-pointer px-5 py-2.5 rounded-xl border ${dbCie10.length ?
-                'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-xs font-bold transition-all shadow-lg`}><FileSpreadsheet size={16}/> {dbCie10.length ?
-                `BD OK (${dbCie10.length})` : "Cargar CIE-10"}</label></div>
+                'bg-esmerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-xs font-bold transition-all shadow-lg`}><FileSpreadsheet size={16}/> {dbCie10.length ?
+                `CIE_10 (${dbCie10.length})` : "Cargar CIE-10"}</label></div>
               <div className="relative group"><input type="file" id="filePersonal" className="hidden" onChange={(e) => handleFileUpload(e, 'personal')} /><label htmlFor="filePersonal" className={`cursor-pointer px-5 py-2.5 rounded-xl border ${dbPersonal.length ?
-                'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-xs font-bold transition-all shadow-lg`}><Users size={16}/> {dbPersonal.length ?
-                `Personal OK` : "Cargar Personal"}</label></div>
+                'bg-esmerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-xs font-bold transition-all shadow-lg`}><Users size={16}/> {dbPersonal.length ?
+                `Personal` : "Cargar Personal"}</label></div>
               
-               {/* BOTÓN 4: BORRAR BD (Altura forzada h-8 y texto en una línea) */}
-              {dbStatus === 'ready' && (
-                  <button 
-                      onClick={clearDatabase} 
-                      className="bg-red-500 hover:bg-red-600 text-white px-3 h-8 rounded-xl border border-red-400 flex items-center justify-center gap-2 text-[10px] font-bold transition-all shadow-lg whitespace-nowrap" 
-                      title="Borrar Base de Datos Local"
-                      style={{ minHeight: '52px', maxHeight: '32px' }} /* FORZADO MANUAL */
-                  >
-                      <Trash2 size={14} className="shrink-0"/> 
-                      <span>Borrar BD</span>
-                  </button>
-              )}
-               {/* --- ZONA DE CARGA MASIVA (PADRÓN GENERAL) --- */}
-               <div className="flex items-center gap-2 border-l border-slate-600 pl-3 ml-1">
+              
+                {/* --- ZONA DE CARGA MASIVA (PADRÓN GENERAL) --- */}
+              <div className="flex items-center gap-2 border-l border-slate-600 pl-3 ml-1">
                   
-                  {/* BOTÓN 5: CARGAR PADRÓN (Siempre activo, sin candado) */}
-                  <div className={`relative group transition-all duration-300`}>
-                      <input type="file" id="fileMaster" className="hidden" accept=".xlsx, .xls" onChange={handleMasterPadronUpload} disabled={isProcessingMaster} />
-                      <label 
-                          htmlFor="fileMaster" 
-                          className={`cursor-pointer px-3 h-8 rounded-xl border flex items-center justify-center gap-2 text-[10px] font-bold transition-all shadow-lg whitespace-nowrap
-                              ${isProcessingMaster 
-                                  ? 'bg-purple-800 border-purple-600 text-purple-200 animate-pulse cursor-wait' 
-                                  : 'bg-purple-600 border-purple-500 text-white hover:bg-purple-500 hover:scale-105 active:scale-95'
-                              }`}
-                          style={{ minHeight: '50px', maxHeight: '32px' }}
-                      >
-                          {isProcessingMaster ? (
-                              <>⏳ Procesando...</>
-                          ) : (
-                              <>
-                                  <Database size={14} className="shrink-0"/> 
-                                  <span>CARGAR PADRÓN</span>
-                              </>
-                          )}
-                      </label>
-                  </div>
+                  {/* BOTÓN 5: SOLO VISIBLE SI EL DNI COINCIDE CON EL TUYO */}
+                  {/* 👇👇👇 ¡PON TU DNI AQUÍ ABAJO! 👇👇👇 */}
+                  {adminData.dniResp === "123" && (
+                      <div className={`relative group transition-all duration-300`}>
+                          <input type="file" id="fileMaster" className="hidden" accept=".xlsx, .xls" onChange={handleMasterPadronUpload} disabled={isProcessingMaster} />
+                          <label 
+                              htmlFor="fileMaster" 
+                              className={`cursor-pointer px-3 h-8 rounded-xl border flex items-center justify-center gap-2 text-[10px] font-bold transition-all shadow-lg whitespace-nowrap
+                                  ${isProcessingMaster 
+                                      ? 'bg-purple-800 border-purple-600 text-purple-200 animate-pulse cursor-wait' 
+                                      : 'bg-purple-600 border-purple-500 text-white hover:bg-purple-500 hover:scale-105 active:scale-95'
+                                  }`}
+                              style={{ minHeight: '50px', maxHeight: '32px' }}
+                          >
+                              {isProcessingMaster ? (
+                                  <>⏳ Procesando...</>
+                              ) : (
+                                  <>
+                                      <Database size={14} className="shrink-0"/> 
+                                      <span>CARGAR PADRÓN</span>
+                                  </>
+                              )}
+                          </label>
+                      </div>
+                  )}
 
-                  {/* BOTÓN 6: DESCARGAR (Muestra la FECHA guardada) */}
+                  {/* BOTÓN 6: DESCARGAR (Visible para todos, muestra fecha) */}
+                  {/* BOTÓN 6: DESCARGAR (Espaciado mejorado) */}
                   <button 
                       onClick={handleExportPadron}
-                      className={`px-2 h-8 rounded-xl border flex items-center gap-2 text-[10px] font-bold transition-all shadow-lg whitespace-nowrap
+                      className={`px-3 h-8 rounded-xl border flex items-center gap-2 transition-all shadow-lg whitespace-nowrap
                           ${dbPacientes.length > 0 
                               ? 'bg-emerald-600 border-emerald-500 text-white hover:bg-emerald-500 hover:scale-105' 
                               : 'bg-slate-700 border-slate-600 text-slate-500 cursor-not-allowed'
@@ -3370,14 +3363,15 @@ export default function App() {
                   >
                       <Download size={14} className="shrink-0"/> 
                       
-                      {/* Aquí mostramos la fecha si existe, o el texto por defecto */}
-                      <div className="flex flex-col items-start leading-none justify-center">
-                          <span className="uppercase text-[10px]">DESCARGAR</span>
-                          {padronDate && <span className="text-[10px] opacity-80 font-medium text-emerald-100">{padronDate}</span>}
+                      {/* --- AQUÍ ESTÁ EL AJUSTE VISUAL --- */}
+                      {/* Usamos 'gap-0.6' para separar y 'leading-none' para que no ocupen mucho alto */}
+                      <div className="flex flex-col items-start justify-center gap-0.6 leading-none">
+                          <span className="uppercase text-[10px] font-black tracking-wide">Descargar</span>
+                          {padronDate && <span className="text-[10px] opacity-90 font-medium text-emerald-100">{padronDate}</span>}
                       </div>
                   </button>
 
-              </div>               
+              </div>
             </div>
           </div>
 
