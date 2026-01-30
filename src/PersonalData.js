@@ -6,7 +6,7 @@ export const PERSONAL_LIST = [
 
 { dni: "40958276", nombre: "TRONCOS DIAS GABY LIZETH", password: "G2026", ups: "OBSTETRICIA"},
 { dni: "41918140", nombre: "LOPEZ JULIAN JUDITH JANEET", password: "J2026", ups: "OBSTETRICIA"},
-{ dni: "73888332", nombre: "CHAVEZ CASTRO CATHERINE LOURDES", password: "XHANDER", ups: "OBSTETRICIA"},
+{ dni: "73888332", nombre: "CHAVEZ CASTRO CATHERINE LOURDES", password: "XHANDER", ups: "OBSTETRICIA"}, // DIO 50 EL 28/01/2026
 { dni: "47544223", nombre: "QUEREVALU REFORME FIORELLA YADIRA", password: "DEREEK080620", ups: "OBSTETRICIA"},
 { dni: "77810382", nombre: "PIMENTEL CARDOZA ROXALA MILAGROS", password: "222606", ups: "NUTRICION"}, //100 EL 28/01/2026
 { dni: "48245394", nombre: "CHAVEZ HUAMAN ARACELLY", password: "1234", ups: "ENFERMERIA"},

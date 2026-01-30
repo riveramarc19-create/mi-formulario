@@ -928,11 +928,6 @@ export default function App() {
   const [isMasterUploadEnabled, setIsMasterUploadEnabled] = useState(false); 
   const [isProcessingMaster, setIsProcessingMaster] = useState(false);
   const [padronDate, setPadronDate] = useState(localStorage.getItem('PADRON_DATE') || "");
-  const DNIS_AUTORIZADOS = [
-    "123",  // Tú
-    "02860100",   // Jefe El Puerto
-    "43947945",  // Jefe Lagunas
-];
   useEffect(() => {
     const handleClickOutside = (event) => {
       // 1. Lógica del Calendario (Mantenemos la que tenías)
@@ -3329,7 +3324,7 @@ export default function App() {
                   
                   {/* BOTÓN 5: SOLO VISIBLE SI EL DNI COINCIDE CON EL TUYO */}
                   {/* 👇👇👇 ¡PON TU DNI AQUÍ ABAJO! 👇👇👇 */}
-                  {DNIS_AUTORIZADOS.includes(adminData.dniResp) && (
+                  {adminData.dniResp === "123" && (
                       <div className={`relative group transition-all duration-300`}>
                           <input type="file" id="fileMaster" className="hidden" accept=".xlsx, .xls" onChange={handleMasterPadronUpload} disabled={isProcessingMaster} />
                           <label 
@@ -5305,7 +5300,7 @@ export default function App() {
         />
       )}
 
-      <style>{` .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; } input[type="date"]::-webkit-calendar-picker-indicator { opacity: 1; display: block; width: 1em; height: 1em; position: absolute; top: 50%; right: 12px; transform: translateY(-50%); color: #475569; cursor: pointer; } input[type="date"] { text-align: center; padding-left: 0.5rem; padding-right: 2.5rem; position: relative; } `}</style>
+      <style>{` .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; } input[type="date"]::-webkit-calendar-picker-indicator { opacity: 1; display: block; width: 1em; height: 1em; position: absolute; top: 50%; right: 12px; transform: translateY(-50%); color: #475569; cursor: pointer; } input[type="date"] { text-align: center; padding-left: 0.5rem; padding-right: 2.5rem; } `}</style>
     </div>
   );
 }
