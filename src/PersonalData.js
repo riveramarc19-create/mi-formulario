@@ -11,7 +11,8 @@ export const PERSONAL_LIST = [
 { dni: "47544223", nombre: "QUEREVALU REFORME FIORELLA YADIRA", password: "DEREEK080620", ups: "OBSTETRICIA"},
 { dni: "77810382", nombre: "PIMENTEL CARDOZA ROXALA MILAGROS", password: "222606", ups: "NUTRICION"}, //100 EL 28/01/2026
 { dni: "76307612", nombre: "CASTILLO CAUCHA LUDUVINDA", password: "LIAM20", ups: "OBSTETRICIA"}, // PAGÓ
-{ dni: "48014885", nombre: "PARDO ANCAJIMA YEFRI EDINSON", password: "Ypardo0804", ups: "OBSTETRICIA"}, // 
+{ dni: "48014885", nombre: "PARDO ANCAJIMA YEFRI EDINSON", password: "Ypardo0804", ups: "OBSTETRICIA"}, // PAGÓ 100
+{ dni: "48245394", nombre: "CHAVEZ HUAMAN ARACELLY", password: "ARAX26", ups: "ENFERMERIA"}, // PAGÓ 200
 { dni: "02860100", nombre: "CORDOVA MAZA ENOE", password: "1234", ups: "ENFERMERIA" },
 { dni: "123", nombre: "MARCO", password: "012", ups: "ENFERMERIA" },
 
