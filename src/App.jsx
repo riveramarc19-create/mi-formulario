@@ -1009,6 +1009,7 @@ export default function App() {
             ...prev, 
             dniResp: user.dni, 
             nombreResp: user.nombre,
+ 	    establecimiento: user.establecimiento || prev.establecimiento,
             
             // Si el usuario tiene UPS definida, úsala. Si no, usa MEDICINA por defecto.
             ups: user.ups || 'MEDICINA' 
@@ -1054,7 +1055,7 @@ export default function App() {
   const [hbAdjusted, setHbAdjusted] = useState(null);
   const [isPremature, setIsPremature] = useState(false);
 
-  const [adminData, setAdminData] = useState({ anio: '2026', mes: 'ENERO', establecimiento: 'E.S I-4 PACAIPAMPA', turno: 'MAÑANA', ups: 'MEDICINA', dniResp: '', nombreResp: '', isConfigured: false });
+  const [adminData, setAdminData] = useState({ anio: '2026', mes: 'FEBRERO', establecimiento: '', turno: 'MAÑANA', ups: 'MEDICINA', dniResp: '', nombreResp: '', isConfigured: false });
   const [printCount, setPrintCount] = useState(() => {
       const saved = localStorage.getItem('his_print_count');
       return saved ? parseInt(saved, 10) : 0;
@@ -1669,11 +1670,39 @@ export default function App() {
   const saveModalSelection = () => { if (!tempDx.desc || !tempDx.codigo) { alert("Debe seleccionar un diagnóstico válido."); return;
   } const newDiagnoses = [...diagnoses]; newDiagnoses[currentDxRow] = { ...tempDx }; setDiagnoses(newDiagnoses); if (dxErrors[currentDxRow]) { const newErrors = { ...dxErrors };
   delete newErrors[currentDxRow]; setDxErrors(newErrors); } setIsDxModalOpen(false); };
-  const handleAdmin = (e) => { const name = e.target.name; const val = e.target.value;
-  if (name === 'dniResp') { const encontrado = dbPersonal.find(p => p.dni === val.trim());
-  if (encontrado) { setAdminData(prev => ({ ...prev, dniResp: val, nombreResp: encontrado.nombre }));
-  } else { setAdminData(prev => ({ ...prev, dniResp: val })); } } else { setAdminData({ ...adminData, [name]: val });
-  } };
+
+ // const handleAdmin = (e) => { const name = e.target.name; const val = e.target.value;
+ // if (name === 'dniResp') { const encontrado = dbPersonal.find(p => p.dni === val.trim());
+ // if (encontrado) { setAdminData(prev => ({ ...prev, dniResp: val, nombreResp: encontrado.nombre }));
+ // } else { setAdminData(prev => ({ ...prev, dniResp: val })); } } else { setAdminData({ ...adminData, [name]: val });
+ // } };
+
+const handleAdmin = (e) => {
+    const name = e.target.name;
+    const val = e.target.value;
+
+    if (name === 'dniResp') {
+      // Busca coincidencias inmediatas (sin importar longitud)
+      const encontrado = dbPersonal.find(p => p.dni === val.trim());
+
+      if (encontrado) {
+        setAdminData(prev => ({
+          ...prev,
+          dniResp: val,
+          nombreResp: encontrado.nombre,
+          // AQUI ESTA EL CAMBIO: Asigna el establecimiento si existe en el archivo
+          establecimiento: encontrado.establecimiento || prev.establecimiento
+        }));
+      } else {
+        // Si no lo encuentra, solo permite seguir escribiendo
+        setAdminData(prev => ({ ...prev, dniResp: val }));
+      }
+    } else {
+      // Para el resto de campos (año, mes, etc.)
+      setAdminData({ ...adminData, [name]: val });
+    }
+  };
+
   
   const handlePatient = (e) => {
       setShowNewBtn(false);
@@ -2490,7 +2519,7 @@ export default function App() {
             antL: 7,  antV: 8,
             est: 4,   serv: 4,
             dx: 55,   
-            tipo: 4,  lab: 5.9,   cie: 13
+            tipo: 4,  lab: 6,   cie: 15
         };
 
         // --- CAMBIO 1: AUMENTAR ALTURA DE CASILLAS IZQUIERDAS (De 4 a 7) ---
@@ -2766,12 +2795,17 @@ export default function App() {
                     cell(c.dosaje ? `DOSAJE: ${c.dosaje}` : "", cx, y, wCenter, hRowName, {align:'center', fontSize:6, border: false}); 
                     cx += wCenter;
 
-                    const wFURLabel = w.lab * 2;
+		    const wFURLabel = w.lab * 2;
                     cell("FUR:", cx, y, wFURLabel, hRowName, {align:'right', bold:true, border: false, fontSize:6}); 
                     cx += wFURLabel;
 
                     const wFURVal = w.lab + w.cie;
-                    cell(p.fur ? p.fur.split('-').reverse().join('/') : "", cx, y, wFURVal, hRowName, {align:'center', fill:[240,240,240], border:true, bold:true, fontSize:7});
+                    // --- LÓGICA COLOR MORADO PARA FUR ---
+                    let colorFur = [240, 240, 240]; // Gris por defecto
+                    if (p.condicion === 'GESTANTE' && p.fur) {
+                        colorFur = [204, 153, 255]; // Morado
+                    }
+                    cell(p.fur ? p.fur.split('-').reverse().join('/') : "", cx, y, wFURVal, hRowName, {align:'center', fill: colorFur, border:true, bold:true, fontSize:7});
                 } else {
                     let cxEmpty = cx;
                     cell("", cxEmpty, y, w.dia + w.dni + w.fin + w.dist, hRowName, {border: true});
@@ -2796,7 +2830,13 @@ export default function App() {
                 cx += w.dia;
                 cell(p.dni, cx, yData, w.dni, hRowData, {align:'center', fontSize:7, bold:true});
                 cell(p.hc, cx, yData + hRowData, w.dni, hRowData, {align:'center', fontSize:7, bold:true});
-                cell(p.condicion, cx, yData + (hRowData*2), w.dni, hRowData, {align:'center', fontSize:5.5, bold:false});
+                //cell(p.condicion, cx, yData + (hRowData*2), w.dni, hRowData, {align:'center', fontSize:5.5, bold:false});
+		// --- LÓGICA COLOR MORADO PARA CONDICIÓN ---
+                let colorCondicion = null;
+                if (p.condicion === 'GESTANTE' || p.condicion === 'PUERPERA') {
+                    colorCondicion = [204, 153, 255]; // Morado
+                }
+                cell(p.condicion, cx, yData + (hRowData*2), w.dni, hRowData, {align:'center', fontSize:5.5, bold: !!colorCondicion, fill: colorCondicion});
                 cx += w.dni;
                 const fRaw = (p.financiador || '').toString().trim().toUpperCase();
 
@@ -2858,9 +2898,17 @@ export default function App() {
                 cell(p.condEst, cx, yData, w.est, hDataBlock, {align:'center', vAlign:'middle', bold:false, fontSize:7}); cx += w.est;
                 cell(p.condServ, cx, yData, w.serv, hDataBlock, {align:'center', vAlign:'middle', bold:false, fontSize:7}); cx += w.serv;
 
+                // --- INICIO NUEVO CÓDIGO PARA PINTAR "TIPO" EN PDF ---
+                const getBgColor = (tipo) => {
+                    if (tipo === 'R') return [255, 255, 0];   // Amarillo
+                    if (tipo === 'D') return [146, 208, 80];  // Verde
+                    if (tipo === 'P') return [204, 153, 255]; // Morado
+                    return null; // Blanco/Transparente por defecto
+                };
+
                 let cxDx = cx;
                 cell(d1.desc, cxDx, yData, w.dx, hRowData, {align:'left', fontSize:5.5, bold:false}); cxDx+=w.dx;
-                cell(d1.tipo, cxDx, yData, w.tipo, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.tipo;
+                cell(d1.tipo, cxDx, yData, w.tipo, hRowData, {align:'center', bold:true, fontSize:6, fill: getBgColor(d1.tipo)}); cxDx+=w.tipo;
                 cell(d1.lab1, cxDx, yData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d1.lab2, cxDx, yData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d1.lab3, cxDx, yData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
@@ -2868,7 +2916,7 @@ export default function App() {
 
                 cxDx = cx;
                 cell(d2.desc, cxDx, yData+hRowData, w.dx, hRowData, {align:'left', fontSize:5.5, bold:false}); cxDx+=w.dx;
-                cell(d2.tipo, cxDx, yData+hRowData, w.tipo, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.tipo;
+                cell(d2.tipo, cxDx, yData+hRowData, w.tipo, hRowData, {align:'center', bold:true, fontSize:6, fill: getBgColor(d2.tipo)}); cxDx+=w.tipo;
                 cell(d2.lab1, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d2.lab2, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d2.lab3, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
@@ -2876,12 +2924,12 @@ export default function App() {
 
                 cxDx = cx;
                 cell(d3.desc, cxDx, yData+(hRowData*2), w.dx, hRowData, {align:'left', fontSize:5.5, bold:false}); cxDx+=w.dx;
-                cell(d3.tipo, cxDx, yData+(hRowData*2), w.tipo, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.tipo;
+                cell(d3.tipo, cxDx, yData+(hRowData*2), w.tipo, hRowData, {align:'center', bold:true, fontSize:6, fill: getBgColor(d3.tipo)}); cxDx+=w.tipo;
                 cell(d3.lab1, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d3.lab2, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d3.lab3, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d3.codigo, cxDx, yData+(hRowData*2), w.cie, hRowData, {align:'center', bold:true, fontSize:7});
-
+                // --- FIN NUEVO CÓDIGO PDF ---
                 y += hBlock;
             }
                // ==================================================================
@@ -3186,6 +3234,22 @@ export default function App() {
                     } 
                 }
             }
+            // >>> NUEVO CÓDIGO PARA PINTAR CELDAS "TIPO" EN EXCEL <<<
+                // La columna 14 corresponde exactamente a la columna "TIPO"
+                if (!isHeaderBlock && C === 14 && ws[cell_ref] && ws[cell_ref].v) {
+                    const val = ws[cell_ref].v;
+                    if (val === 'R') {
+                        // Amarillo para REPETIDO
+                        ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "FFFF00" } } }; 
+                    } else if (val === 'D') {
+                        // Verde para DEFINITIVO
+                        ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "92D050" } } }; 
+                    } else if (val === 'P') {
+                        // Morado para PRESUNTIVO
+                        ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "CC99FF" } } }; 
+                    }
+                }
+                // >>> FIN NUEVO CÓDIGO EXCEL <<<
             }
         }
         XLSX.utils.book_append_sheet(wb, ws, "HIS_Export");
