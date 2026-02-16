@@ -1390,10 +1390,20 @@ export default function App() {
                 };
             }).filter(p => p !== null);
             
-            await idb.savePatients(procesados);
+	    await idb.savePatients(procesados);
             setDbPacientes(procesados);
             setDbStatus('ready');
+
+            // --- INICIO DE CORRECCIÓN: ACTUALIZAR LA FECHA TAMBIÉN DESDE ESTE BOTÓN ---
+            const hoy = new Date();
+            const fechaStr = hoy.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' ' + hoy.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+            
+            setPadronDate(fechaStr); // Actualiza la fecha en el botón verde
+            localStorage.setItem('PADRON_DATE', fechaStr); // La guarda en la memoria del navegador
+            // --- FIN DE CORRECCIÓN ---
+
             alert(`✅ BASE DE DATOS ACTUALIZADA: ${procesados.length} pacientes cargados con sus históricos.`);
+                   
           } else if (type === 'cie10') {
             const procesados = rawData.slice(1).map(r => ({ CODIGO: r[0] ? String(r[0]).trim() : "", DESCRIPCION: r[1] ? String(r[1]).trim() : "", BUSQUEDA: (String(r[0]||"") + " " + String(r[1]||"")).toUpperCase() })).filter(d => d.CODIGO);
             setDbCie10(procesados);
