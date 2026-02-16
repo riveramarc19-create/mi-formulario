@@ -3233,6 +3233,35 @@ const handleAdmin = (e) => {
                         if ([15, 16, 17].includes(C)) ws[cell_ref].s = centerSmallStyle; 
                     } 
                 }
+               if (!isHeaderBlock && currentPh !== -1) {
+                    const offset = R - currentPh;
+                    const cellVal = ws[cell_ref] && ws[cell_ref].v ? ws[cell_ref].v : null;
+
+                    // 1. PINTAR COLUMNA "TIPO" DE DIAGNÓSTICO (D, P, R)
+                    if (C === 14 && offset >= 1 && offset <= 3 && cellVal) {
+                        if (cellVal === 'R') ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "FFFF00" } } }; // Amarillo
+                        else if (cellVal === 'D') ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "92D050" } } }; // Verde
+                        else if (cellVal === 'P') ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "CC99FF" } } }; // Morado
+                    }
+                    
+                    // 2. PINTAR CONDICIÓN (GESTANTE O PUERPERA)
+                    if (C === 2 && offset === 3 && (cellVal === 'GESTANTE' || cellVal === 'PUERPERA')) {
+                        ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "CC99FF" } } }; // Morado
+                    }
+
+                    // 3. PINTAR FUR (SI ES GESTANTE)
+                    // El valor del FUR está en la fila 0 (offset === 0) y abarca las columnas combinadas 16, 17 y 18
+                    if (offset === 0 && (C >= 16 && C <= 18)) {
+                        // Verificamos si en este mismo paciente la condición dice GESTANTE
+                        const condCellRef = XLSX.utils.encode_cell({ c: 2, r: currentPh + 3 });
+                        const condVal = ws[condCellRef] ? ws[condCellRef].v : null;
+                        
+                        // Si es gestante y la celda FUR tiene datos (ya sea fecha o la palabra FUR)
+                        if (condVal === 'GESTANTE' && cellVal && cellVal !== '') {
+                            ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "CC99FF" } } }; // Morado
+                        }
+                    }
+                }
             }
             // >>> NUEVO CÓDIGO PARA PINTAR CELDAS "TIPO" EN EXCEL <<<
                 // La columna 14 corresponde exactamente a la columna "TIPO"
@@ -4057,7 +4086,7 @@ const handleAdmin = (e) => {
                                 onChange={(e) => setManualData({...manualData, financiador: e.target.value})}
                             >
                                 <option value="2-SIS">2-SIS</option>
-                                <option value="1-PAGANTE">1-PAGANTE</option>
+                                <option value="1-USUARIO">1-USUARIO</option>
                                 <option value="3-ESSALUD">3-ESSALUD</option>
                                 <option value="10-OTROS">10-OTROS</option>
                             </select>
@@ -4229,7 +4258,7 @@ const handleAdmin = (e) => {
                                 <label className="text-[9px] font-extrabold text-violet-700 uppercase ml-1 mb-0.5 block">Financiador</label>
                                 <select name="financiador" value={patientData.financiador} onChange={handlePatient} className="w-full h-8 px-2 rounded-lg border-2 border-violet-200 bg-white font-bold text-xs text-violet-900 outline-none focus:border-violet-500 transition-all cursor-pointer shadow-sm">
                                     <option value="">SELECCIONAR...</option>
-                                    <option value="1-PAGANTE">1-PAGANTE</option>
+                                    <option value="1-NI">1-USUARIO</option>
                                     <option value="2-SIS">2-SIS</option>
                                     <option value="3-ESSALUD">3-ESSALUD</option>
                                     <option value="10-OTROS">10-OTROS</option>
