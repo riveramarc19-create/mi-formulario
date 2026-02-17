@@ -614,7 +614,7 @@ const LAB_CONFIG = {
     '59401.05': { 1: ['1', '2', '3'] },
     '59401.06': { 1: ['1', '2', '3', 'TA'] },
     '59430': { 1: ['1', '2',''] },
-    'Z359': { 1: ['1', '2','3'] },
+    //'Z359': { 1: ['1', '2','3'] },
 
 
 
@@ -788,7 +788,7 @@ const LAB_CONFIG = {
         1: { label: 'N°', options: ['1','2','3','4','5'] }, 
             },
 '99207.01': { 
-        1: { label: 'N°', options: ['1','2','3','4','5'] }, 
+        1: { label: 'N°', options: ['1','2','3','4','5','6','7','8'] }, 
             },
 
 'C0011': { 
@@ -866,6 +866,12 @@ const LAB_CONFIG = {
         1: { label: 'N°', options: ['1','2','3'] }, 
             },
 
+
+'76805': { 
+        1: { label: 'N°', options: ['1','2','3','4','5'] }, 
+            },
+
+
 //==============================================================================================================
 '99801': { 
         1: { label: 'N°', options: ['TA','1','2',] },
@@ -907,6 +913,11 @@ const LAB_CONFIG = {
     '99199.22': { 
         1: { label: 'SISTOLICA', options: [] }, 
         2: { label: 'DIASTOLICA', options: [] }
+    },
+
+    'Z359': { 
+        1: { label: 'TRIMESTRE', options: ['1','2','3'] }, 
+        2: { label: 'N° SEM', options: [] }
     }
 
 };
@@ -928,6 +939,11 @@ export default function App() {
   const [isMasterUploadEnabled, setIsMasterUploadEnabled] = useState(false); 
   const [isProcessingMaster, setIsProcessingMaster] = useState(false);
   const [padronDate, setPadronDate] = useState(localStorage.getItem('PADRON_DATE') || "");
+  const DNIS_AUTORIZADOS = [
+    "123",  // Tú
+    "02860100",   // Jefe El Puerto
+    "43947945",  // Jefe Lagunas
+];
   useEffect(() => {
     const handleClickOutside = (event) => {
       // 1. Lógica del Calendario (Mantenemos la que tenías)
@@ -993,6 +1009,7 @@ export default function App() {
             ...prev, 
             dniResp: user.dni, 
             nombreResp: user.nombre,
+ 	    establecimiento: user.establecimiento || prev.establecimiento,
             
             // Si el usuario tiene UPS definida, úsala. Si no, usa MEDICINA por defecto.
             ups: user.ups || 'MEDICINA' 
@@ -1038,7 +1055,7 @@ export default function App() {
   const [hbAdjusted, setHbAdjusted] = useState(null);
   const [isPremature, setIsPremature] = useState(false);
 
-  const [adminData, setAdminData] = useState({ anio: '2026', mes: 'ENERO', establecimiento: 'E.S I-4 PACAIPAMPA', turno: 'MAÑANA', ups: 'MEDICINA', dniResp: '', nombreResp: '', isConfigured: false });
+  const [adminData, setAdminData] = useState({ anio: '2026', mes: 'FEBRERO', establecimiento: '', turno: 'MAÑANA', ups: 'MEDICINA', dniResp: '', nombreResp: '', isConfigured: false });
   const [printCount, setPrintCount] = useState(() => {
       const saved = localStorage.getItem('his_print_count');
       return saved ? parseInt(saved, 10) : 0;
@@ -1373,10 +1390,20 @@ export default function App() {
                 };
             }).filter(p => p !== null);
             
-            await idb.savePatients(procesados);
+	    await idb.savePatients(procesados);
             setDbPacientes(procesados);
             setDbStatus('ready');
+
+            // --- INICIO DE CORRECCIÓN: ACTUALIZAR LA FECHA TAMBIÉN DESDE ESTE BOTÓN ---
+            const hoy = new Date();
+            const fechaStr = hoy.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' ' + hoy.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+            
+            setPadronDate(fechaStr); // Actualiza la fecha en el botón verde
+            localStorage.setItem('PADRON_DATE', fechaStr); // La guarda en la memoria del navegador
+            // --- FIN DE CORRECCIÓN ---
+
             alert(`✅ BASE DE DATOS ACTUALIZADA: ${procesados.length} pacientes cargados con sus históricos.`);
+                   
           } else if (type === 'cie10') {
             const procesados = rawData.slice(1).map(r => ({ CODIGO: r[0] ? String(r[0]).trim() : "", DESCRIPCION: r[1] ? String(r[1]).trim() : "", BUSQUEDA: (String(r[0]||"") + " " + String(r[1]||"")).toUpperCase() })).filter(d => d.CODIGO);
             setDbCie10(procesados);
@@ -1653,11 +1680,39 @@ export default function App() {
   const saveModalSelection = () => { if (!tempDx.desc || !tempDx.codigo) { alert("Debe seleccionar un diagnóstico válido."); return;
   } const newDiagnoses = [...diagnoses]; newDiagnoses[currentDxRow] = { ...tempDx }; setDiagnoses(newDiagnoses); if (dxErrors[currentDxRow]) { const newErrors = { ...dxErrors };
   delete newErrors[currentDxRow]; setDxErrors(newErrors); } setIsDxModalOpen(false); };
-  const handleAdmin = (e) => { const name = e.target.name; const val = e.target.value;
-  if (name === 'dniResp') { const encontrado = dbPersonal.find(p => p.dni === val.trim());
-  if (encontrado) { setAdminData(prev => ({ ...prev, dniResp: val, nombreResp: encontrado.nombre }));
-  } else { setAdminData(prev => ({ ...prev, dniResp: val })); } } else { setAdminData({ ...adminData, [name]: val });
-  } };
+
+ // const handleAdmin = (e) => { const name = e.target.name; const val = e.target.value;
+ // if (name === 'dniResp') { const encontrado = dbPersonal.find(p => p.dni === val.trim());
+ // if (encontrado) { setAdminData(prev => ({ ...prev, dniResp: val, nombreResp: encontrado.nombre }));
+ // } else { setAdminData(prev => ({ ...prev, dniResp: val })); } } else { setAdminData({ ...adminData, [name]: val });
+ // } };
+
+const handleAdmin = (e) => {
+    const name = e.target.name;
+    const val = e.target.value;
+
+    if (name === 'dniResp') {
+      // Busca coincidencias inmediatas (sin importar longitud)
+      const encontrado = dbPersonal.find(p => p.dni === val.trim());
+
+      if (encontrado) {
+        setAdminData(prev => ({
+          ...prev,
+          dniResp: val,
+          nombreResp: encontrado.nombre,
+          // AQUI ESTA EL CAMBIO: Asigna el establecimiento si existe en el archivo
+          establecimiento: encontrado.establecimiento || prev.establecimiento
+        }));
+      } else {
+        // Si no lo encuentra, solo permite seguir escribiendo
+        setAdminData(prev => ({ ...prev, dniResp: val }));
+      }
+    } else {
+      // Para el resto de campos (año, mes, etc.)
+      setAdminData({ ...adminData, [name]: val });
+    }
+  };
+
   
   const handlePatient = (e) => {
       setShowNewBtn(false);
@@ -2087,7 +2142,13 @@ export default function App() {
             setIsCalendarOpen(true); 
             return; 
         }
-
+         // Validación de Financiador (OBLIGATORIO)
+	 const financiadoresValidos = ["1-USUARIO", "2-SIS", "3-ESSALUD", "10-OTROS"];
+        if (!financiadoresValidos.includes(patientData.financiador)) {
+            alert("⚠️ FALTA FINANCIADOR\n\nPor favor, seleccione una opción válida en la casilla de Financiador.");
+            markError("financiador"); 
+            return; 
+        }
         // Condiciones (Establecimiento y Servicio)
         if (!patientData.condEst || patientData.condEst === "") { 
             alert("⚠️ FALTA CONDICIÓN ESTABLECIMIENTO\nSeleccione: Nuevo, Continuador o Reingresante."); 
@@ -2474,7 +2535,7 @@ export default function App() {
             antL: 7,  antV: 8,
             est: 4,   serv: 4,
             dx: 55,   
-            tipo: 4,  lab: 5.9,   cie: 13
+            tipo: 4,  lab: 6,   cie: 15
         };
 
         // --- CAMBIO 1: AUMENTAR ALTURA DE CASILLAS IZQUIERDAS (De 4 a 7) ---
@@ -2750,12 +2811,17 @@ export default function App() {
                     cell(c.dosaje ? `DOSAJE: ${c.dosaje}` : "", cx, y, wCenter, hRowName, {align:'center', fontSize:6, border: false}); 
                     cx += wCenter;
 
-                    const wFURLabel = w.lab * 2;
+		    const wFURLabel = w.lab * 2;
                     cell("FUR:", cx, y, wFURLabel, hRowName, {align:'right', bold:true, border: false, fontSize:6}); 
                     cx += wFURLabel;
 
                     const wFURVal = w.lab + w.cie;
-                    cell(p.fur ? p.fur.split('-').reverse().join('/') : "", cx, y, wFURVal, hRowName, {align:'center', fill:[240,240,240], border:true, bold:true, fontSize:7});
+                    // --- LÓGICA COLOR MORADO PARA FUR ---
+                    let colorFur = [240, 240, 240]; // Gris por defecto
+                    if (p.condicion === 'GESTANTE' && p.fur) {
+                        colorFur = [204, 153, 255]; // Morado
+                    }
+                    cell(p.fur ? p.fur.split('-').reverse().join('/') : "", cx, y, wFURVal, hRowName, {align:'center', fill: colorFur, border:true, bold:true, fontSize:7});
                 } else {
                     let cxEmpty = cx;
                     cell("", cxEmpty, y, w.dia + w.dni + w.fin + w.dist, hRowName, {border: true});
@@ -2780,7 +2846,13 @@ export default function App() {
                 cx += w.dia;
                 cell(p.dni, cx, yData, w.dni, hRowData, {align:'center', fontSize:7, bold:true});
                 cell(p.hc, cx, yData + hRowData, w.dni, hRowData, {align:'center', fontSize:7, bold:true});
-                cell(p.condicion, cx, yData + (hRowData*2), w.dni, hRowData, {align:'center', fontSize:5.5, bold:false});
+                //cell(p.condicion, cx, yData + (hRowData*2), w.dni, hRowData, {align:'center', fontSize:5.5, bold:false});
+		// --- LÓGICA COLOR MORADO PARA CONDICIÓN ---
+                let colorCondicion = null;
+                if (p.condicion === 'GESTANTE' || p.condicion === 'PUERPERA') {
+                    colorCondicion = [204, 153, 255]; // Morado
+                }
+                cell(p.condicion, cx, yData + (hRowData*2), w.dni, hRowData, {align:'center', fontSize:5.5, bold: !!colorCondicion, fill: colorCondicion});
                 cx += w.dni;
                 const fRaw = (p.financiador || '').toString().trim().toUpperCase();
 
@@ -2842,9 +2914,17 @@ export default function App() {
                 cell(p.condEst, cx, yData, w.est, hDataBlock, {align:'center', vAlign:'middle', bold:false, fontSize:7}); cx += w.est;
                 cell(p.condServ, cx, yData, w.serv, hDataBlock, {align:'center', vAlign:'middle', bold:false, fontSize:7}); cx += w.serv;
 
+                // --- INICIO NUEVO CÓDIGO PARA PINTAR "TIPO" EN PDF ---
+                const getBgColor = (tipo) => {
+                    if (tipo === 'R') return [255, 255, 0];   // Amarillo
+                    if (tipo === 'D') return [146, 208, 80];  // Verde
+                    if (tipo === 'P') return [204, 153, 255]; // Morado
+                    return null; // Blanco/Transparente por defecto
+                };
+
                 let cxDx = cx;
                 cell(d1.desc, cxDx, yData, w.dx, hRowData, {align:'left', fontSize:5.5, bold:false}); cxDx+=w.dx;
-                cell(d1.tipo, cxDx, yData, w.tipo, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.tipo;
+                cell(d1.tipo, cxDx, yData, w.tipo, hRowData, {align:'center', bold:true, fontSize:6, fill: getBgColor(d1.tipo)}); cxDx+=w.tipo;
                 cell(d1.lab1, cxDx, yData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d1.lab2, cxDx, yData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d1.lab3, cxDx, yData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
@@ -2852,7 +2932,7 @@ export default function App() {
 
                 cxDx = cx;
                 cell(d2.desc, cxDx, yData+hRowData, w.dx, hRowData, {align:'left', fontSize:5.5, bold:false}); cxDx+=w.dx;
-                cell(d2.tipo, cxDx, yData+hRowData, w.tipo, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.tipo;
+                cell(d2.tipo, cxDx, yData+hRowData, w.tipo, hRowData, {align:'center', bold:true, fontSize:6, fill: getBgColor(d2.tipo)}); cxDx+=w.tipo;
                 cell(d2.lab1, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d2.lab2, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d2.lab3, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
@@ -2860,12 +2940,12 @@ export default function App() {
 
                 cxDx = cx;
                 cell(d3.desc, cxDx, yData+(hRowData*2), w.dx, hRowData, {align:'left', fontSize:5.5, bold:false}); cxDx+=w.dx;
-                cell(d3.tipo, cxDx, yData+(hRowData*2), w.tipo, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.tipo;
+                cell(d3.tipo, cxDx, yData+(hRowData*2), w.tipo, hRowData, {align:'center', bold:true, fontSize:6, fill: getBgColor(d3.tipo)}); cxDx+=w.tipo;
                 cell(d3.lab1, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d3.lab2, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d3.lab3, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d3.codigo, cxDx, yData+(hRowData*2), w.cie, hRowData, {align:'center', bold:true, fontSize:7});
-
+                // --- FIN NUEVO CÓDIGO PDF ---
                 y += hBlock;
             }
                // ==================================================================
@@ -3169,7 +3249,52 @@ export default function App() {
                         if ([15, 16, 17].includes(C)) ws[cell_ref].s = centerSmallStyle; 
                     } 
                 }
+               if (!isHeaderBlock && currentPh !== -1) {
+                    const offset = R - currentPh;
+                    const cellVal = ws[cell_ref] && ws[cell_ref].v ? ws[cell_ref].v : null;
+
+                    // 1. PINTAR COLUMNA "TIPO" DE DIAGNÓSTICO (D, P, R)
+                    if (C === 14 && offset >= 1 && offset <= 3 && cellVal) {
+                        if (cellVal === 'R') ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "FFFF00" } } }; // Amarillo
+                        else if (cellVal === 'D') ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "92D050" } } }; // Verde
+                        else if (cellVal === 'P') ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "CC99FF" } } }; // Morado
+                    }
+                    
+                    // 2. PINTAR CONDICIÓN (GESTANTE O PUERPERA)
+                    if (C === 2 && offset === 3 && (cellVal === 'GESTANTE' || cellVal === 'PUERPERA')) {
+                        ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "CC99FF" } } }; // Morado
+                    }
+
+                    // 3. PINTAR FUR (SI ES GESTANTE)
+                    // El valor del FUR está en la fila 0 (offset === 0) y abarca las columnas combinadas 16, 17 y 18
+                    if (offset === 0 && (C >= 16 && C <= 18)) {
+                        // Verificamos si en este mismo paciente la condición dice GESTANTE
+                        const condCellRef = XLSX.utils.encode_cell({ c: 2, r: currentPh + 3 });
+                        const condVal = ws[condCellRef] ? ws[condCellRef].v : null;
+                        
+                        // Si es gestante y la celda FUR tiene datos (ya sea fecha o la palabra FUR)
+                        if (condVal === 'GESTANTE' && cellVal && cellVal !== '') {
+                            ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "CC99FF" } } }; // Morado
+                        }
+                    }
+                }
             }
+            // >>> NUEVO CÓDIGO PARA PINTAR CELDAS "TIPO" EN EXCEL <<<
+                // La columna 14 corresponde exactamente a la columna "TIPO"
+                if (!isHeaderBlock && C === 14 && ws[cell_ref] && ws[cell_ref].v) {
+                    const val = ws[cell_ref].v;
+                    if (val === 'R') {
+                        // Amarillo para REPETIDO
+                        ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "FFFF00" } } }; 
+                    } else if (val === 'D') {
+                        // Verde para DEFINITIVO
+                        ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "92D050" } } }; 
+                    } else if (val === 'P') {
+                        // Morado para PRESUNTIVO
+                        ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "CC99FF" } } }; 
+                    }
+                }
+                // >>> FIN NUEVO CÓDIGO EXCEL <<<
             }
         }
         XLSX.utils.book_append_sheet(wb, ws, "HIS_Export");
@@ -3324,7 +3449,7 @@ export default function App() {
                   
                   {/* BOTÓN 5: SOLO VISIBLE SI EL DNI COINCIDE CON EL TUYO */}
                   {/* 👇👇👇 ¡PON TU DNI AQUÍ ABAJO! 👇👇👇 */}
-                  {adminData.dniResp === "123" && (
+                  {DNIS_AUTORIZADOS.includes(adminData.dniResp) && (
                       <div className={`relative group transition-all duration-300`}>
                           <input type="file" id="fileMaster" className="hidden" accept=".xlsx, .xls" onChange={handleMasterPadronUpload} disabled={isProcessingMaster} />
                           <label 
@@ -3977,7 +4102,7 @@ export default function App() {
                                 onChange={(e) => setManualData({...manualData, financiador: e.target.value})}
                             >
                                 <option value="2-SIS">2-SIS</option>
-                                <option value="1-PAGANTE">1-PAGANTE</option>
+                                <option value="1-USUARIO">1-USUARIO</option>
                                 <option value="3-ESSALUD">3-ESSALUD</option>
                                 <option value="10-OTROS">10-OTROS</option>
                             </select>
@@ -4145,11 +4270,21 @@ export default function App() {
                             </div>
                             
                             {/* FINANCIADOR REINTEGRADO */}
-                            <div>
+                             <div>
                                 <label className="text-[9px] font-extrabold text-violet-700 uppercase ml-1 mb-0.5 block">Financiador</label>
-                                <select name="financiador" value={patientData.financiador} onChange={handlePatient} className="w-full h-8 px-2 rounded-lg border-2 border-violet-200 bg-white font-bold text-xs text-violet-900 outline-none focus:border-violet-500 transition-all cursor-pointer shadow-sm">
+                                <select 
+                                    name="financiador" 
+                                    // Esta línea fuerza a que si el dato no es exacto, se ponga en "SELECCIONAR..."
+                                    value={["1-USUARIO", "2-SIS", "3-ESSALUD", "10-OTROS"].includes(patientData.financiador) ? patientData.financiador : ""} 
+                                    onChange={handlePatient} 
+                                    // Aquí está la magia del color ROJO
+                                    className={`w-full h-8 px-2 rounded-lg border-2 bg-white font-bold text-xs outline-none transition-all cursor-pointer shadow-sm
+                                        ${["1-USUARIO", "2-SIS", "3-ESSALUD", "10-OTROS"].includes(patientData.financiador) 
+                                            ? 'border-violet-200 text-violet-900 focus:border-violet-500' 
+                                            : 'border-red-500 text-red-700 bg-red-50 animate-pulse focus:border-red-600'}`}
+                                >
                                     <option value="">SELECCIONAR...</option>
-                                    <option value="1-PAGANTE">1-PAGANTE</option>
+                                    <option value="1-USUARIO">1-USUARIO</option>
                                     <option value="2-SIS">2-SIS</option>
                                     <option value="3-ESSALUD">3-ESSALUD</option>
                                     <option value="10-OTROS">10-OTROS</option>
@@ -5300,7 +5435,7 @@ export default function App() {
         />
       )}
 
-      <style>{` .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; } input[type="date"]::-webkit-calendar-picker-indicator { opacity: 1; display: block; width: 1em; height: 1em; position: absolute; top: 50%; right: 12px; transform: translateY(-50%); color: #475569; cursor: pointer; } input[type="date"] { text-align: center; padding-left: 0.5rem; padding-right: 2.5rem; } `}</style>
+      <style>{` .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; } input[type="date"]::-webkit-calendar-picker-indicator { opacity: 1; display: block; width: 1em; height: 1em; position: absolute; top: 50%; right: 12px; transform: translateY(-50%); color: #475569; cursor: pointer; } input[type="date"] { text-align: center; padding-left: 0.5rem; padding-right: 2.5rem; position: relative; } `}</style>
     </div>
   );
 }
