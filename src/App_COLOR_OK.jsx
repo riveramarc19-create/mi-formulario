@@ -2421,10 +2421,6 @@ const handleAdmin = (e) => {
       // IMPORTANTE: Asegura que el calendario NO se abra
       // Nota: No llamamos a resetForm(), por lo que los datos se mantienen intactos.
   };
-
-  // 2. FUNCIÓN PARA EL BOTÓN "SÍ, DESEO GUARDAR"
-// 2. FUNCIÓN PARA EL BOTÓN "SÍ, DESEO GUARDAR" (LÓGICA HIS CORREGIDA)
-    // 2. FUNCIÓN PARA EL BOTÓN "SÍ, DESEO GUARDAR" (LÓGICA INTELIGENTE)
    // 2. FUNCIÓN PARA EL BOTÓN "SÍ, DESEO GUARDAR" (CON PERSISTENCIA DE DATOS)
   const confirmSavePatient = () => {
       // 1. Empaquetamos los datos actuales
@@ -2474,6 +2470,60 @@ const handleAdmin = (e) => {
       setShowSaveConfirm(false); 
       alert("✅ Registro guardado. (Se mantendrá en memoria si cierra el navegador)."); 
   }; 
+  // =========================================================================
+  // >>> NUEVAS FUNCIONES PARA EDITAR Y ELIMINAR PACIENTES DESDE EL PASO 4 <<<
+  // =========================================================================
+  const handleEditPatient = (idx) => {
+      const isDraft = idx === savedPatients.length; // Si es el paciente actual (sin guardar)
+      
+      // Si el usuario intenta editar uno guardado, pero tiene datos a medias en el formulario actual
+      if (!isDraft && patientData.paciente && patientData.paciente.trim() !== '') {
+          const confirmacion = window.confirm("⚠️ Tienes un paciente en curso sin guardar.\nSi editas un registro anterior, perderás los datos en pantalla.\n¿Deseas continuar?");
+          if (!confirmacion) return;
+      }
+
+      if (isDraft) {
+          setStep(1); // Si es el borrador, solo lo enviamos al Paso 1
+      } else {
+          const recordToEdit = savedPatients[idx];
+          
+          // 1. Quitamos al paciente de la lista de guardados (Vuelve a estado "borrador")
+          const newSaved = [...savedPatients];
+          newSaved.splice(idx, 1);
+          setSavedPatients(newSaved);
+          localStorage.setItem('HIS_LOTE_PENDIENTE', JSON.stringify(newSaved));
+          
+          // 2. Cargamos todos sus datos al formulario para editarlos
+          setPatientData(recordToEdit.patient);
+          setClinicalData(recordToEdit.clinical);
+          setDiagnoses(recordToEdit.diagnoses);
+          setIsPatientDataLocked(true); // Bloqueamos el DNI/Nombres por seguridad
+          
+          // 3. Enviamos al usuario al Paso 1 para que corrija
+          setStep(1);
+      }
+  };
+
+  const handleDeletePatient = (idx) => {
+      const confirmacion = window.confirm("🚨 ¿Estás seguro de ELIMINAR a este paciente del registro HIS?");
+      if (!confirmacion) return;
+
+      const isDraft = idx === savedPatients.length;
+
+      if (isDraft) {
+          // Si es el borrador actual, solo reseteamos el formulario
+          setPatientData({ ...initialPatient, fecAtencion: patientData.fecAtencion, estAtencion: adminData.establecimiento, condEst: '', condServ: '' });
+          setClinicalData(initialClinical);
+          setDiagnoses([{ desc: '', tipo: '-', lab1: '', lab2: '', lab3: '', codigo: '' }]);
+      } else {
+          // Si ya estaba guardado, lo eliminamos de la memoria permanentemente
+          const newSaved = [...savedPatients];
+          newSaved.splice(idx, 1);
+          setSavedPatients(newSaved);
+          localStorage.setItem('HIS_LOTE_PENDIENTE', JSON.stringify(newSaved));
+      }
+  };
+  // =========================================================================
   const generatePDF = () => {
     try {
         const allPatients = [...savedPatients];
@@ -5035,7 +5085,31 @@ const handleAdmin = (e) => {
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
                                             <td className="border border-black text-center font-bold align-middle bg-white" rowSpan={3}>{(p.fecAtencion || "").split('-')[2]}</td>
                                             <td className="border border-black text-center font-bold align-middle bg-white text-[9px]" rowSpan={3}>{p.dni}</td>
-                                            <td className="border border-black px-1 align-middle font-bold bg-white uppercase truncate text-[9px]" rowSpan={3} title={p.paciente}>{p.paciente}</td>
+                                            {/* --- CELDA DE PACIENTE CON BOTONES DE EDICIÓN FLOTANTES --- */}
+                                            <td className="border border-black px-1 align-middle font-bold bg-white uppercase text-[9px] relative group/row hover:bg-slate-50 transition-colors" rowSpan={3}>
+                                                <div className="w-full h-full relative flex items-center justify-between gap-1">
+                                                    <span className="truncate w-full block" title={p.paciente}>{p.paciente || "(SIN NOMBRE)"}</span>
+                                                    
+                                                    {/* Contenedor de Botones (Oculto en PC hasta hacer hover, siempre visible en pantallas táctiles) */}
+                                                    <div className="flex flex-col gap-1 absolute right-0 top-1/2 -translate-y-1/2 opacity-100 lg:opacity-0 lg:group-hover/row:opacity-100 transition-opacity bg-white/90 p-1 rounded-l-md shadow-sm border border-r-0 border-slate-200 z-10">
+                                                        <button 
+                                                            onClick={() => handleEditPatient(idx)} 
+                                                            className="bg-blue-100 text-blue-700 hover:bg-blue-600 hover:text-white p-1 rounded transition-colors" 
+                                                            title="Editar toda la información del paciente"
+                                                        >
+                                                            <Edit size={12}/>
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleDeletePatient(idx)} 
+                                                            className="bg-red-100 text-red-700 hover:bg-red-600 hover:text-white p-1 rounded transition-colors" 
+                                                            title="Eliminar registro"
+                                                        >
+                                                            <Trash2 size={12}/>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            {/* -------------------------------------------------------- */}
                                             <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.financiador === 'SIS' ? '2' : '1'}</td>
                                             <td className="border border-black px-1 align-middle text-[8px] bg-white truncate" rowSpan={3} title={p.distrito}>{p.distrito}</td>
                                             <td className="border border-black text-center font-bold align-middle bg-white" rowSpan={3}>{a.y > 0 ? a.y : a.m > 0 ? a.m + 'm' : a.d + 'd'}</td>
