@@ -61,25 +61,64 @@ const LOCALIDADES_ALTITUD = {
     "YUMBE": 2434, "YUMBE DE CHANGRA": 2647, "CACHIACO": 1000 
 };
 
-// --- SERVICIO EN MEMORIA (reemplaza IndexedDB para evitar errores de cuota) ---
-// Los pacientes se guardan en RAM mientras la app está abierta.
-let _memoryPatients = [];
+// --- SERVICIO INDEXEDDB ---
+const DB_NAME = 'HisDatabase_V1';
+const STORE_PACIENTES = 'pacientes';
 
 const idb = {
+  open: () => {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, 1);
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(STORE_PACIENTES)) {
+          db.createObjectStore(STORE_PACIENTES, { keyPath: 'id', autoIncrement: true });
+        }
+      };
+      request.onsuccess = (event) => resolve(event.target.result);
+      request.onerror = (event) => reject(event.target.error);
+    });
+  },
   savePatients: async (patients) => {
-    _memoryPatients = patients;
-    return true;
+    const db = await idb.open();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([STORE_PACIENTES], 'readwrite');
+      const store = transaction.objectStore(STORE_PACIENTES);
+      store.clear(); 
+      patients.forEach(p => store.add(p));
+      transaction.oncomplete = () => resolve(true);
+      transaction.onerror = () => reject(false);
+    });
   },
   getPatients: async () => {
-    return _memoryPatients;
+    const db = await idb.open();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([STORE_PACIENTES], 'readonly');
+      const store = transaction.objectStore(STORE_PACIENTES);
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject([]);
+    });
   },
   clearPatients: async () => {
-    _memoryPatients = [];
-    return true;
+    const db = await idb.open();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([STORE_PACIENTES], 'readwrite');
+      const store = transaction.objectStore(STORE_PACIENTES);
+      const request = store.clear();
+      request.onsuccess = () => resolve(true);
+      request.onerror = () => reject(false);
+    });
   },
   addPatient: async (patient) => {
-    _memoryPatients.push(patient);
-    return true;
+    const db = await idb.open();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([STORE_PACIENTES], 'readwrite');
+      const store = transaction.objectStore(STORE_PACIENTES);
+      const request = store.add(patient);
+      request.onsuccess = () => resolve(true);
+      request.onerror = () => reject(false);
+    });
   }
 };
 
@@ -160,7 +199,7 @@ const CredFollowUpModal = ({ isOpen, onClose }) => {
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const wb = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+        const wb = XLSX.read(evt.target.result, { type: 'binary' });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
         if (data.length > 0) {
@@ -182,7 +221,7 @@ const CredFollowUpModal = ({ isOpen, onClose }) => {
         setIsLoading(false);
       }
     };
-    reader.readAsArrayBuffer(file);
+    reader.readAsBinaryString(file);
   };
 
 
@@ -1229,7 +1268,7 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
-        const wb = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+        const wb = XLSX.read(evt.target.result, { type: 'binary' });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false }); 
 
@@ -1271,7 +1310,7 @@ export default function App() {
         e.target.value = ''; 
       }
     };
-    reader.readAsArrayBuffer(file);
+    reader.readAsBinaryString(file);
   };
   // --- FUNCIÓN PARA DESCARGAR (EXPORTAR) EL PADRÓN A EXCEL ---
   const handleExportPadron = () => {
@@ -1322,7 +1361,7 @@ export default function App() {
       const reader = new FileReader();
       reader.onload = async (evt) => {
         try {
-          const wb = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+          const wb = XLSX.read(evt.target.result, { type: 'binary' });
           const ws = wb.Sheets[wb.SheetNames[0]];
           const rawData = XLSX.utils.sheet_to_json(ws, { header: 1 });
           if (type === 'pacientes') {
@@ -1381,7 +1420,7 @@ export default function App() {
         } catch (err) { alert("Error leyendo el archivo: " + err.message);
         }
       };
-      reader.readAsArrayBuffer(file);
+      reader.readAsBinaryString(file);
     } catch (error) { alert("Error subiendo el archivo: " + error.message);
     }
   };
@@ -1392,7 +1431,7 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const wb = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+        const wb = XLSX.read(evt.target.result, { type: 'binary' });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
         if (data.length > 0) {
@@ -1408,7 +1447,7 @@ export default function App() {
       } catch (err) { alert("Error al leer Excel: " + err.message);
       }
     };
-    reader.readAsArrayBuffer(file);
+    reader.readAsBinaryString(file);
   };
   const handleSearchInput = (e) => {
       const val = e.target.value.toUpperCase();
@@ -1871,7 +1910,24 @@ const handleAdmin = (e) => {
           }
           return p;
       }));
-      // Actualización solo en memoria (sin IndexedDB)
+      const request = indexedDB.open(DB_NAME, 1);
+      request.onsuccess = (e) => {
+          const db = e.target.result;
+          const tx = db.transaction([STORE_PACIENTES], 'readwrite');
+          const store = tx.objectStore(STORE_PACIENTES);
+          const getReq = store.get(idPaciente);
+          getReq.onsuccess = () => {
+              const record = getReq.result;
+              if (record) {
+                  record.condEst = 'C';
+                  if (!record.historialEst) record.historialEst = [];
+                  if (!record.historialEst.includes(adminData.establecimiento)) {
+                      record.historialEst.push(adminData.establecimiento);
+                  }
+                  store.put(record);
+              }
+          };
+      };
   };
   const markAsContinuadorOnSave = (datosPaciente) => {
       if (!datosPaciente.id && !datosPaciente.dni) return;
@@ -1882,7 +1938,22 @@ const handleAdmin = (e) => {
           }
           return p;
       }));
-      // Actualización solo en memoria (sin IndexedDB)
+      const request = indexedDB.open(DB_NAME, 1);
+      request.onsuccess = (e) => {
+          const db = e.target.result;
+          const tx = db.transaction([STORE_PACIENTES], 'readwrite');
+          const store = tx.objectStore(STORE_PACIENTES);
+          if (datosPaciente.id) {
+              const getReq = store.get(datosPaciente.id);
+              getReq.onsuccess = () => {
+                  const record = getReq.result;
+                  if (record && (record.condEst === 'N' || record.condEst === 'R')) {
+                      record.condEst = 'C';
+                      store.put(record); 
+                  }
+              };
+          }
+      };
   };
 
   const validateDiagnoses = () => {
