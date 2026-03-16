@@ -8,13 +8,9 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
-      
-      // 👇 AQUÍ ESTÁ EL ÚNICO CAMBIO: AUMENTAMOS EL LÍMITE A 10 MB
       workbox: {
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
       },
-      // 👆 FIN DEL CAMBIO
-
       manifest: {
         name: 'Registro HIS 2025',
         short_name: 'HIS 2025',
@@ -35,14 +31,14 @@ export default defineConfig({
       }
     })
   ],
-
-  base: './',
-
-  define: {
-    global: 'globalThis',
-    'process.env': {},
+  // ✅ ESTO HACE QUE EL NAVEGADOR ABRA SOLO AL EJECUTAR npm run dev
+  server: {
+    open: true,
   },
-
+  base: './',
+  define: {
+    global: 'window',
+  },
   build: {
     chunkSizeWarningLimit: 6000,
     target: "esnext",

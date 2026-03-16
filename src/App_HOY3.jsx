@@ -62,125 +62,28 @@ const LOCALIDADES_ALTITUD = {
 const DB_NAME = 'HisDatabase_V1';
 const STORE_PACIENTES = 'pacientes';
 
-// --- SISTEMA DE ALMACENAMIENTO RESILIENTE ---
-// Prioridad: IndexedDB → localStorage (archivo Excel crudo) → Memoria
+// --- SERVICIO DE ALMACENAMIENTO RESILIENTE ---
+// Intenta usar IndexedDB, si falla usa memoria (los datos se pierden al recargar)
 let _memoryStore = [];
-
-// Guardar el archivo Excel crudo en localStorage (en trozos de 1MB)
-const saveExcelToLS = (arrayBuffer, uploadType) => {
-  try {
-    const bytes = new Uint8Array(arrayBuffer);
-    let binary = '';
-    const CHUNK = 8192;
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
-    }
-    const base64 = btoa(binary);
-    
-    // Limpiar chunks anteriores
-    const oldChunks = parseInt(localStorage.getItem('EXCEL_CHUNKS') || '0');
-    for (let i = 0; i < oldChunks; i++) localStorage.removeItem(`EXCEL_C_${i}`);
-    
-    // Guardar en trozos de 1MB
-    const SIZE = 1024 * 1024;
-    const total = Math.ceil(base64.length / SIZE);
-    localStorage.setItem('EXCEL_CHUNKS', total.toString());
-    localStorage.setItem('EXCEL_TYPE', uploadType);
-    for (let i = 0; i < total; i++) {
-      localStorage.setItem(`EXCEL_C_${i}`, base64.slice(i * SIZE, (i + 1) * SIZE));
-    }
-    console.log(`💾 Excel guardado en localStorage (${total} trozos, ${(base64.length / 1024 / 1024).toFixed(1)} MB)`);
-    return true;
-  } catch (e) {
-    console.warn("⚠️ localStorage lleno, no se pudo guardar Excel:", e.message);
-    return false;
-  }
-};
-
-// Leer el archivo Excel crudo desde localStorage
-const loadExcelFromLS = () => {
-  try {
-    const total = parseInt(localStorage.getItem('EXCEL_CHUNKS'));
-    if (!total) return null;
-    let base64 = '';
-    for (let i = 0; i < total; i++) {
-      const chunk = localStorage.getItem(`EXCEL_C_${i}`);
-      if (!chunk) return null;
-      base64 += chunk;
-    }
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const type = localStorage.getItem('EXCEL_TYPE') || 'pacientes';
-    console.log(`📂 Excel recuperado de localStorage (${(base64.length / 1024 / 1024).toFixed(1)} MB, tipo: ${type})`);
-    return { data: bytes, type };
-  } catch (e) {
-    console.warn("⚠️ No se pudo leer Excel de localStorage:", e.message);
-    return null;
-  }
-};
-
-const clearExcelFromLS = () => {
-  const total = parseInt(localStorage.getItem('EXCEL_CHUNKS') || '0');
-  for (let i = 0; i < total; i++) localStorage.removeItem(`EXCEL_C_${i}`);
-  localStorage.removeItem('EXCEL_CHUNKS');
-  localStorage.removeItem('EXCEL_TYPE');
-};
-
-// Parsear el Excel en el formato de pacientes
-const parseExcelToPacientes = (uint8Data, uploadType) => {
-  const wb = XLSX.read(uint8Data, { type: 'array' });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, raw: uploadType === 'master' ? false : undefined });
-
-  if (uploadType === 'master') {
-    return rawData.slice(1).map(r => {
-      if (!r[0] && !r[1]) return null;
-      return {
-        dni: r[0] ? String(r[0]).trim().padStart(8, '0') : "",
-        nombre: r[1] ? String(r[1]).trim().toUpperCase() : "",
-        fecNac: r[2],
-        sexo: r[3] ? String(r[3]).trim().toUpperCase() : "M",
-        financiador: r[4] ? String(r[4]).trim() : "SIS",
-        hc: r[5] ? String(r[5]).trim() : "",
-        distrito: r[6] ? String(r[6]).trim().toUpperCase() : "",
-        direccion: r[7] ? String(r[7]).trim().toUpperCase() : "",
-        estOrigen: r[8] ? String(r[8]).trim().toUpperCase() : "",
-        historialEst: [],
-        busqueda: ((r[0] || "") + " " + (r[1] || "")).toUpperCase()
-      };
-    }).filter(p => p !== null);
-  }
-
-  // Tipo 'pacientes' (con históricos)
-  return rawData.slice(1).map(r => {
-    if (!r[0] && !r[1]) return null;
-    const historyRange = [];
-    for (let i = 9; i <= 13; i++) { if (r[i]) historyRange.push(String(r[i]).trim().toUpperCase()); }
-    return {
-      dni: r[0] ? String(r[0]).trim().padStart(8, '0') : "",
-      nombre: r[1] ? String(r[1]).trim() : "",
-      fecNac: r[2],
-      sexo: r[3] ? String(r[3]).trim() : "M",
-      financiador: r[4] ? String(r[4]).trim() : "SIS",
-      hc: r[5] ? String(r[5]).trim().replace(/^'/, '') : "",
-      distrito: r[6] ? String(r[6]).trim() : "",
-      direccion: r[7] ? String(r[7]).trim() : "",
-      estOrigen: r[8] ? String(r[8]).trim() : "",
-      historialEst: historyRange,
-      last_fec_talla: r[14], last_talla: r[15],
-      last_fec_peso: r[16], last_peso: r[17],
-      last_fec_pabd: r[18], last_pabd: r[19],
-      last_fec_pcef: r[20], last_pcef: r[21],
-      last_fec_hb: r[22], last_hb: r[23],
-      last_fur: r[24],
-      last_fec_ppreg: r[25], last_ppreg: r[26],
-      busqueda: ((r[0] ? String(r[0]).trim().padStart(8, '0') : "") + " " + String(r[1] || "")).toUpperCase()
-    };
-  }).filter(p => p !== null);
-};
+let _idbAvailable = null; // null = no probado, true/false = resultado
 
 const idb = {
+  _checkAvailability: async () => {
+    if (_idbAvailable !== null) return _idbAvailable;
+    try {
+      const req = indexedDB.open('_test_db', 1);
+      await new Promise((resolve, reject) => {
+        req.onsuccess = () => { req.result.close(); indexedDB.deleteDatabase('_test_db'); resolve(); };
+        req.onerror = () => reject(req.error);
+      });
+      _idbAvailable = true;
+      console.log("✅ IndexedDB disponible");
+    } catch (e) {
+      _idbAvailable = false;
+      console.warn("⚠️ IndexedDB NO disponible, usando memoria:", e.message);
+    }
+    return _idbAvailable;
+  },
   open: () => {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, 1);
@@ -195,8 +98,12 @@ const idb = {
     });
   },
   savePatients: async (patients) => {
-    _memoryStore = [...patients];
-    // Intentar IndexedDB (en lotes)
+    _memoryStore = [...patients]; // Siempre guardar en memoria como respaldo
+    const available = await idb._checkAvailability();
+    if (!available) {
+      console.log(`💾 Memoria: ${patients.length} pacientes guardados (sin IndexedDB)`);
+      return true;
+    }
     try {
       const db = await idb.open();
       await new Promise((res, rej) => {
@@ -217,65 +124,55 @@ const idb = {
       }
       console.log(`✅ IndexedDB: ${patients.length} pacientes guardados`);
     } catch (e) {
-      console.warn("⚠️ IndexedDB no disponible, usando localStorage + memoria");
+      console.warn("⚠️ IndexedDB falló al guardar, datos en memoria:", e.message);
+      _idbAvailable = false;
     }
     return true;
   },
   getPatients: async () => {
-    // 1. Intentar IndexedDB
+    const available = await idb._checkAvailability();
+    if (!available) return _memoryStore;
     try {
       const db = await idb.open();
-      const result = await new Promise((resolve, reject) => {
+      return await new Promise((resolve, reject) => {
         const tx = db.transaction([STORE_PACIENTES], 'readonly');
         const req = tx.objectStore(STORE_PACIENTES).getAll();
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject([]);
       });
-      if (result && result.length > 0) return result;
     } catch (e) {
-      console.warn("⚠️ IndexedDB falló al leer:", e.message);
+      console.warn("⚠️ IndexedDB falló al leer, usando memoria:", e.message);
+      _idbAvailable = false;
+      return _memoryStore;
     }
-    
-    // 2. Intentar localStorage (re-parsear Excel guardado)
-    const saved = loadExcelFromLS();
-    if (saved) {
-      try {
-        const patients = parseExcelToPacientes(saved.data, saved.type);
-        _memoryStore = patients;
-        console.log(`✅ ${patients.length} pacientes restaurados desde localStorage`);
-        return patients;
-      } catch (e) {
-        console.warn("⚠️ Error re-parseando Excel:", e.message);
-      }
-    }
-    
-    // 3. Memoria como último recurso
-    return _memoryStore;
   },
   clearPatients: async () => {
     _memoryStore = [];
-    clearExcelFromLS();
     try {
-      const db = await idb.open();
-      await new Promise((res, rej) => {
-        const tx = db.transaction([STORE_PACIENTES], 'readwrite');
-        tx.objectStore(STORE_PACIENTES).clear();
-        tx.oncomplete = () => res();
-        tx.onerror = () => rej();
-      });
+      if (await idb._checkAvailability()) {
+        const db = await idb.open();
+        await new Promise((res, rej) => {
+          const tx = db.transaction([STORE_PACIENTES], 'readwrite');
+          tx.objectStore(STORE_PACIENTES).clear();
+          tx.oncomplete = () => res();
+          tx.onerror = () => rej();
+        });
+      }
     } catch (e) { /* silencioso */ }
     return true;
   },
   addPatient: async (patient) => {
     _memoryStore.push(patient);
     try {
-      const db = await idb.open();
-      await new Promise((res, rej) => {
-        const tx = db.transaction([STORE_PACIENTES], 'readwrite');
-        tx.objectStore(STORE_PACIENTES).add(patient);
-        tx.oncomplete = () => res();
-        tx.onerror = () => rej();
-      });
+      if (await idb._checkAvailability()) {
+        const db = await idb.open();
+        await new Promise((res, rej) => {
+          const tx = db.transaction([STORE_PACIENTES], 'readwrite');
+          tx.objectStore(STORE_PACIENTES).add(patient);
+          tx.oncomplete = () => res();
+          tx.onerror = () => rej();
+        });
+      }
     } catch (e) { /* silencioso, ya está en memoria */ }
     return true;
   }
@@ -1302,18 +1199,13 @@ export default function App() {
             }
         } catch (e) {
             console.error("Error cargando BD", e);
-            // Intentar recuperar desde localStorage directamente
-            const saved = loadExcelFromLS();
-            if (saved) {
-                try {
-                    const patients = parseExcelToPacientes(saved.data, saved.type);
-                    setDbPacientes(patients);
-                    setDbStatus('ready');
-                    console.log(`🔧 Recuperados ${patients.length} pacientes desde localStorage`);
-                    return;
-                } catch (parseErr) {
-                    console.error("Error parseando Excel guardado:", parseErr);
-                }
+            // Auto-recuperación: si la BD está corrupta, la limpiamos
+            try {
+                await idb.clearPatients();
+                console.log("🔧 BD corrupta limpiada automáticamente");
+            } catch (clearErr) {
+                console.error("No se pudo limpiar BD corrupta, eliminándola...", clearErr);
+                indexedDB.deleteDatabase(DB_NAME);
             }
             setDbStatus('empty');
         }
@@ -1474,9 +1366,6 @@ export default function App() {
         // ---------------------------------------------
 
         alert(`✅ ÉXITO: Padrón actualizado correctamente.`);
-        
-        // Guardar Excel crudo en localStorage para persistir entre recargas
-        saveExcelToLS(evt.target.result, 'master');
 
       } catch (err) {
         alert("❌ Error: " + err.message);
@@ -1616,9 +1505,6 @@ export default function App() {
             localStorage.setItem('PADRON_DATE', fechaStr);
 
             alert(`✅ BASE DE DATOS ACTUALIZADA: ${procesados.length} pacientes cargados con sus históricos.`);
-            
-            // Guardar Excel crudo en localStorage para persistir entre recargas
-            saveExcelToLS(evt.target.result, 'pacientes');
                    
           } else if (type === 'cie10') {
             const procesados = rawData.slice(1).map(r => ({ CODIGO: r[0] ? String(r[0]).trim() : "", DESCRIPCION: r[1] ? String(r[1]).trim() : "", BUSQUEDA: (String(r[0]||"") + " " + String(r[1]||"")).toUpperCase() })).filter(d => d.CODIGO);

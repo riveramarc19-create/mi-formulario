@@ -38,9 +38,9 @@ export default defineConfig({
 
   base: './',
 
+  // 🔥 ESTO SE MANTIENE INTACTO PARA TU EXCEL 🔥
   define: {
-    global: 'globalThis',
-    'process.env': {},
+    global: 'window',
   },
 
   build: {
