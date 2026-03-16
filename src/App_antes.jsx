@@ -131,7 +131,7 @@ const clearExcelFromLS = () => {
 const parseExcelToPacientes = (uint8Data, uploadType) => {
   const wb = XLSX.read(uint8Data, { type: 'array' });
   const ws = wb.Sheets[wb.SheetNames[0]];
-  const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, raw: uploadType === 'master' ? false : true });
+  const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, raw: uploadType === 'master' ? false : undefined });
 
   if (uploadType === 'master') {
     return rawData.slice(1).map(r => {
@@ -1098,7 +1098,7 @@ export default function App() {
   const calendarRef = useRef(null);
   const handleDateSelect = (date) => setPatientData(prev => ({ ...prev, fecAtencion: date }));
   const [showCredModal, setShowCredModal] = useState(false);
-  const [activePdf, setActivePdf] = useState(null);
+  const [activePdf, setActivePdf] = useState(null); // { titulo, archivo }
   const [isBatchFinished, setIsBatchFinished] = useState(false);
   const [isMasterUploadEnabled, setIsMasterUploadEnabled] = useState(false); 
   const [isProcessingMaster, setIsProcessingMaster] = useState(false);
@@ -1573,7 +1573,7 @@ export default function App() {
 
           console.log("📂 PASO 4: Hojas encontradas:", wb.SheetNames);
           const ws = wb.Sheets[wb.SheetNames[0]];
-          const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true });
+          const rawData = XLSX.utils.sheet_to_json(ws, { header: 1 });
           console.log("📂 PASO 5: Filas leídas:", rawData.length, "| Primera fila:", rawData[0]);
 
           if (type === 'pacientes') {
@@ -1696,16 +1696,6 @@ export default function App() {
   const parseExcelDate = (d) => {
     if (!d) return '2000-01-01';
     try {
-      // Red de seguridad: Si llega un objeto Date
-      if (d instanceof Date) {
-        if (!isNaN(d.getTime())) {
-          const dd = String(d.getDate()).padStart(2, '0');
-          const mm = String(d.getMonth() + 1).padStart(2, '0');
-          const yyyy = d.getFullYear();
-          return `${yyyy}-${mm}-${dd}`;
-        }
-        return '2000-01-01';
-      }
       if (typeof d === 'number') { const date = new Date(Math.round((d - 25569)*86400*1000));
       date.setMinutes(date.getMinutes() + date.getTimezoneOffset()); return !isNaN(date.getTime()) ? date.toISOString().split('T')[0] : '2000-01-01'; }
       if (typeof d === 'string') { if(d.includes('/')) { const p = d.split('/');
@@ -1788,7 +1778,6 @@ export default function App() {
           
           const esContinuador = p.historialEst.some(h => cleanStr(h).includes(cleanStr(keyword)));
           const furEncontrada = p.last_fur ? parseExcelDate(p.last_fur) : '';
-          console.log("🔍 FUR DEBUG:", { raw: p.last_fur, tipo: typeof p.last_fur, parsed: furEncontrada });
 
           setPatientData(prev => ({ 
               ...prev,
@@ -4874,7 +4863,7 @@ const handleAdmin = (e) => {
                     </div>
                 </div>
                 <div className="w-20 flex flex-col items-end justify-center border-l border-slate-200 pl-2 h-14 mr-1">
-                    {hasHist ? ( <><span className="text-[8px] text-slate-400 leading-none mb-1.5">{item.hist.date}</span><div className="text-sm font-black text-teal-700 bg-teal-100 px-2 py-1.5 rounded-2xl border border-teal-200 text-center w-full shadow-sm flex items-center justify-center animate-hist-pulse">{item.hist.val}</div></>) : ( <span className="text-[8px] font-bold text-slate-300 bg-slate-100 px-3 py-1.5 rounded-2xl block text-center w-full">---</span> )}
+                    {hasHist ? ( <><span className="text-[8px] text-slate-400 leading-none mb-1.5">{item.hist.date}</span><div className="text-sm font-black text-teal-700 bg-teal-100 px-2 py-1.5 rounded-2xl border border-teal-200 text-center w-full shadow-sm flex items-center justify-center">{item.hist.val}</div></>) : ( <span className="text-[8px] font-bold text-slate-300 bg-slate-100 px-3 py-1.5 rounded-2xl block text-center w-full">---</span> )}
                 </div>
             </div>
         </div>
@@ -5783,7 +5772,7 @@ const handleAdmin = (e) => {
         />
       )}
 
-      <style>{` .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; } input[type="date"]::-webkit-calendar-picker-indicator { opacity: 1; display: block; width: 1em; height: 1em; position: absolute; top: 50%; right: 12px; transform: translateY(-50%); color: #475569; cursor: pointer; } input[type="date"] { text-align: center; padding-left: 0.5rem; padding-right: 2.5rem; position: relative; } @keyframes histPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.25); opacity: 0.85; } } .animate-hist-pulse { animation: histPulse 2s ease-in-out infinite; } `}</style>
+      <style>{` .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; } input[type="date"]::-webkit-calendar-picker-indicator { opacity: 1; display: block; width: 1em; height: 1em; position: absolute; top: 50%; right: 12px; transform: translateY(-50%); color: #475569; cursor: pointer; } input[type="date"] { text-align: center; padding-left: 0.5rem; padding-right: 2.5rem; position: relative; } `}</style>
     </div>
   );
 }

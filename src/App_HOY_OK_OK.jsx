@@ -4874,7 +4874,7 @@ const handleAdmin = (e) => {
                     </div>
                 </div>
                 <div className="w-20 flex flex-col items-end justify-center border-l border-slate-200 pl-2 h-14 mr-1">
-                    {hasHist ? ( <><span className="text-[8px] text-slate-400 leading-none mb-1.5">{item.hist.date}</span><div className="text-sm font-black text-teal-700 bg-teal-100 px-2 py-1.5 rounded-2xl border border-teal-200 text-center w-full shadow-sm flex items-center justify-center animate-hist-pulse">{item.hist.val}</div></>) : ( <span className="text-[8px] font-bold text-slate-300 bg-slate-100 px-3 py-1.5 rounded-2xl block text-center w-full">---</span> )}
+                    {hasHist ? ( <><span className="text-[8px] text-slate-400 leading-none mb-1.5">{item.hist.date}</span><div className="text-sm font-black text-teal-700 bg-teal-100 px-2 py-1.5 rounded-2xl border border-teal-200 text-center w-full shadow-sm flex items-center justify-center">{item.hist.val}</div></>) : ( <span className="text-[8px] font-bold text-slate-300 bg-slate-100 px-3 py-1.5 rounded-2xl block text-center w-full">---</span> )}
                 </div>
             </div>
         </div>
@@ -5783,7 +5783,7 @@ const handleAdmin = (e) => {
         />
       )}
 
-      <style>{` .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; } input[type="date"]::-webkit-calendar-picker-indicator { opacity: 1; display: block; width: 1em; height: 1em; position: absolute; top: 50%; right: 12px; transform: translateY(-50%); color: #475569; cursor: pointer; } input[type="date"] { text-align: center; padding-left: 0.5rem; padding-right: 2.5rem; position: relative; } @keyframes histPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.25); opacity: 0.85; } } .animate-hist-pulse { animation: histPulse 2s ease-in-out infinite; } `}</style>
+      <style>{` .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; } input[type="date"]::-webkit-calendar-picker-indicator { opacity: 1; display: block; width: 1em; height: 1em; position: absolute; top: 50%; right: 12px; transform: translateY(-50%); color: #475569; cursor: pointer; } input[type="date"] { text-align: center; padding-left: 0.5rem; padding-right: 2.5rem; position: relative; } `}</style>
     </div>
   );
 }

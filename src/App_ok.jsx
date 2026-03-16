@@ -131,7 +131,7 @@ const clearExcelFromLS = () => {
 const parseExcelToPacientes = (uint8Data, uploadType) => {
   const wb = XLSX.read(uint8Data, { type: 'array' });
   const ws = wb.Sheets[wb.SheetNames[0]];
-  const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, raw: uploadType === 'master' ? false : true });
+  const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, raw: uploadType === 'master' ? false : undefined });
 
   if (uploadType === 'master') {
     return rawData.slice(1).map(r => {
@@ -1098,7 +1098,6 @@ export default function App() {
   const calendarRef = useRef(null);
   const handleDateSelect = (date) => setPatientData(prev => ({ ...prev, fecAtencion: date }));
   const [showCredModal, setShowCredModal] = useState(false);
-  const [activePdf, setActivePdf] = useState(null);
   const [isBatchFinished, setIsBatchFinished] = useState(false);
   const [isMasterUploadEnabled, setIsMasterUploadEnabled] = useState(false); 
   const [isProcessingMaster, setIsProcessingMaster] = useState(false);
@@ -1573,7 +1572,7 @@ export default function App() {
 
           console.log("📂 PASO 4: Hojas encontradas:", wb.SheetNames);
           const ws = wb.Sheets[wb.SheetNames[0]];
-          const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true });
+          const rawData = XLSX.utils.sheet_to_json(ws, { header: 1 });
           console.log("📂 PASO 5: Filas leídas:", rawData.length, "| Primera fila:", rawData[0]);
 
           if (type === 'pacientes') {
@@ -1696,16 +1695,6 @@ export default function App() {
   const parseExcelDate = (d) => {
     if (!d) return '2000-01-01';
     try {
-      // Red de seguridad: Si llega un objeto Date
-      if (d instanceof Date) {
-        if (!isNaN(d.getTime())) {
-          const dd = String(d.getDate()).padStart(2, '0');
-          const mm = String(d.getMonth() + 1).padStart(2, '0');
-          const yyyy = d.getFullYear();
-          return `${yyyy}-${mm}-${dd}`;
-        }
-        return '2000-01-01';
-      }
       if (typeof d === 'number') { const date = new Date(Math.round((d - 25569)*86400*1000));
       date.setMinutes(date.getMinutes() + date.getTimezoneOffset()); return !isNaN(date.getTime()) ? date.toISOString().split('T')[0] : '2000-01-01'; }
       if (typeof d === 'string') { if(d.includes('/')) { const p = d.split('/');
@@ -1788,7 +1777,6 @@ export default function App() {
           
           const esContinuador = p.historialEst.some(h => cleanStr(h).includes(cleanStr(keyword)));
           const furEncontrada = p.last_fur ? parseExcelDate(p.last_fur) : '';
-          console.log("🔍 FUR DEBUG:", { raw: p.last_fur, tipo: typeof p.last_fur, parsed: furEncontrada });
 
           setPatientData(prev => ({ 
               ...prev,
@@ -3912,10 +3900,12 @@ const handleAdmin = (e) => {
                         { titulo: 'MANUAL GESTANTES', archivo: '/normas/gestante.pdf' },
                         { titulo: 'CALENDARIO VACUNAS', archivo: '/normas/vacunas.pdf' },
                     ].map((pdf, idx) => (
-                        <button 
+                        <a 
                             key={idx}
-                            onClick={() => setActivePdf(pdf)}
-                            className="group flex flex-col items-center justify-center w-24 h-24 bg-slate-50 border-2 border-slate-100 rounded-2xl hover:bg-red-50 hover:border-red-200 transition-all cursor-pointer shadow-sm hover:shadow-md hover:-translate-y-1 text-center p-2"
+                            href={pdf.archivo} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="group flex flex-col items-center justify-center w-24 h-24 bg-slate-50 border-2 border-slate-100 rounded-2xl hover:bg-red-50 hover:border-red-200 transition-all cursor-pointer shadow-sm hover:shadow-md hover:-translate-y-1 text-center p-2 no-underline"
                             title="Clic para leer documento"
                         >
                             <div className="mb-2 text-slate-400 group-hover:text-red-500 transition-colors">
@@ -3924,7 +3914,7 @@ const handleAdmin = (e) => {
                             <span className="text-[9px] font-bold text-slate-600 group-hover:text-red-700 uppercase leading-tight">
                                 {pdf.titulo}
                             </span>
-                        </button>
+                        </a>
                     ))}
                 </div>
             </div>
@@ -4874,7 +4864,7 @@ const handleAdmin = (e) => {
                     </div>
                 </div>
                 <div className="w-20 flex flex-col items-end justify-center border-l border-slate-200 pl-2 h-14 mr-1">
-                    {hasHist ? ( <><span className="text-[8px] text-slate-400 leading-none mb-1.5">{item.hist.date}</span><div className="text-sm font-black text-teal-700 bg-teal-100 px-2 py-1.5 rounded-2xl border border-teal-200 text-center w-full shadow-sm flex items-center justify-center animate-hist-pulse">{item.hist.val}</div></>) : ( <span className="text-[8px] font-bold text-slate-300 bg-slate-100 px-3 py-1.5 rounded-2xl block text-center w-full">---</span> )}
+                    {hasHist ? ( <><span className="text-[8px] text-slate-400 leading-none mb-1.5">{item.hist.date}</span><div className="text-sm font-black text-teal-700 bg-teal-100 px-2 py-1.5 rounded-2xl border border-teal-200 text-center w-full shadow-sm flex items-center justify-center">{item.hist.val}</div></>) : ( <span className="text-[8px] font-bold text-slate-300 bg-slate-100 px-3 py-1.5 rounded-2xl block text-center w-full">---</span> )}
                 </div>
             </div>
         </div>
@@ -5732,49 +5722,6 @@ const handleAdmin = (e) => {
       <NutritionalStatusModal isOpen={showNutriModal} onClose={() => setShowNutriModal(false)} />
       <CredFollowUpModal isOpen={showCredModal} onClose={() => setShowCredModal(false)} />
       
-      {/* --- VISOR DE PDF INTEGRADO --- */}
-      {activePdf && (
-        <div className="fixed inset-0 z-[300] bg-slate-900/90 backdrop-blur-md flex flex-col animate-in fade-in duration-200">
-          {/* BARRA SUPERIOR */}
-          <div className="flex items-center justify-between px-6 py-3 bg-[#0F172A] border-b border-slate-700 shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="bg-red-500 p-2 rounded-lg text-white">
-                <FileText size={20} strokeWidth={2.5}/>
-              </div>
-              <div>
-                <h3 className="text-white font-black text-sm tracking-wide">{activePdf.titulo}</h3>
-                <p className="text-slate-400 text-[10px] font-medium">Biblioteca Normativa — Lectura Rápida</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <a 
-                href={activePdf.archivo} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold flex items-center gap-2 transition-all"
-                title="Abrir en pestaña nueva"
-              >
-                <ArrowRight size={14}/> ABRIR EN PESTAÑA
-              </a>
-              <button 
-                onClick={() => setActivePdf(null)} 
-                className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-red-400 transition-all"
-              >
-                <X size={24} strokeWidth={2.5}/>
-              </button>
-            </div>
-          </div>
-          {/* VISOR PDF */}
-          <div className="flex-1 w-full">
-            <iframe 
-              src={activePdf.archivo} 
-              className="w-full h-full border-0"
-              title={activePdf.titulo}
-            />
-          </div>
-        </div>
-      )}
-      
       {/* MODAL DE SEGUIMIENTO INDIVIDUAL */}
       {selectedGestanteForModal && (
         <SeguimientoIndividualModal 
@@ -5783,7 +5730,7 @@ const handleAdmin = (e) => {
         />
       )}
 
-      <style>{` .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; } input[type="date"]::-webkit-calendar-picker-indicator { opacity: 1; display: block; width: 1em; height: 1em; position: absolute; top: 50%; right: 12px; transform: translateY(-50%); color: #475569; cursor: pointer; } input[type="date"] { text-align: center; padding-left: 0.5rem; padding-right: 2.5rem; position: relative; } @keyframes histPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.25); opacity: 0.85; } } .animate-hist-pulse { animation: histPulse 2s ease-in-out infinite; } `}</style>
+      <style>{` .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; } input[type="date"]::-webkit-calendar-picker-indicator { opacity: 1; display: block; width: 1em; height: 1em; position: absolute; top: 50%; right: 12px; transform: translateY(-50%); color: #475569; cursor: pointer; } input[type="date"] { text-align: center; padding-left: 0.5rem; padding-right: 2.5rem; position: relative; } `}</style>
     </div>
   );
 }
