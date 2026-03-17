@@ -13,6 +13,9 @@ import { pacientesFormateados } from './adaptador';
 import { SEGUIMIENTO_GESTANTES } from './SEGUIMIENTO_GESTANTES';
 import { SEGUIMIENTO_CRED } from './SEGUIMIENTO_CRED';
 import { SEGUIMIENTO_ANEMIA } from './SEGUIMIENTO_ANEMIA_NI';
+import { SEGUIMIENTO_PLANI } from './SEGUIMIENTO_PLANI';
+import { SEGUIMIENTO_BUCAL } from './SEGUIMIENTO_BUCAL';
+import { SEGUIMIENTO_ANEMIA_GESTANTE } from './SEGUIMIENTO_ANEMIA_GESTANTE';
 
 
 import XLSX from 'xlsx-js-style';
@@ -1188,10 +1191,11 @@ export default function App() {
 
   // --- NUEVOS ESTADOS PARA LOGIN ---
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loginDni, setLoginDni] = useState("");
-  const [loginPass, setLoginPass] = useState("");
+  const [loginDni, setLoginDni] = useState(() => localStorage.getItem('HIS_SAVED_DNI') || "");
+  const [loginPass, setLoginPass] = useState(() => localStorage.getItem('HIS_SAVED_PASS') || "");
   const [showPassword, setShowPassword] = useState(false); 
   const [loginError, setLoginError] = useState("");
+  const [rememberMe, setRememberMe] = useState(() => !!localStorage.getItem('HIS_SAVED_DNI'));
   const handleLogin = (e) => {
     e.preventDefault();
     const user = dbPersonal.find(u => u.dni === loginDni);
@@ -1200,15 +1204,21 @@ export default function App() {
       setIsAuthenticated(true);
       setLoginError("");
       
-      // --- AQUÍ ESTÁ EL CAMBIO ---
+      // Guardar o limpiar credenciales según checkbox
+      if (rememberMe) {
+        localStorage.setItem('HIS_SAVED_DNI', loginDni);
+        localStorage.setItem('HIS_SAVED_PASS', loginPass);
+      } else {
+        localStorage.removeItem('HIS_SAVED_DNI');
+        localStorage.removeItem('HIS_SAVED_PASS');
+      }
+      
       if (typeof setAdminData === 'function') {
         setAdminData(prev => ({ 
             ...prev, 
             dniResp: user.dni, 
             nombreResp: user.nombre,
  	    establecimiento: user.establecimiento || prev.establecimiento,
-            
-            // Si el usuario tiene UPS definida, úsala. Si no, usa MEDICINA por defecto.
             ups: user.ups || 'MEDICINA' 
         }));
       }
@@ -1318,24 +1328,60 @@ export default function App() {
       return [];
   }, []);
 
-  // 3. INICIALIZAR EL ESTADO CON AMBOS
+  // 4. PREPARAR DATOS PLANIFICACIÓN FAMILIAR
+  const dataPlaniInicial = useMemo(() => {
+      if (typeof SEGUIMIENTO_PLANI !== 'undefined' && Array.isArray(SEGUIMIENTO_PLANI)) {
+          return SEGUIMIENTO_PLANI.map((row, i) => ({ ...row, id: i, searchStr: Object.values(row).join(" ").toUpperCase() }));
+      }
+      return [];
+  }, []);
+
+  // 5. PREPARAR DATOS SALUD BUCAL
+  const dataBucalInicial = useMemo(() => {
+      if (typeof SEGUIMIENTO_BUCAL !== 'undefined' && Array.isArray(SEGUIMIENTO_BUCAL)) {
+          return SEGUIMIENTO_BUCAL.map((row, i) => ({ ...row, id: i, searchStr: Object.values(row).join(" ").toUpperCase() }));
+      }
+      return [];
+  }, []);
+
+  // 6. PREPARAR DATOS ANEMIA GESTANTES
+  const dataAnemiaGestInicial = useMemo(() => {
+      if (typeof SEGUIMIENTO_ANEMIA_GESTANTE !== 'undefined' && Array.isArray(SEGUIMIENTO_ANEMIA_GESTANTE)) {
+          return SEGUIMIENTO_ANEMIA_GESTANTE.map((row, i) => ({ ...row, id: i, searchStr: Object.values(row).join(" ").toUpperCase() }));
+      }
+      return [];
+  }, []);
+
+  // INICIALIZAR EL ESTADO CON TODOS
   const [followUpData, setFollowUpData] = useState({
       'GESTANTE': dataGestantesInicial,
-      'CRED': dataCredInicial, // <--- ¡AQUÍ AGREGAMOS CRED!
-      'ANEMIA': dataAnemiaInicial
+      'CRED': dataCredInicial,
+      'ANEMIA': dataAnemiaInicial,
+      'PLANI': dataPlaniInicial,
+      'BUCAL': dataBucalInicial,
+      'ANEMIA_GEST': dataAnemiaGestInicial,
+      'HIPER': [],
+      'DIABETES': [],
+      'PSICOLOGIA': [],
+      'VACUNAS': []
   });
   useEffect(() => {
     const initDB = async () => {
         let basePacientes = [];
         
+        // 1. Intentar IndexedDB
         try {
             const patients = await idb.getPatients();
             if (patients && patients.length > 0) {
                 basePacientes = patients;
+                console.log(`✅ ${patients.length} pacientes desde IndexedDB`);
             }
         } catch (e) {
             console.error("Error cargando BD", e);
-            // Intentar recuperar desde localStorage directamente
+        }
+
+        // 2. Si IndexedDB no tenía datos, intentar localStorage
+        if (basePacientes.length === 0) {
             const saved = loadExcelFromLS();
             if (saved) {
                 try {
@@ -1347,7 +1393,7 @@ export default function App() {
             }
         }
 
-        // --- FUSIONAR PACIENTES REGISTRADOS MANUALMENTE ---
+        // 3. Fusionar pacientes registrados manualmente
         const nuevos = getPacientesNuevosLS();
         if (nuevos.length > 0) {
             const dnisBase = new Set(basePacientes.map(p => p.dni));
@@ -1537,47 +1583,14 @@ export default function App() {
     };
     reader.readAsArrayBuffer(file);
   };
-  // --- FUNCIÓN PARA DESCARGAR (EXPORTAR) EL PADRÓN A EXCEL ---
+  // --- FUNCIÓN PARA DESCARGAR EL PADRÓN (descarga directa desde public/) ---
   const handleExportPadron = () => {
-    if (!dbPacientes || dbPacientes.length === 0) {
-      alert("⚠️ La base de datos está vacía. No hay nada que descargar.");
-      return;
-    }
-
-    const confirmDownload = window.confirm(`¿Deseas descargar el Padrón General con ${dbPacientes.length} registros?`);
-    if (!confirmDownload) return;
-
-    try {
-      // 1. Convertir los datos JSON a Hoja de Cálculo
-      // Mapeamos para que las columnas salgan limpias y ordenadas
-      const dataToExport = dbPacientes.map(p => ({
-          DNI: p.dni,
-          NOMBRE: p.nombre,
-          FEC_NAC: p.fecNac,
-          SEXO: p.sexo,
-          FINANCIADOR: p.financiador,
-          HC: p.hc,
-          DISTRITO: p.distrito,
-          DIRECCION: p.direccion,
-          EST_ORIGEN: p.estOrigen
-      }));
-
-      const ws = XLSX.utils.json_to_sheet(dataToExport);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Padron_General");
-
-      // 2. Generar nombre con fecha actual para que no se pierdan
-      const fechaHoy = new Date().toISOString().split('T')[0];
-      const fileName = `PADRON_GENERAL_${fechaHoy}.xlsx`;
-
-      // 3. Descargar
-      XLSX.writeFile(wb, fileName);
-      alert("✅ Descarga iniciada correctamente.");
-
-    } catch (error) {
-      console.error(error);
-      alert("❌ Error al generar el Excel: " + error.message);
-    }
+    const link = document.createElement('a');
+    link.href = './padron.xlsx';
+    link.download = 'padron.xlsx';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
   const handleFileUpload = (e, type) => {
     try {
@@ -3693,102 +3706,132 @@ const handleAdmin = (e) => {
     }  
   };
 
-  // --- PANTALLA DE LOGIN REDISEÑADA (MODERNA) ---
-  // --- PANTALLA DE LOGIN REDISEÑADA (CORREGIDA) ---
+  // --- PANTALLA DE LOGIN ---
   if (!isAuthenticated) {
     return (
-      // CONTENEDOR PRINCIPAL CON FONDO DEGRADADO OSCURO
       <div className="min-h-screen w-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black flex items-center justify-center p-4">
-        
-        {/* TARJETA DE LOGIN CON EFECTO GLASSMORPHISM */}
-        <div className="bg-white/90 backdrop-blur-xl p-10 rounded-[40px] shadow-2xl shadow-black/20 w-full max-w-md border border-white/20 relative overflow-hidden">
+        <div className="bg-white/95 backdrop-blur-xl rounded-[32px] shadow-2xl shadow-black/30 w-full max-w-md border border-white/20 overflow-hidden">
           
-          {/* Elemento decorativo de fondo (brillo superior) */}
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-32 bg-blue-500/10 blur-[60px] rounded-full pointer-events-none"></div>
-
-          <div className="relative z-10">
-            {/* LOGO Y TÍTULO */}
-            <div className="text-center mb-10">
-              {/* Ícono con brillo */}
-              <div className="inline-block relative mb-4">
-                 <div className="absolute inset-0 bg-blue-500 blur-xl opacity-30 rounded-2xl scale-110"></div>
-                 <div className="bg-gradient-to-br from-blue-600 to-indigo-600 w-24 h-24 rounded-2xl flex items-center justify-center text-white relative shadow-lg transform rotate-3 hover:rotate-0 transition-all duration-500">
-                   <Stethoscope size={44} strokeWidth={2} />
-                 </div>
-              </div>
-              
-              <h1 className="text-4xl font-black text-slate-800 tracking-tight mb-2">SMART HIS</h1>
-              <p className="text-slate-500 font-medium text-sm uppercase tracking-widest">Acceso Personal de Salud</p>
+          {/* CABECERA CON LOGO */}
+          <div className="bg-[#0F172A] px-8 pt-10 pb-6 flex flex-col items-center">
+            {/* Logo SVG */}
+            <div className="w-[110px] h-[110px] rounded-[24px] overflow-hidden shadow-xl" style={{boxShadow: '0 8px 30px rgba(30,58,138,0.4), 0 4px 15px rgba(5,150,105,0.25)'}}>
+              <svg width="110" height="110" viewBox="0 0 140 140">
+                <style>{`
+                  @keyframes smartSlide {
+                    0% { transform: translate(-15px, 15px); opacity: 0; }
+                    20% { transform: translate(0px, 0px); opacity: 1; }
+                    40% { transform: translate(0px, 0px); opacity: 1; }
+                    50% { transform: translate(0px, 0px) scale(1.2); opacity: 1; }
+                    60% { transform: translate(0px, 0px) scale(1); opacity: 1; }
+                    90% { transform: translate(0px, 0px); opacity: 1; }
+                    100% { transform: translate(0px, 0px); opacity: 1; }
+                  }
+                  .smart-anim {
+                    animation: smartSlide 4s ease-in-out infinite;
+                    transform-box: fill-box;
+                    transform-origin: center center;
+                  }
+                `}</style>
+                <rect x="0" y="0" width="140" height="140" rx="28" fill="#1E3A8A"/>
+                <defs><clipPath id="logo-clip"><rect x="0" y="0" width="140" height="140" rx="28"/></clipPath></defs>
+                <g clipPath="url(#logo-clip)">
+                  <polygon points="0,140 140,0 140,140" fill="#059669"/>
+                </g>
+                <g transform="translate(18,102) rotate(-45)">
+                  <g className="smart-anim">
+                    <text style={{fontFamily:'Dancing Script, Segoe Script, cursive', fontSize:'52px', fontWeight:700, fill:'#FFFFFF', fontStyle:'italic'}}>S</text>
+                    <text x="30" style={{fontFamily:'Dancing Script, Segoe Script, cursive', fontSize:'32px', fontWeight:700, fill:'#FFFFFF', fontStyle:'italic'}}>mart</text>
+                  </g>
+                </g>
+                <text transform="translate(72,134) rotate(-45)" style={{fontFamily:'sans-serif', fontSize:'36px', fontWeight:900, fill:'#FFFFFF', letterSpacing:'2px'}}>HIS</text>
+              </svg>
             </div>
+            <p className="text-[9px] text-slate-400 font-medium uppercase tracking-[3px] mt-4">Sistema de Registro de Atenciones</p>
+          </div>
 
-            {/* FORMULARIO */}
-            <form onSubmit={handleLogin} className="space-y-6">
+          {/* FORMULARIO */}
+          <div className="px-8 pt-8 pb-6">
+            <form onSubmit={handleLogin} className="space-y-5">
               
-              {/* INPUT USUARIO (CON ÍCONO INTEGRADO) */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-600 uppercase ml-1 tracking-wider">DNI Usuario</label>
+              {/* DNI */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 tracking-[1.5px]">DNI Usuario</label>
                 <div className="relative group">
-                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors">
-                      <User size={20} />
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-800 transition-colors">
+                    <User size={20} />
                   </div>
                   <input 
                     type="number" 
-                    value={loginDni} // <--- CORREGIDO: Antes decía username
-                    onChange={(e) => setLoginDni(e.target.value)} // <--- CORREGIDO: Antes decía setUsername
-                    className="w-full pl-12 pr-4 py-4 rounded-2xl bg-slate-50 border-2 border-slate-100 outline-none text-lg font-bold text-slate-700 transition-all focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-50/50 shadow-sm placeholder:text-slate-300"
+                    value={loginDni}
+                    onChange={(e) => setLoginDni(e.target.value)}
+                    className="w-full pl-12 pr-4 py-3.5 rounded-2xl bg-slate-50 border-2 border-slate-100 outline-none text-base font-bold text-slate-700 transition-all focus:border-blue-700 focus:bg-white focus:ring-4 focus:ring-blue-50 shadow-sm placeholder:text-slate-300"
                     placeholder="Ingrese su DNI..."
                     autoFocus
                   />
                 </div>
               </div>
 
-              {/* INPUT CONTRASEÑA (CON ÍCONOS INTEGRADOS) */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-600 uppercase ml-1 tracking-wider">Contraseña</label>
+              {/* CONTRASEÑA */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 tracking-[1.5px]">Contraseña</label>
                 <div className="relative group">
-                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors">
-                      <Lock size={20} />
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-800 transition-colors">
+                    <Lock size={20} />
                   </div>
                   <input 
                     type={showPassword ? "text" : "password"}
-                    value={loginPass} // <--- CORREGIDO: Antes decía password
-                    onChange={(e) => setLoginPass(e.target.value)} // <--- CORREGIDO: Antes decía setPassword
-                    className="w-full pl-12 pr-12 py-4 rounded-2xl bg-slate-50 border-2 border-slate-100 outline-none text-lg font-bold text-slate-700 transition-all focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-50/50 shadow-sm placeholder:text-slate-300 font-mono"
+                    value={loginPass}
+                    onChange={(e) => setLoginPass(e.target.value)}
+                    className="w-full pl-12 pr-12 py-3.5 rounded-2xl bg-slate-50 border-2 border-slate-100 outline-none text-base font-bold text-slate-700 transition-all focus:border-blue-700 focus:bg-white focus:ring-4 focus:ring-blue-50 shadow-sm placeholder:text-slate-300 font-mono"
                     placeholder="••••••••"
                   />
-                  <button 
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition-colors focus:outline-none p-1"
-                  >
-                    {showPassword ? <EyeOff size={22}/> : <Eye size={22}/>}
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-800 transition-colors p-1">
+                    {showPassword ? <EyeOff size={20}/> : <Eye size={20}/>}
                   </button>
                 </div>
               </div>
 
+              {/* RECORDAR ACCESOS */}
+              <label className="flex items-center gap-2.5 cursor-pointer select-none ml-1">
+                <input 
+                  type="checkbox" 
+                  checked={rememberMe} 
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="w-[18px] h-[18px] rounded cursor-pointer accent-blue-800"
+                />
+                <span className="text-xs font-semibold text-slate-500">Recordar mis accesos</span>
+              </label>
+
               {loginError && (
-                <div className="p-3 bg-red-50 text-red-600 text-xs font-bold rounded-lg text-center border border-red-100 flex items-center justify-center gap-2 animate-pulse">
-                   <AlertTriangle size={14}/> {loginError}
+                <div className="p-3 bg-red-50 text-red-600 text-xs font-bold rounded-xl text-center border border-red-100 flex items-center justify-center gap-2 animate-pulse">
+                  <AlertTriangle size={14}/> {loginError}
                 </div>
               )}
 
-              {/* BOTÓN DE INGRESO (CON DEGRADADO Y BRILLO) */}
+              {/* BOTÓN INICIAR SESIÓN */}
               <button 
                 type="submit"
-                className="w-full bg-gradient-to-r from-blue-600 via-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white py-4 rounded-2xl font-black text-lg tracking-wide shadow-xl shadow-blue-500/30 hover:shadow-blue-500/50 transition-all transform hover:scale-[1.02] active:scale-[0.98] mt-4 relative overflow-hidden group"
+                className="w-full py-4 rounded-2xl font-black text-sm tracking-[2px] text-white shadow-xl transition-all transform hover:scale-[1.02] hover:-translate-y-0.5 active:scale-[0.98] relative overflow-hidden group"
+                style={{background: 'linear-gradient(135deg, #1E3A8A 0%, #1E40AF 40%, #047857 60%, #059669 100%)', boxShadow: '0 4px 15px rgba(30,58,138,0.3), 0 2px 8px rgba(5,150,105,0.25)'}}
               >
-                <span className="relative z-10">INICIAR SESIÓN</span>
-                {/* Efecto de brillo al pasar el mouse */}
+                <span className="relative z-10 flex items-center justify-center gap-2">
+                  INICIAR SESIÓN
+                  <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform"/>
+                </span>
                 <div className="absolute inset-0 h-full w-full scale-0 rounded-2xl transition-all duration-300 group-hover:scale-100 group-hover:bg-white/10"></div>
               </button>
             </form>
           </div>
-          
+
           {/* FOOTER */}
-          <p className="text-center text-slate-400 text-xs font-medium mt-8 opacity-80 relative z-10">
-            Versión 1.0 | Smart HIS System
+          <p className="text-center text-slate-300 text-[9px] font-medium pb-5 uppercase tracking-[1.5px]">
+            Smart HIS v2.0
           </p>
         </div>
+        
+        {/* Google Font para el logo */}
+        <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&display=swap" rel="stylesheet"/>
       </div>
     );
   }
@@ -3838,11 +3881,11 @@ const handleAdmin = (e) => {
                     </label>
                   </div>
                 )}
-                <button onClick={handleExportPadron} className={`px-3 py-2 rounded-xl border flex items-center gap-2 transition-all whitespace-nowrap ${dbPacientes.length > 0 ? 'bg-emerald-600 border-emerald-400 text-white hover:bg-emerald-500' : 'bg-slate-700 border-slate-600 text-slate-500 cursor-not-allowed'}`} disabled={!dbPacientes.length}>
+                <button onClick={handleExportPadron} className="px-3 py-2 rounded-xl border flex items-center gap-2 transition-all whitespace-nowrap bg-emerald-600 border-emerald-400 text-white hover:bg-emerald-500">
                   <Download size={13}/>
                   <div className="flex flex-col items-start leading-none">
                     <span className="uppercase text-[10px] font-black">Descargar</span>
-                    {padronDate && <span className="text-[9px] opacity-80">{padronDate}</span>}
+                    {typeof __BUILD_DATE__ !== 'undefined' && <span className="text-[9px] opacity-80">{__BUILD_DATE__}</span>}
                   </div>
                 </button>
               </div>
@@ -4019,6 +4062,7 @@ const handleAdmin = (e) => {
                         { id: 'GESTANTE', label: 'GESTANTES', icon: <UserPlus size={16}/>, color: 'pink' },
                         { id: 'ANEMIA', label: 'ANEMIA', icon: <Activity size={16}/>, color: 'red' },
                         { id: 'ANEMIA_GEST', label: 'ANEMIA GEST.', icon: <Activity size={16}/>, color: 'rose' },
+                        { id: 'PLANI', label: 'PLANIFICACIÓN', icon: <Heart size={16}/>, color: 'fuchsia' },
                         { id: 'HIPER', label: 'HIPERTENSOS', icon: <Heart size={16}/>, color: 'orange' },
                         { id: 'DIABETES', label: 'DIABETES', icon: <Droplets size={16}/>, color: 'blue' },
                         { id: 'PSICOLOGIA', label: 'PSICOLOGÍA', icon: <Brain size={16}/>, color: 'indigo' },
@@ -4036,7 +4080,7 @@ const handleAdmin = (e) => {
                                 }`}
                         >
                             {item.icon} {item.label}
-                            {followUpData[item.id] && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ml-1"></span>}
+                            {followUpData[item.id] && followUpData[item.id].length > 0 && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ml-1"></span>}
                         </button>
                     ))}
                 </div>

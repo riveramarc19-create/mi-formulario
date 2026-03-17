@@ -1196,6 +1196,11 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false); 
   const [loginError, setLoginError] = useState("");
   const [rememberMe, setRememberMe] = useState(() => !!localStorage.getItem('HIS_SAVED_DNI'));
+  const [showPadronNotice, setShowPadronNotice] = useState(() => {
+    const padronVersion = localStorage.getItem('HIS_PADRON_VERSION');
+    const buildDate = typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : '';
+    return !padronVersion || padronVersion !== buildDate;
+  });
   const handleLogin = (e) => {
     e.preventDefault();
     const user = dbPersonal.find(u => u.dni === loginDni);
@@ -1679,6 +1684,12 @@ export default function App() {
             localStorage.setItem('PADRON_DATE', fechaStr);
 
             alert(`✅ BASE DE DATOS ACTUALIZADA: ${procesados.length} pacientes cargados con sus históricos.`);
+            
+            // Marcar que el usuario ya cargó este padrón (mismo BUILD_DATE del deploy)
+            if (typeof __BUILD_DATE__ !== 'undefined') {
+              localStorage.setItem('HIS_PADRON_VERSION', __BUILD_DATE__);
+            }
+            setShowPadronNotice(false);
             
             // Guardar Excel crudo en localStorage para persistir entre recargas
             saveExcelToLS(evt.target.result, 'pacientes');
@@ -3858,6 +3869,70 @@ const handleAdmin = (e) => {
 
     return (
       <div className="min-h-screen w-full bg-gradient-to-br from-slate-100 via-slate-50 to-blue-50 font-sans flex items-center justify-center p-4">
+
+        {/* === MODAL AVISO PADRÓN === */}
+        {showPadronNotice && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" style={{background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)'}}>
+            <div className="w-full max-w-md animate-in zoom-in fade-in duration-300 rounded-2xl overflow-hidden" style={{background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '2px solid rgba(5,150,105,0.35)', boxShadow: '0 12px 40px rgba(5,150,105,0.15), 0 0 0 1px rgba(255,255,255,0.5) inset'}}>
+              
+              {/* Header */}
+              <div className="px-6 pt-5 pb-3 flex items-center gap-3" style={{borderBottom: '1px solid rgba(5,150,105,0.15)'}}>
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                  <Download size={18} className="text-emerald-600"/>
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-800">¡Importante!</h3>
+                  <p className="text-[10px] text-slate-400 font-medium">Actualice sus pacientes</p>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="px-6 py-5 space-y-5">
+                <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                  Por favor no olvide descargar el archivo de pacientes:
+                  {typeof __BUILD_DATE__ !== 'undefined' && (
+                    <span className="block mt-1 text-[10px] font-bold text-emerald-700">Padrón actualizado: {__BUILD_DATE__}</span>
+                  )}
+                </p>
+
+                {/* Paso 1 */}
+                <div className="flex gap-3 items-start">
+                  <div className="w-7 h-7 rounded-full bg-emerald-500 text-white text-xs font-black flex items-center justify-center shrink-0 mt-0.5">1</div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-700 leading-relaxed">
+                      Haga clic en el botón verde <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-600 text-white text-[10px] font-black mx-0.5">
+                        <Download size={10}/> DESCARGAR
+                      </span> — se descargará un archivo llamado <span className="font-black text-emerald-700">"padron.xlsx"</span> en su carpeta de descargas o escritorio.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Paso 2 */}
+                <div className="flex gap-3 items-start">
+                  <div className="w-7 h-7 rounded-full bg-indigo-500 text-white text-xs font-black flex items-center justify-center shrink-0 mt-0.5">2</div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-700 leading-relaxed">
+                      Luego haga clic en <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-600 text-white text-[10px] font-black mx-0.5">
+                        <Database size={10}/> Cargar Pacientes
+                      </span> para seleccionar el archivo descargado y subir los pacientes actualizados.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 pb-5">
+                <button 
+                  onClick={() => setShowPadronNotice(false)}
+                  className="w-full py-3 rounded-xl text-white text-xs font-black tracking-wider transition-all hover:scale-[1.02] active:scale-[0.98]"
+                  style={{background: 'linear-gradient(135deg, #059669, #047857)', boxShadow: '0 4px 12px rgba(5,150,105,0.3)'}}
+                >
+                  ENTENDIDO ✓
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="w-full max-w-6xl animate-in fade-in zoom-in duration-500 mx-auto">
           
           {/* === CABECERA OSCURA CON BOTONES DE DATOS === */}
