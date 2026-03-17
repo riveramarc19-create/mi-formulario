@@ -1328,19 +1328,14 @@ export default function App() {
     const initDB = async () => {
         let basePacientes = [];
         
-        // 1. Intentar IndexedDB
         try {
             const patients = await idb.getPatients();
             if (patients && patients.length > 0) {
                 basePacientes = patients;
-                console.log(`✅ ${patients.length} pacientes desde IndexedDB`);
             }
         } catch (e) {
             console.error("Error cargando BD", e);
-        }
-
-        // 2. Si IndexedDB no tenía datos, intentar localStorage
-        if (basePacientes.length === 0) {
+            // Intentar recuperar desde localStorage directamente
             const saved = loadExcelFromLS();
             if (saved) {
                 try {
@@ -1352,16 +1347,7 @@ export default function App() {
             }
         }
 
-        // 3. Si aún no hay datos, usar datos estáticos del código fuente (Vercel deploy)
-        if (basePacientes.length === 0 && typeof pacientesFormateados !== 'undefined' && Array.isArray(pacientesFormateados) && pacientesFormateados.length > 0) {
-            basePacientes = pacientesFormateados.map(p => ({
-                ...p,
-                busqueda: ((p.dni || "") + " " + (p.nombre || "")).toUpperCase()
-            }));
-            console.log(`📦 ${basePacientes.length} pacientes cargados desde datos estáticos (deploy)`);
-        }
-
-        // 4. Fusionar pacientes registrados manualmente
+        // --- FUSIONAR PACIENTES REGISTRADOS MANUALMENTE ---
         const nuevos = getPacientesNuevosLS();
         if (nuevos.length > 0) {
             const dnisBase = new Set(basePacientes.map(p => p.dni));
@@ -1375,12 +1361,6 @@ export default function App() {
         if (basePacientes.length > 0) {
             setDbPacientes(basePacientes);
             setDbStatus('ready');
-            // Si no hay fecha de padrón en localStorage pero sí hay datos, 
-            // significa que los datos vienen del deploy (código fuente)
-            if (!localStorage.getItem('PADRON_DATE') && basePacientes.length > 0) {
-                const fechaDeploy = 'Datos precargados';
-                setPadronDate(fechaDeploy);
-            }
         } else {
             setDbStatus('empty');
         }
