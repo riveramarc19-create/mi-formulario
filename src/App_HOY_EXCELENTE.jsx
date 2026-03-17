@@ -3848,7 +3848,7 @@ const handleAdmin = (e) => {
                   <Download size={13}/>
                   <div className="flex flex-col items-start leading-none">
                     <span className="uppercase text-[10px] font-black">Descargar</span>
-                    {padronDate ? <span className="text-[9px] opacity-80">{padronDate}</span> : pacientesFormateados.length > 0 ? <span className="text-[9px] opacity-80">{typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : ''}</span> : null}
+                    {padronDate ? <span className="text-[9px] opacity-80">{padronDate}</span> : pacientesFormateados.length > 0 ? <span className="text-[9px] opacity-80">{typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : pacientesFormateados.length.toLocaleString() + ' registros'}</span> : null}
                   </div>
                 </button>
               </div>
