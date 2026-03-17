@@ -1542,48 +1542,14 @@ export default function App() {
     };
     reader.readAsArrayBuffer(file);
   };
-  // --- FUNCIÓN PARA DESCARGAR (EXPORTAR) EL PADRÓN A EXCEL ---
+  // --- FUNCIÓN PARA DESCARGAR EL PADRÓN (descarga directa desde public/) ---
   const handleExportPadron = () => {
-    // Usar dbPacientes si tiene datos, sino usar pacientesFormateados (datos del deploy)
-    const fuenteDatos = dbPacientes.length > 0 ? dbPacientes : pacientesFormateados;
-    
-    if (!fuenteDatos || fuenteDatos.length === 0) {
-      alert("⚠️ La base de datos está vacía. No hay nada que descargar.");
-      return;
-    }
-
-    const confirmDownload = window.confirm(`¿Deseas descargar el Padrón General con ${fuenteDatos.length} registros?`);
-    if (!confirmDownload) return;
-
-    try {
-      const dataToExport = fuenteDatos.map(p => ({
-          DNI: p.dni,
-          NOMBRE: p.nombre,
-          FEC_NAC: p.fecNac,
-          SEXO: p.sexo,
-          FINANCIADOR: p.financiador,
-          HC: p.hc,
-          DISTRITO: p.distrito,
-          DIRECCION: p.direccion,
-          EST_ORIGEN: p.estOrigen
-      }));
-
-      const ws = XLSX.utils.json_to_sheet(dataToExport);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Padron_General");
-
-      // 2. Generar nombre con fecha actual para que no se pierdan
-      const fechaHoy = new Date().toISOString().split('T')[0];
-      const fileName = `PADRON_GENERAL_${fechaHoy}.xlsx`;
-
-      // 3. Descargar
-      XLSX.writeFile(wb, fileName);
-      alert("✅ Descarga iniciada correctamente.");
-
-    } catch (error) {
-      console.error(error);
-      alert("❌ Error al generar el Excel: " + error.message);
-    }
+    const link = document.createElement('a');
+    link.href = './padron.xlsx';
+    link.download = 'padron.xlsx';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
   const handleFileUpload = (e, type) => {
     try {
@@ -3844,11 +3810,11 @@ const handleAdmin = (e) => {
                     </label>
                   </div>
                 )}
-                <button onClick={handleExportPadron} className={`px-3 py-2 rounded-xl border flex items-center gap-2 transition-all whitespace-nowrap ${(dbPacientes.length > 0 || pacientesFormateados.length > 0) ? 'bg-emerald-600 border-emerald-400 text-white hover:bg-emerald-500' : 'bg-slate-700 border-slate-600 text-slate-500 cursor-not-allowed'}`} disabled={!dbPacientes.length && !pacientesFormateados.length}>
+                <button onClick={handleExportPadron} className="px-3 py-2 rounded-xl border flex items-center gap-2 transition-all whitespace-nowrap bg-emerald-600 border-emerald-400 text-white hover:bg-emerald-500">
                   <Download size={13}/>
                   <div className="flex flex-col items-start leading-none">
                     <span className="uppercase text-[10px] font-black">Descargar</span>
-                    {padronDate ? <span className="text-[9px] opacity-80">{padronDate}</span> : pacientesFormateados.length > 0 ? <span className="text-[9px] opacity-80">{typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : ''}</span> : null}
+                    {typeof __BUILD_DATE__ !== 'undefined' && <span className="text-[9px] opacity-80">{__BUILD_DATE__}</span>}
                   </div>
                 </button>
               </div>
