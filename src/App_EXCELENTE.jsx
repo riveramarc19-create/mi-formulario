@@ -5373,10 +5373,10 @@ const handleAdmin = (e) => {
           </div>
 
           <div className="flex-1 overflow-auto bg-white">
-            <div className="w-full min-h-[800px] p-3">
+            <div className="w-full min-h-[800px]">
                 
                 {/* TABLA */}
-                <table className="w-full border-collapse border border-gray-500 font-sans rounded-2xl overflow-hidden" style={{tableLayout:'auto', borderRadius:'16px'}}>
+                <table className="w-full border-collapse border border-black font-sans" style={{tableLayout:'auto'}}>
                     
                     {/* DEFINICIÓN DE ANCHOS DE COLUMNA (Colgroup) */}
                     <colgroup>
@@ -5404,36 +5404,36 @@ const handleAdmin = (e) => {
 
                     <thead>
                         <tr className="bg-gray-100 text-gray-800 font-bold text-center uppercase text-[9px]">
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>DÍA</th>
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>DNI</th>
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>PACIENTE</th>
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>FIN</th>
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>DISTRITO</th>
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>EDAD</th>
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>SEX</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>DÍA</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>DNI</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>PACIENTE</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>FIN</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>DISTRITO</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>EDAD</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>SEX</th>
                             
                             {/* CABECERA ANTROPOMETRÍA - fusionada con sub-cabecera */}
-                            <th className="border border-gray-500 p-0 align-middle" colSpan={4} rowSpan={2}>ANTROPOMETRÍA</th>
+                            <th className="border border-black p-0 align-middle" colSpan={4} rowSpan={2}>ANTROPOMETRÍA</th>
                             
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>EST</th>
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>SER</th>
-                            <th className="border border-gray-500 p-1 align-middle text-[10px]" rowSpan={2}>DIAGNÓSTICO MOTIVO DE CONSULTA</th>
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>TIPO</th>
-                            <th className="border border-gray-500 p-0 align-middle" colSpan={3}>LAB</th>
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>CIE</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>EST</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>SER</th>
+                            <th className="border border-black p-1 align-middle text-[10px]" rowSpan={2}>DIAGNÓSTICO MOTIVO DE CONSULTA</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>TIPO</th>
+                            <th className="border border-black p-0 align-middle" colSpan={3}>LAB</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>CIE</th>
                         </tr>
                         
                         {/* SUB-CABECERAS (solo LAB) */}
                         <tr className="bg-gray-50 text-gray-700 font-bold text-center uppercase text-[7px]">
-                            <th className="border border-gray-500 p-0 h-4 align-middle">1</th>
-                            <th className="border border-gray-500 p-0 h-4 align-middle">2</th>
-                            <th className="border border-gray-500 p-0 h-4 align-middle">3</th>
+                            <th className="border border-black p-0 h-4 align-middle">1</th>
+                            <th className="border border-black p-0 h-4 align-middle">2</th>
+                            <th className="border border-black p-0 h-4 align-middle">3</th>
                         </tr>
                     </thead>
 
                     <tbody className="text-[10px]">
                         {consolidatedPatients.length === 0 ? (
-                             <tr><td colSpan={19} className="text-center p-10 font-bold text-gray-400 border border-gray-500">SIN DATOS</td></tr>
+                             <tr><td colSpan={19} className="text-center p-10 font-bold text-gray-400 border border-black">SIN DATOS</td></tr>
                         ) : (
                             consolidatedPatients.map((rec, idx) => {
                                 const p = rec.patient;
@@ -5451,10 +5451,10 @@ const handleAdmin = (e) => {
                                         
                                         {/* FILA 1: Talla + P.C. */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
-                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white" rowSpan={3}>{(p.fecAtencion || "").split('-')[2]}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white text-[9px]" rowSpan={3}>{p.dni}</td>
+                                            <td className="border border-black text-center font-bold align-middle bg-white" rowSpan={3}>{(p.fecAtencion || "").split('-')[2]}</td>
+                                            <td className="border border-black text-center font-bold align-middle bg-white text-[9px]" rowSpan={3}>{p.dni}</td>
                                             {/* --- CELDA DE PACIENTE CON BOTONES DE EDICIÓN FLOTANTES --- */}
-                                            <td className="border border-gray-500 px-1 align-middle font-bold bg-white uppercase text-[9px] relative group/row hover:bg-slate-50 transition-colors" rowSpan={3}>
+                                            <td className="border border-black px-1 align-middle font-bold bg-white uppercase text-[9px] relative group/row hover:bg-slate-50 transition-colors" rowSpan={3}>
                                                 <div className="w-full h-full relative flex items-center justify-between gap-1">
                                                     <span className="truncate w-full block" title={p.paciente}>{p.paciente || "(SIN NOMBRE)"}</span>
                                                     
@@ -5465,64 +5465,64 @@ const handleAdmin = (e) => {
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.financiador === 'SIS' ? '2' : '1'}</td>
-                                            <td className="border border-gray-500 px-1 align-middle text-[8px] bg-white truncate" rowSpan={3} title={p.distrito}>{p.distrito}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white" rowSpan={3}>{a.y > 0 ? a.y : a.m > 0 ? a.m + 'm' : a.d + 'd'}</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.sexo}</td>
+                                            <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.financiador === 'SIS' ? '2' : '1'}</td>
+                                            <td className="border border-black px-1 align-middle text-[8px] bg-white truncate" rowSpan={3} title={p.distrito}>{p.distrito}</td>
+                                            <td className="border border-black text-center font-bold align-middle bg-white" rowSpan={3}>{a.y > 0 ? a.y : a.m > 0 ? a.m + 'm' : a.d + 'd'}</td>
+                                            <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.sexo}</td>
                                             
                                             {/* ANTROPOMETRÍA FILA 1: Talla | valor | P.C. | valor */}
-                                            <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">Talla</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.talla}</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.C.</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.pCef}</td>
+                                            <td className="border border-black text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">Talla</td>
+                                            <td className="border border-black text-center align-middle bg-white font-bold text-[9px]">{c.talla}</td>
+                                            <td className="border border-black text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.C.</td>
+                                            <td className="border border-black text-center align-middle bg-white font-bold text-[9px]">{c.pCef}</td>
                                             
-                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.condEst}</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.condServ}</td>
+                                            <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.condEst}</td>
+                                            <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.condServ}</td>
 
                                             {/* DIAGNÓSTICO 1 (EXPANDIDO) */}
-                                            <td className="border border-gray-500 px-1 align-middle uppercase text-[9px] truncate">{block[0].desc}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle">{block[0].tipo}</td>
-                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[0].lab1}</td>
-                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[0].lab2}</td>
-                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[0].lab3}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle text-[9px]">{block[0].codigo}</td>
+                                            <td className="border border-black px-1 align-middle uppercase text-[9px] truncate">{block[0].desc}</td>
+                                            <td className="border border-black text-center font-bold align-middle">{block[0].tipo}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[0].lab1}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[0].lab2}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[0].lab3}</td>
+                                            <td className="border border-black text-center font-bold align-middle text-[9px]">{block[0].codigo}</td>
                                         </tr>
 
                                         {/* FILA 2: Peso + P.Abd */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
-                                            <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">Peso</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.peso}</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.Abd</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.pAbd}</td>
-                                            <td className="border border-gray-500 px-1 align-middle uppercase text-[9px] truncate">{block[1].desc}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle">{block[1].tipo}</td>
-                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[1].lab1}</td>
-                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[1].lab2}</td>
-                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[1].lab3}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle text-[9px]">{block[1].codigo}</td>
+                                            <td className="border border-black text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">Peso</td>
+                                            <td className="border border-black text-center align-middle bg-white font-bold text-[9px]">{c.peso}</td>
+                                            <td className="border border-black text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.Abd</td>
+                                            <td className="border border-black text-center align-middle bg-white font-bold text-[9px]">{c.pAbd}</td>
+                                            <td className="border border-black px-1 align-middle uppercase text-[9px] truncate">{block[1].desc}</td>
+                                            <td className="border border-black text-center font-bold align-middle">{block[1].tipo}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[1].lab1}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[1].lab2}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[1].lab3}</td>
+                                            <td className="border border-black text-center font-bold align-middle text-[9px]">{block[1].codigo}</td>
                                         </tr>
 
                                         {/* FILA 3: HB + P.Preg */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
-                                            <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">HB</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.hb}</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.Preg</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.pPreGest}</td>
-                                            <td className="border border-gray-500 px-1 align-middle uppercase text-[9px] truncate">{block[2].desc}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle">{block[2].tipo}</td>
-                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[2].lab1}</td>
-                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[2].lab2}</td>
-                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[2].lab3}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle text-[9px]">{block[2].codigo}</td>
+                                            <td className="border border-black text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">HB</td>
+                                            <td className="border border-black text-center align-middle bg-white font-bold text-[9px]">{c.hb}</td>
+                                            <td className="border border-black text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.Preg</td>
+                                            <td className="border border-black text-center align-middle bg-white font-bold text-[9px]">{c.pPreGest}</td>
+                                            <td className="border border-black px-1 align-middle uppercase text-[9px] truncate">{block[2].desc}</td>
+                                            <td className="border border-black text-center font-bold align-middle">{block[2].tipo}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[2].lab1}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[2].lab2}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[2].lab3}</td>
+                                            <td className="border border-black text-center font-bold align-middle text-[9px]">{block[2].codigo}</td>
                                         </tr>
                                         
-                                        <tr className="h-[2px] bg-gray-500"><td colSpan={19} className="bg-gray-500 p-0 border-0"></td></tr>
+                                        <tr className="h-[2px] bg-black"><td colSpan={19} className="bg-black p-0 border-0"></td></tr>
                                     </React.Fragment>
                                 ));
                             })
                         )}
                         {consolidatedPatients.length < 5 && Array.from({length: 3}).map((_, i) => (
-                             <tr key={`filler-${i}`}><td className="border border-gray-500 h-16" colSpan={7}></td><td className="border border-gray-500" colSpan={4}></td><td className="border border-gray-500" colSpan={3}></td><td className="border border-gray-500" colSpan={6}></td></tr>
+                             <tr key={`filler-${i}`}><td className="border border-black h-16" colSpan={7}></td><td className="border border-black" colSpan={4}></td><td className="border border-black" colSpan={3}></td><td className="border border-black" colSpan={6}></td></tr>
                         ))}
                     </tbody>
                 </table>

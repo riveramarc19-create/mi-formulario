@@ -4,6 +4,7 @@ import { Activity, ArrowRight, ArrowLeft, X, Plus, LogOut, Database, Search, Tra
 import NutritionalStatusModal from './NutritionalStatusModal';
 import AnemiaCalculatorModal from './AnemiaCalculatorModal';
 
+
 // --- IMPORTACIÓN DE DATOS ESTÁTICOS EXTERNOS ---
 import { CIE10_LIST } from './Cie10Data';
 import { PERSONAL_LIST } from './PersonalData';
@@ -14,11 +15,9 @@ import { SEGUIMIENTO_CRED } from './SEGUIMIENTO_CRED';
 import { SEGUIMIENTO_ANEMIA } from './SEGUIMIENTO_ANEMIA_NI';
 
 
-import * as XLSXStyle from 'xlsx-js-style';
+import XLSX from 'xlsx-js-style';
 import { jsPDF } from "jspdf";
-
-// Definición de constantes DESPUÉS de todos los imports
-const XLSX = XLSXStyle.default || XLSXStyle;
+import { getDiagnosticoNino } from './ZScoreData';
 
 // --- PARCHE DE SEGURIDAD ---
 if (typeof global === 'undefined') { window.global = window; }
@@ -63,6 +62,157 @@ const LOCALIDADES_ALTITUD = {
 const DB_NAME = 'HisDatabase_V1';
 const STORE_PACIENTES = 'pacientes';
 
+// --- SISTEMA DE ALMACENAMIENTO RESILIENTE ---
+// Prioridad: IndexedDB → localStorage (archivo Excel crudo) → Memoria
+let _memoryStore = [];
+
+// Guardar el archivo Excel crudo en localStorage (en trozos de 1MB)
+const saveExcelToLS = (arrayBuffer, uploadType) => {
+  try {
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = '';
+    const CHUNK = 8192;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    }
+    const base64 = btoa(binary);
+    
+    // Limpiar chunks anteriores
+    const oldChunks = parseInt(localStorage.getItem('EXCEL_CHUNKS') || '0');
+    for (let i = 0; i < oldChunks; i++) localStorage.removeItem(`EXCEL_C_${i}`);
+    
+    // Guardar en trozos de 1MB
+    const SIZE = 1024 * 1024;
+    const total = Math.ceil(base64.length / SIZE);
+    localStorage.setItem('EXCEL_CHUNKS', total.toString());
+    localStorage.setItem('EXCEL_TYPE', uploadType);
+    for (let i = 0; i < total; i++) {
+      localStorage.setItem(`EXCEL_C_${i}`, base64.slice(i * SIZE, (i + 1) * SIZE));
+    }
+    console.log(`💾 Excel guardado en localStorage (${total} trozos, ${(base64.length / 1024 / 1024).toFixed(1)} MB)`);
+    return true;
+  } catch (e) {
+    console.warn("⚠️ localStorage lleno, no se pudo guardar Excel:", e.message);
+    return false;
+  }
+};
+
+// Leer el archivo Excel crudo desde localStorage
+const loadExcelFromLS = () => {
+  try {
+    const total = parseInt(localStorage.getItem('EXCEL_CHUNKS'));
+    if (!total) return null;
+    let base64 = '';
+    for (let i = 0; i < total; i++) {
+      const chunk = localStorage.getItem(`EXCEL_C_${i}`);
+      if (!chunk) return null;
+      base64 += chunk;
+    }
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const type = localStorage.getItem('EXCEL_TYPE') || 'pacientes';
+    console.log(`📂 Excel recuperado de localStorage (${(base64.length / 1024 / 1024).toFixed(1)} MB, tipo: ${type})`);
+    return { data: bytes, type };
+  } catch (e) {
+    console.warn("⚠️ No se pudo leer Excel de localStorage:", e.message);
+    return null;
+  }
+};
+
+const clearExcelFromLS = () => {
+  const total = parseInt(localStorage.getItem('EXCEL_CHUNKS') || '0');
+  for (let i = 0; i < total; i++) localStorage.removeItem(`EXCEL_C_${i}`);
+  localStorage.removeItem('EXCEL_CHUNKS');
+  localStorage.removeItem('EXCEL_TYPE');
+};
+
+// --- PERSISTENCIA DE PACIENTES REGISTRADOS MANUALMENTE ---
+const NUEVOS_KEY = 'HIS_PACIENTES_NUEVOS';
+
+const savePacienteNuevoLS = (paciente) => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(NUEVOS_KEY) || '[]');
+    // Evitar duplicados por DNI
+    const exists = stored.findIndex(p => p.dni === paciente.dni);
+    if (exists >= 0) {
+      stored[exists] = paciente; // Actualizar si ya existe
+    } else {
+      stored.push(paciente);
+    }
+    localStorage.setItem(NUEVOS_KEY, JSON.stringify(stored));
+    console.log(`💾 Paciente nuevo guardado en localStorage (total: ${stored.length})`);
+  } catch (e) {
+    console.warn("⚠️ No se pudo guardar paciente nuevo en localStorage:", e.message);
+  }
+};
+
+const getPacientesNuevosLS = () => {
+  try {
+    return JSON.parse(localStorage.getItem(NUEVOS_KEY) || '[]');
+  } catch (e) {
+    return [];
+  }
+};
+
+const clearPacientesNuevosLS = () => {
+  localStorage.removeItem(NUEVOS_KEY);
+  console.log("🧹 Pacientes nuevos locales limpiados (nuevo padrón cargado)");
+};
+
+// Parsear el Excel en el formato de pacientes
+const parseExcelToPacientes = (uint8Data, uploadType) => {
+  const wb = XLSX.read(uint8Data, { type: 'array' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, raw: uploadType === 'master' ? false : true });
+
+  if (uploadType === 'master') {
+    return rawData.slice(1).map(r => {
+      if (!r[0] && !r[1]) return null;
+      return {
+        dni: r[0] ? String(r[0]).trim().padStart(8, '0') : "",
+        nombre: r[1] ? String(r[1]).trim().toUpperCase() : "",
+        fecNac: r[2],
+        sexo: r[3] ? String(r[3]).trim().toUpperCase() : "M",
+        financiador: r[4] ? String(r[4]).trim() : "SIS",
+        hc: r[5] ? String(r[5]).trim() : "",
+        distrito: r[6] ? String(r[6]).trim().toUpperCase() : "",
+        direccion: r[7] ? String(r[7]).trim().toUpperCase() : "",
+        estOrigen: r[8] ? String(r[8]).trim().toUpperCase() : "",
+        historialEst: [],
+        busqueda: ((r[0] || "") + " " + (r[1] || "")).toUpperCase()
+      };
+    }).filter(p => p !== null);
+  }
+
+  // Tipo 'pacientes' (con históricos)
+  return rawData.slice(1).map(r => {
+    if (!r[0] && !r[1]) return null;
+    const historyRange = [];
+    for (let i = 9; i <= 13; i++) { if (r[i]) historyRange.push(String(r[i]).trim().toUpperCase()); }
+    return {
+      dni: r[0] ? String(r[0]).trim().padStart(8, '0') : "",
+      nombre: r[1] ? String(r[1]).trim() : "",
+      fecNac: r[2],
+      sexo: r[3] ? String(r[3]).trim() : "M",
+      financiador: r[4] ? String(r[4]).trim() : "SIS",
+      hc: r[5] ? String(r[5]).trim().replace(/^'/, '') : "",
+      distrito: r[6] ? String(r[6]).trim() : "",
+      direccion: r[7] ? String(r[7]).trim() : "",
+      estOrigen: r[8] ? String(r[8]).trim() : "",
+      historialEst: historyRange,
+      last_fec_talla: r[14], last_talla: r[15],
+      last_fec_peso: r[16], last_peso: r[17],
+      last_fec_pabd: r[18], last_pabd: r[19],
+      last_fec_pcef: r[20], last_pcef: r[21],
+      last_fec_hb: r[22], last_hb: r[23],
+      last_fur: r[24],
+      last_fec_ppreg: r[25], last_ppreg: r[26],
+      busqueda: ((r[0] ? String(r[0]).trim().padStart(8, '0') : "") + " " + String(r[1] || "")).toUpperCase()
+    };
+  }).filter(p => p !== null);
+};
+
 const idb = {
   open: () => {
     return new Promise((resolve, reject) => {
@@ -78,45 +228,89 @@ const idb = {
     });
   },
   savePatients: async (patients) => {
-    const db = await idb.open();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_PACIENTES], 'readwrite');
-      const store = transaction.objectStore(STORE_PACIENTES);
-      store.clear(); 
-      patients.forEach(p => store.add(p));
-      transaction.oncomplete = () => resolve(true);
-      transaction.onerror = () => reject(false);
-    });
+    _memoryStore = [...patients];
+    // Intentar IndexedDB (en lotes)
+    try {
+      const db = await idb.open();
+      await new Promise((res, rej) => {
+        const tx = db.transaction([STORE_PACIENTES], 'readwrite');
+        tx.objectStore(STORE_PACIENTES).clear();
+        tx.oncomplete = () => res();
+        tx.onerror = () => rej(tx.error);
+      });
+      const BATCH = 500;
+      for (let i = 0; i < patients.length; i += BATCH) {
+        const batch = patients.slice(i, i + BATCH);
+        await new Promise((res, rej) => {
+          const tx = db.transaction([STORE_PACIENTES], 'readwrite');
+          batch.forEach(p => tx.objectStore(STORE_PACIENTES).add(p));
+          tx.oncomplete = () => res();
+          tx.onerror = () => rej(tx.error);
+        });
+      }
+      console.log(`✅ IndexedDB: ${patients.length} pacientes guardados`);
+    } catch (e) {
+      console.warn("⚠️ IndexedDB no disponible, usando localStorage + memoria");
+    }
+    return true;
   },
   getPatients: async () => {
-    const db = await idb.open();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_PACIENTES], 'readonly');
-      const store = transaction.objectStore(STORE_PACIENTES);
-      const request = store.getAll();
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject([]);
-    });
+    // 1. Intentar IndexedDB
+    try {
+      const db = await idb.open();
+      const result = await new Promise((resolve, reject) => {
+        const tx = db.transaction([STORE_PACIENTES], 'readonly');
+        const req = tx.objectStore(STORE_PACIENTES).getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject([]);
+      });
+      if (result && result.length > 0) return result;
+    } catch (e) {
+      console.warn("⚠️ IndexedDB falló al leer:", e.message);
+    }
+    
+    // 2. Intentar localStorage (re-parsear Excel guardado)
+    const saved = loadExcelFromLS();
+    if (saved) {
+      try {
+        const patients = parseExcelToPacientes(saved.data, saved.type);
+        _memoryStore = patients;
+        console.log(`✅ ${patients.length} pacientes restaurados desde localStorage`);
+        return patients;
+      } catch (e) {
+        console.warn("⚠️ Error re-parseando Excel:", e.message);
+      }
+    }
+    
+    // 3. Memoria como último recurso
+    return _memoryStore;
   },
   clearPatients: async () => {
-    const db = await idb.open();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_PACIENTES], 'readwrite');
-      const store = transaction.objectStore(STORE_PACIENTES);
-      const request = store.clear();
-      request.onsuccess = () => resolve(true);
-      request.onerror = () => reject(false);
-    });
+    _memoryStore = [];
+    clearExcelFromLS();
+    try {
+      const db = await idb.open();
+      await new Promise((res, rej) => {
+        const tx = db.transaction([STORE_PACIENTES], 'readwrite');
+        tx.objectStore(STORE_PACIENTES).clear();
+        tx.oncomplete = () => res();
+        tx.onerror = () => rej();
+      });
+    } catch (e) { /* silencioso */ }
+    return true;
   },
   addPatient: async (patient) => {
-    const db = await idb.open();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_PACIENTES], 'readwrite');
-      const store = transaction.objectStore(STORE_PACIENTES);
-      const request = store.add(patient);
-      request.onsuccess = () => resolve(true);
-      request.onerror = () => reject(false);
-    });
+    _memoryStore.push(patient);
+    try {
+      const db = await idb.open();
+      await new Promise((res, rej) => {
+        const tx = db.transaction([STORE_PACIENTES], 'readwrite');
+        tx.objectStore(STORE_PACIENTES).add(patient);
+        tx.oncomplete = () => res();
+        tx.onerror = () => rej();
+      });
+    } catch (e) { /* silencioso, ya está en memoria */ }
+    return true;
   }
 };
 
@@ -189,6 +383,7 @@ const CredFollowUpModal = ({ isOpen, onClose }) => {
     }
     return value;
   };
+ 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -196,7 +391,7 @@ const CredFollowUpModal = ({ isOpen, onClose }) => {
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const wb = XLSX.read(evt.target.result, { type: 'binary' });
+        const wb = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
         if (data.length > 0) {
@@ -218,8 +413,10 @@ const CredFollowUpModal = ({ isOpen, onClose }) => {
         setIsLoading(false);
       }
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   };
+
+
   const filteredData = credData.filter(row => 
     !filterTerm || row.searchStr.includes(filterTerm.toUpperCase())
   ).slice(0, 100);
@@ -591,7 +788,7 @@ const SeguimientoIndividualModal = ({ paciente, onClose }) => {
 // --- CONFIGURACIÓN MAESTRA DE LABS (Con Etiquetas Personalizadas) ---
 const LAB_CONFIG = {
     // CASOS SIMPLES (Array = Texto por defecto "LAB")
-    'D509': { 1: ['LEV', 'MOD', 'SEV'] }, 
+    'D509': { 1: ['LEV', 'MOD', 'SEV','PR'] }, 
     'D649': { 1: ['LEV', 'MOD', 'SEV'] },
     'O990': { 1: ['LEV', 'MOD', 'SEV'] },
    //'Z001': { 1: [''] },
@@ -604,14 +801,286 @@ const LAB_CONFIG = {
     '99199.17': { 1: ['1', '2', '3', '4', '5', '6', '7', '8', 'TA'] },
     '99199.18': { 1: ['1', '2', '3', '4', '5', '6', '7', '8'] },
     '99199.19': { 1: ['1', '2', '3', '4', '5', '6', '7', '8'] },
-    '99199.26': { 1: ['1', '2', '3', '4', '5', '6', '7', '8'] },
+    '99199.26': { 1: ['1', '2', '3', '4', '5', '6', '7', '8','TA'] },
     '99199.27': { 1: ['1', '2', '3'] },
     '59401.05': { 1: ['1', '2', '3'] },
     '59401.06': { 1: ['1', '2', '3', 'TA'] },
-    'R456': { 1: ['G'] },
+    '59430': { 1: ['1', '2',''] },
+    //'Z359': { 1: ['1', '2','3'] },
 
+
+
+//==============================================================================================
     // CASOS CON TEXTO PERSONALIZADO (Objeto con 'label')
     // Z359 cubre Z3591, Z3592, Z3593 gracias a la búsqueda parcial
+    '99208': {
+         1: { label: ['TIPO'] , options: ['TA', '']}
+            },
+    '99208.02': {
+         1: { label: ['INSUMOS'] , options: ['10', '30']}
+            },
+    '99208.04': {
+         1: { label: ['INSUMOS'] , options: ['1']}
+            },
+    '99208.05': {
+         1: { label: ['INSUMOS'] , options: ['1']}
+            },
+    '11975': {
+         1: { label: ['INSUMOS'] , options: ['1','']}
+            },
+    '99208.13': {
+         1: { label: ['INSUMOS'] , options: ['1','4']}
+            },
+
+    'R456': {
+         1: { label: ['TIPO'] , options: ['G', '']}
+            },
+'99402.05': {
+         1: { label: ['N°'] , options: ['1','2']}
+            },
+'99401.02': {
+         1: { label: ['N°'] , options: ['1','2','3']}
+            },
+'99208.14': {
+         1: { label: ['TIPO'] , options: ['RSM','RSR','RSA']}
+            },
+'9940.14': {
+         1: { label: ['TIPO'] , options: ['RSM','RSR','RSA']}
+            },
+'99402.01': {
+         1: { label: ['N°'] , options: ['1','2','3']}
+            },
+'99402.03': {
+         1: { label: ['N°'] , options: ['1','2','3']}
+            },
+'99209': {
+         1: { label: ['N°'] , options: ['1','2','3','4','5','6','7','8','9','10']}
+            },
+'99501': {
+         1: { label: ['N°'] , options: ['1','2']}
+            },
+
+'C0010': {
+         1: { label: ['TIPO'] , options: ['']},
+         2: { label: ['TIPO'] , options: ['']}
+            },
+'C0009': {
+         1: { label: ['TIPO'] , options: ['']},
+         2: { label: ['TIPO'] , options: ['']}
+            },
+
+'99502': {
+         1: { label: ['N°'] , options: ['1','2']}
+            },
+'36416': {
+         1: { label: ['N°'] , options: ['1','2']}
+            },
+'99199.28': {
+         1: { label: ['N°'] , options: ['1','2']}
+            },
+
+'87342': {
+         1: { label: ['TIPO'] , options: ['RN', 'RP']}
+            },
+
+    '88141': {
+         1: { label: ['TIPO'] , options: ['N', '','A']}
+            },
+    '81000.02': {
+         1: { label: ['TIPO'] , options: ['RN','RP']}
+            },
+    '82044': {
+         1: { label: ['TIPO'] , options: ['RN','RP']}
+            },
+
+        '88141.01': {
+         1: { label: ['TIPO'] , options: ['N','A']}
+            },
+'85018.01': {
+         1: { label: ['LAB1'] , options: ['']}
+            },
+'85018': {
+         1: { label: ['LAB1'] , options: ['']}
+            },
+
+   '99401.33': {
+         1: { label: ['N°'] , options: ['1','2','']}
+            },
+    '99401.34': {
+         1: { label: ['N°'] , options: ['1','2','']}
+            },
+'86318.01': { 
+        1: { label: 'R.VIH', options: ['RN','RP'] }, 
+        2: { label: 'R.SIFILIS', options: ['RN','RP'] } // 'SEM' es mejor para el espacio pequeño
+    },
+'86803.01': { 
+        1: { label: 'RESULT', options: ['RN','RP'] }, 
+            },
+'99386.03': { 
+        1: { label: 'RESULT', options: ['N','A'] }, 
+            },
+'Z006': { 
+        1:  ['IMC','PRG','']  
+            },
+'Z019': { 
+        1:  ['ALT','']
+            },
+
+'O261': { 
+        1:  ['IMC','']  
+            },
+
+'O260': { 
+        1:  ['IMC','']  
+            },
+'E660': { 
+        1:  ['IMC','']  
+            },
+'E669': { 
+        1:  ['IMC','']  
+            },
+'E6690': { 
+        1:  ['IMC','']  
+            },
+'E6691': { 
+        1:  ['IMC','']  
+            },
+'E6692': { 
+        1:  ['IMC','']  
+            },
+'E6693': { 
+        1:  ['IMC','']  
+            },
+'E440': { 
+        1: [''], 
+            },
+
+'99402.08': { 
+        1: { label: 'N°', options: ['1','2'] }, 
+            },
+'U2142': { 
+        1: [''] , 
+            },
+'U310': { 
+        1: [''] , 
+            },
+'99401.13': { 
+        1: [''] , 
+            },
+'99403.01': { 
+        1: [''] , 2: ['','RD','PD'] 
+            },
+
+'99801': { 
+        1: ['', 'TA','1','2'] , 2: ['','1','2'], 3: [,'','1','2','3'] 
+            },
+'I10X': { 
+        1: [''] ,2: [''] , 
+            },
+'E119': { 
+        1: [''] ,2: [''] , 
+            },
+'99207': { 
+        1: { label: 'N°', options: ['1','2','3','4','5'] }, 
+            },
+'99207.01': { 
+        1: { label: 'N°', options: ['1','2','3','4','5','6','7','8'] }, 
+            },
+
+'C0011': { 
+        1: [''] , 
+            },
+'E617': { 
+        1: [''] , 
+            },
+'E631': { 
+        1: [''] , 
+            },
+
+'T743': { 
+        1: [''] , 
+            },
+'T748': { 
+        1: [''] , 
+            },
+'F930': { 
+        1: [''] , 
+            },
+'F931': { 
+        1: [''] , 
+            },
+'F932': { 
+        1: [''] , 
+            },
+'F064': { 
+        1: [''] , 
+            },
+'D2392': { 
+        1: [''] , 
+            },
+'K040': { 
+        1: [''] , 
+            },
+
+'D0150': { 
+        1: [''] , 
+            },
+'D0120': { 
+        1: [''] , 
+            },
+'D1110': { 
+        1: { label: 'N°', options: ['1','2'] }, 
+            },
+'D1310': { 
+        1: { label: 'N°', options: ['1','2'] }, 
+            },
+'D1330': { 
+        1: { label: 'N°', options: ['1','2'] }, 
+            },
+
+'99402.04': { 
+        1: { label: 'N°', options: ['1','2'] }, 
+            },
+
+'E45X': { 
+        1: { label: 'RESULT', options: ['TE'] }, 
+            },
+'A64X9': { 
+        1: { label: 'TIPO', options: ['ITS',''] }, 
+            },
+'99199.11': { 
+        1: { label: 'N°', options: ['TA','1','2','3','4'] }, 
+            },
+'99384': { 
+        1: { label: 'N°', options: ['TA','1','2','3'] }, 
+            },
+
+'99209.04': { 
+        1: { label: 'RIESGO', options: ['RSA','RSM','RSR'] }, 
+            },
+'99384': { 
+        1: { label: 'N°', options: ['1','2','3'] }, 
+            },
+
+
+'76805': { 
+        1: { label: 'N°', options: ['1','2','3','4','5'] }, 
+            },
+
+
+//==============================================================================================================
+//'99801': { 
+//        1: { label: 'N°', options: ['TA','1','2',] },
+//        2: { label: 'TIPO', options: ['1','2'] },
+//       3: { label: 'ESCEN.', options: ['1','2','3'] }, 
+//          },
+
+
+'99173': { 
+        1: { label: 'OJO DERECH', options: [''] }, 
+        2: { label: 'OJO IZQU.', options: [] } 
+    },
+
     'Z3591': { 
         1: { label: 'N° CPN', options: ['1', '2', '3', '4', '5', '6', '7', '8', '9'] }, 
         2: { label: 'SEM<14', options: [] } // 'SEM' es mejor para el espacio pequeño
@@ -626,12 +1095,6 @@ const LAB_CONFIG = {
         2: { label: 'SEM>27', options: [] } // 'SEM' es mejor para el espacio pequeño
     },
 
-    // Ejemplo Consejería
-    '99401': {
-        1: { label: 'TIPO', options: ['ANT', 'C.I.', 'L.M.'] },
-        2: { label: 'NRO', options: ['1', '2', '3'] }
-    },
-
     'Z3493': { 
         1: { label: 'CPN', options: ['1','2','3','4','5','6','7'] }, 
         2: { label: 'SEM', options: [] },
@@ -644,8 +1107,13 @@ const LAB_CONFIG = {
     },
 
     '99199.22': { 
-        1: { label: 'DIAST', options: [] }, 
-        2: { label: 'SIST', options: [] }
+        1: { label: 'SISTOLICA', options: [] }, 
+        2: { label: 'DIASTOLICA', options: [] }
+    },
+
+    'Z359': { 
+        1: { label: 'TRIMESTRE', options: ['1','2','3'] }, 
+        2: { label: 'N° SEM', options: [] }
     }
 
 };
@@ -663,7 +1131,16 @@ export default function App() {
   const calendarRef = useRef(null);
   const handleDateSelect = (date) => setPatientData(prev => ({ ...prev, fecAtencion: date }));
   const [showCredModal, setShowCredModal] = useState(false);
+  const [activePdf, setActivePdf] = useState(null);
   const [isBatchFinished, setIsBatchFinished] = useState(false);
+  const [isMasterUploadEnabled, setIsMasterUploadEnabled] = useState(false); 
+  const [isProcessingMaster, setIsProcessingMaster] = useState(false);
+  const [padronDate, setPadronDate] = useState(localStorage.getItem('PADRON_DATE') || "");
+  const DNIS_AUTORIZADOS = [
+    "123",  // Tú
+    "02860100",   // Jefe El Puerto
+    "43947945",  // Jefe Lagunas
+];
   useEffect(() => {
     const handleClickOutside = (event) => {
       // 1. Lógica del Calendario (Mantenemos la que tenías)
@@ -729,6 +1206,7 @@ export default function App() {
             ...prev, 
             dniResp: user.dni, 
             nombreResp: user.nombre,
+ 	    establecimiento: user.establecimiento || prev.establecimiento,
             
             // Si el usuario tiene UPS definida, úsala. Si no, usa MEDICINA por defecto.
             ups: user.ups || 'MEDICINA' 
@@ -774,7 +1252,7 @@ export default function App() {
   const [hbAdjusted, setHbAdjusted] = useState(null);
   const [isPremature, setIsPremature] = useState(false);
 
-  const [adminData, setAdminData] = useState({ anio: '2026', mes: 'ENERO', establecimiento: 'E.S I-4 PACAIPAMPA', turno: 'MAÑANA', ups: 'MEDICINA', dniResp: '', nombreResp: '', isConfigured: false });
+  const [adminData, setAdminData] = useState({ anio: '2026', mes: 'MARZO', establecimiento: '', turno: 'MAÑANA', ups: 'MEDICINA', dniResp: '', nombreResp: '', isConfigured: false });
   const [printCount, setPrintCount] = useState(() => {
       const saved = localStorage.getItem('his_print_count');
       return saved ? parseInt(saved, 10) : 0;
@@ -782,7 +1260,16 @@ export default function App() {
   const initialPatient = { dni: '', paciente: '', hc: '', fecNac: '', sexo: '', financiador: '', direccion: '', distrito: '', estAtencion: 'PACAIPAMPA', fecAtencion: '', condicion: '', fur: '', estOrigen: '', condEst: '', condServ: '' };
   const [patientData, setPatientData] = useState(initialPatient);
   //const [showNewBtn, setShowNewBtn] = useState(false);
-  const [savedPatients, setSavedPatients] = useState([]);
+  // --- CARGA DE DATOS GUARDADOS (PERSISTENCIA) ---
+  const [savedPatients, setSavedPatients] = useState(() => {
+      try {
+          const datosGuardados = localStorage.getItem('HIS_LOTE_PENDIENTE');
+          return datosGuardados ? JSON.parse(datosGuardados) : [];
+      } catch (e) {
+          console.error("Error cargando lote guardado", e);
+          return [];
+      }
+  });
   const [showNewBtn, setShowNewBtn] = useState(false);
   // CAMBIO: Formato de edad extendido
   const ageString = useMemo(() => { 
@@ -839,16 +1326,42 @@ export default function App() {
   });
   useEffect(() => {
     const initDB = async () => {
+        let basePacientes = [];
+        
         try {
             const patients = await idb.getPatients();
             if (patients && patients.length > 0) {
-                setDbPacientes(patients);
-                setDbStatus('ready');
-            } else {
-                setDbStatus('empty');
+                basePacientes = patients;
             }
         } catch (e) {
             console.error("Error cargando BD", e);
+            // Intentar recuperar desde localStorage directamente
+            const saved = loadExcelFromLS();
+            if (saved) {
+                try {
+                    basePacientes = parseExcelToPacientes(saved.data, saved.type);
+                    console.log(`🔧 Recuperados ${basePacientes.length} pacientes desde localStorage`);
+                } catch (parseErr) {
+                    console.error("Error parseando Excel guardado:", parseErr);
+                }
+            }
+        }
+
+        // --- FUSIONAR PACIENTES REGISTRADOS MANUALMENTE ---
+        const nuevos = getPacientesNuevosLS();
+        if (nuevos.length > 0) {
+            const dnisBase = new Set(basePacientes.map(p => p.dni));
+            const sinDuplicar = nuevos.filter(n => !dnisBase.has(n.dni));
+            if (sinDuplicar.length > 0) {
+                basePacientes = [...basePacientes, ...sinDuplicar];
+                console.log(`👤 ${sinDuplicar.length} pacientes nuevos fusionados (${nuevos.length - sinDuplicar.length} ya estaban en el padrón)`);
+            }
+        }
+
+        if (basePacientes.length > 0) {
+            setDbPacientes(basePacientes);
+            setDbStatus('ready');
+        } else {
             setDbStatus('empty');
         }
     };
@@ -869,26 +1382,28 @@ export default function App() {
         if ( (condEst === 'R' && condServ === 'C') || (condEst === 'N' && condServ === 'C') || (condEst === 'N' && condServ === 'R') ) return true;
         return false;
   }, [patientData.condEst, patientData.condServ]);
+  // --- CALCULADORA DE IMC INTEGRADA CON TABLAS OMS (ARCHIVO EXTERNO) ---
   useEffect(() => {
     const p = parseFloat(clinicalData.peso);
     const t = parseFloat(clinicalData.talla);
+    
+    // Usamos el objeto de edad (ageObj) que ya calculaste
     const anios = typeof ageObj.y === 'number' ? ageObj.y : 0;
+    const mesesTotales = (ageObj.y * 12) + (ageObj.m || 0);
 
-    // 1. CÁLCULO DEL IMC MATEMÁTICO (Solo si es mayor de 5 años)
     let imcCalc = "";
-    if (anios >= 5 && p > 0 && t > 0) {
+    let dx = "";
+
+    // 1. CÁLCULO MATEMÁTICO (Solo si hay peso y talla)
+    if (p > 0 && t > 0) {
         const t_m = t / 100;
         imcCalc = (p / (t_m * t_m)).toFixed(2);
     }
 
-    // 2. CLASIFICACIÓN / DIAGNÓSTICO SEGÚN GRUPO ETARIO
-    let dx = "";
-    
     if (imcCalc) {
         const imcVal = parseFloat(imcCalc);
 
-        // CASO A: ADULTO MAYOR (60 AÑOS A MÁS) - RM N° 240-2013/MINSA
-        // Rangos especiales: Delgadez <23, Normal 23-27.9, Sobrepeso 28-31.9
+        // --- CASO A: ADULTO MAYOR (>= 60 años) ---
         if (anios >= 60) {
             if (imcVal < 23.0) dx = "DELGADEZ";
             else if (imcVal <= 27.9) dx = "NORMAL";
@@ -896,8 +1411,7 @@ export default function App() {
             else dx = "OBESIDAD";
         }
         
-        // CASO B: ADULTO JOVEN Y MADURO (20 A 59 AÑOS) - ESTÁNDAR OMS
-        // Rangos estándar: Bajo <18.5, Normal 18.5-24.9, Sobrepeso 25-29.9
+        // --- CASO B: ADULTO (20 a 59 años) ---
         else if (anios >= 20) {
             if (imcVal < 18.5) dx = "BAJO PESO";
             else if (imcVal <= 24.9) dx = "NORMAL";
@@ -907,22 +1421,25 @@ export default function App() {
             else dx = "OBESIDAD III";
         }
         
-        // CASO C: ESCOLAR Y ADOLESCENTE (5 A 19 AÑOS) - NTS N° 157
-        // Requiere Gráficas/Tablas (Z-Score). No se clasifica solo con el número.
+        // --- CASO C: NIÑOS Y ADOLESCENTES (5 a 19 años) ---
+        // ¡AQUÍ ESTÁ LA MAGIA! LLAMAMOS AL ARCHIVO EXTERNO
+        else if (anios >= 5) {
+            dx = getDiagnosticoNino(patientData.sexo, mesesTotales, imcVal);
+        }
+        // Menores de 5 años (Usan curvas P/T, no IMC generalmente en este paso rápido)
         else {
-            dx = "VER TABLA Z"; 
+            dx = ""; // O puedes poner lógica CRED si la tienes
         }
     }
 
-    // 3. ACTUALIZACIÓN DEL ESTADO (IMC + RIESGO)
+    // 3. ACTUALIZAR ESTADO
     setClinicalData(prev => ({ 
         ...prev, 
         imc: imcCalc,
-        riesgo: dx // Aquí se llena automáticamente el input de la derecha
+        riesgo: dx 
     }));
-
   }, [clinicalData.peso, clinicalData.talla, ageObj.y]);
-  useEffect(() => { if (patientData.condicion !== 'GESTANTE') setPatientData(prev => ({...prev, fur: ''})); }, [patientData.condicion]);
+  //useEffect(() => { if (patientData.condicion !== 'GESTANTE') setPatientData(prev => ({...prev, fur: ''})); }, [patientData.condicion]);
   useEffect(() => { if (adminData.isConfigured) setPatientData(prev => ({...prev, estAtencion: adminData.establecimiento})); }, [adminData.isConfigured, adminData.establecimiento]);
   useEffect(() => { setAnemiaResult(""); setAnemiaColor("bg-slate-200 text-slate-500"); setHbAdjusted(null); }, [patientData.dni]);
     // --- NUEVA LÓGICA PROACTIVA: DETECTAR GESTANTE POR FUR ---
@@ -937,8 +1454,8 @@ export default function App() {
                   `⚠️ ATENCIÓN: Sra. ${patientData.paciente}\n\n` +
                   `El sistema detectó una Fecha de Última Regla (FUR): ${patientData.fur}\n\n` +
                   `¿La paciente continúa con la condición de GESTANTE?\n` +
-                  `[Aceptar] = SÍ, marcar como GESTANTE.\n` +
-                  `[Cancelar] = NO, borrar fecha y continuar.`
+                  `[SÍ] = SÍ, marcar como GESTANTE.\n` +
+                  `[NO, Ya no es gestante] = borrar FUR y continuar.`
               );
 
               if (confirmacion) {
@@ -953,16 +1470,161 @@ export default function App() {
           return () => clearTimeout(timer); // Limpieza del timer
       }
   }, [patientData.fur, step]); // Se ejecuta cuando cambia la FUR o el paso
+
+  // --- FUNCIÓN PARA CARGA MASIVA (30K REGISTROS) ---
+  const handleMasterPadronUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Confirmación simple
+    if (!window.confirm("⚠️ ¿Estás seguro de reemplazar la Base de Datos con este Padrón?")) {
+        e.target.value = ''; 
+        return;
+    }
+
+    setIsProcessingMaster(true);
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const wb = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false }); 
+
+        const procesados = rawData.slice(1).map(r => {
+            if (!r[0] && !r[1]) return null;
+            return {
+                dni: r[0] ? String(r[0]).trim().padStart(8, '0') : "", 
+                nombre: r[1] ? String(r[1]).trim().toUpperCase() : "", 
+                fecNac: r[2], 
+                sexo: r[3] ? String(r[3]).trim().toUpperCase() : "M", 
+                financiador: r[4] ? String(r[4]).trim() : "SIS", 
+                hc: r[5] ? String(r[5]).trim() : "", 
+                distrito: r[6] ? String(r[6]).trim().toUpperCase() : "", 
+                direccion: r[7] ? String(r[7]).trim().toUpperCase() : "", 
+                estOrigen: r[8] ? String(r[8]).trim().toUpperCase() : "", 
+                historialEst: [],
+                busqueda: ((r[0]||"") + " " + (r[1]||"")).toUpperCase()
+            };
+        }).filter(p => p !== null);
+
+        await idb.savePatients(procesados);
+        setDbPacientes(procesados);
+        setDbStatus('ready');
+
+        // --- AQUÍ GUARDAMOS LA FECHA Y HORA ACTUAL ---
+        const hoy = new Date();
+        const fechaStr = hoy.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' ' + hoy.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+        
+        setPadronDate(fechaStr); // Guardar en estado visual
+        localStorage.setItem('PADRON_DATE', fechaStr); // Guardar en memoria del navegador
+        // ---------------------------------------------
+
+        alert(`✅ ÉXITO: Padrón actualizado correctamente.`);
+        
+        // Guardar Excel crudo en localStorage para persistir entre recargas
+        saveExcelToLS(evt.target.result, 'master');
+        
+        // Limpiar pacientes nuevos locales (el nuevo padrón ya los incluye)
+        clearPacientesNuevosLS();
+
+      } catch (err) {
+        alert("❌ Error: " + err.message);
+      } finally {
+        setIsProcessingMaster(false);
+        e.target.value = ''; 
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+  // --- FUNCIÓN PARA DESCARGAR (EXPORTAR) EL PADRÓN A EXCEL ---
+  const handleExportPadron = () => {
+    if (!dbPacientes || dbPacientes.length === 0) {
+      alert("⚠️ La base de datos está vacía. No hay nada que descargar.");
+      return;
+    }
+
+    const confirmDownload = window.confirm(`¿Deseas descargar el Padrón General con ${dbPacientes.length} registros?`);
+    if (!confirmDownload) return;
+
+    try {
+      // 1. Convertir los datos JSON a Hoja de Cálculo
+      // Mapeamos para que las columnas salgan limpias y ordenadas
+      const dataToExport = dbPacientes.map(p => ({
+          DNI: p.dni,
+          NOMBRE: p.nombre,
+          FEC_NAC: p.fecNac,
+          SEXO: p.sexo,
+          FINANCIADOR: p.financiador,
+          HC: p.hc,
+          DISTRITO: p.distrito,
+          DIRECCION: p.direccion,
+          EST_ORIGEN: p.estOrigen
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(dataToExport);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Padron_General");
+
+      // 2. Generar nombre con fecha actual para que no se pierdan
+      const fechaHoy = new Date().toISOString().split('T')[0];
+      const fileName = `PADRON_GENERAL_${fechaHoy}.xlsx`;
+
+      // 3. Descargar
+      XLSX.writeFile(wb, fileName);
+      alert("✅ Descarga iniciada correctamente.");
+
+    } catch (error) {
+      console.error(error);
+      alert("❌ Error al generar el Excel: " + error.message);
+    }
+  };
   const handleFileUpload = (e, type) => {
     try {
       const file = e.target.files[0];
       if (!file) return;
+      console.log("📂 PASO 1: Archivo seleccionado:", file.name, "Tamaño:", file.size, "Tipo:", file.type);
+      
       const reader = new FileReader();
       reader.onload = async (evt) => {
         try {
-          const wb = XLSX.read(evt.target.result, { type: 'binary' });
+          console.log("📂 PASO 2: FileReader completó. Bytes leídos:", evt.target.result.byteLength || evt.target.result.length);
+          
+          // --- DIAGNÓSTICO: Probamos diferentes métodos de lectura ---
+          let wb;
+          try {
+            console.log("📂 PASO 3A: Intentando leer con ArrayBuffer...");
+            const data = new Uint8Array(evt.target.result);
+            wb = XLSX.read(data, { type: 'array' });
+            console.log("✅ PASO 3A: Lectura con ArrayBuffer EXITOSA");
+          } catch (errArray) {
+            console.error("❌ PASO 3A falló:", errArray);
+            console.log("📂 PASO 3B: Intentando leer con base64...");
+            try {
+              // Convertir ArrayBuffer a base64
+              const bytes = new Uint8Array(evt.target.result);
+              let binary = '';
+              for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+              }
+              const base64 = btoa(binary);
+              wb = XLSX.read(base64, { type: 'base64' });
+              console.log("✅ PASO 3B: Lectura con base64 EXITOSA");
+            } catch (errBase64) {
+              console.error("❌ PASO 3B también falló:", errBase64);
+              // Último intento: verificar que XLSX funciona
+              console.log("🔍 DIAGNÓSTICO XLSX:", typeof XLSX, Object.keys(XLSX || {}).join(', '));
+              console.log("🔍 XLSX.read existe?:", typeof XLSX?.read);
+              console.log("🔍 XLSX.utils existe?:", typeof XLSX?.utils);
+              throw new Error(`XLSX.read falló con ambos métodos. Array: ${errArray.message} | Base64: ${errBase64.message}`);
+            }
+          }
+
+          console.log("📂 PASO 4: Hojas encontradas:", wb.SheetNames);
           const ws = wb.Sheets[wb.SheetNames[0]];
-          const rawData = XLSX.utils.sheet_to_json(ws, { header: 1 });
+          const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true });
+          console.log("📂 PASO 5: Filas leídas:", rawData.length, "| Primera fila:", rawData[0]);
+
           if (type === 'pacientes') {
             const procesados = rawData.slice(1).map(r => {
                 if (!r[0] && !r[1]) return null;
@@ -993,10 +1655,24 @@ export default function App() {
                 };
             }).filter(p => p !== null);
             
-            await idb.savePatients(procesados);
+	    await idb.savePatients(procesados);
             setDbPacientes(procesados);
             setDbStatus('ready');
+
+            const hoy = new Date();
+            const fechaStr = hoy.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' ' + hoy.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+            
+            setPadronDate(fechaStr);
+            localStorage.setItem('PADRON_DATE', fechaStr);
+
             alert(`✅ BASE DE DATOS ACTUALIZADA: ${procesados.length} pacientes cargados con sus históricos.`);
+            
+            // Guardar Excel crudo en localStorage para persistir entre recargas
+            saveExcelToLS(evt.target.result, 'pacientes');
+            
+            // Limpiar pacientes nuevos locales (el nuevo Excel ya los incluye)
+            clearPacientesNuevosLS();
+                   
           } else if (type === 'cie10') {
             const procesados = rawData.slice(1).map(r => ({ CODIGO: r[0] ? String(r[0]).trim() : "", DESCRIPCION: r[1] ? String(r[1]).trim() : "", BUSQUEDA: (String(r[0]||"") + " " + String(r[1]||"")).toUpperCase() })).filter(d => d.CODIGO);
             setDbCie10(procesados);
@@ -1006,11 +1682,16 @@ export default function App() {
             setDbPersonal(procesados);
             alert(`✅ ${procesados.length} personal cargado.`);
           }
-        } catch (err) { alert("Error leyendo el archivo: " + err.message);
+        } catch (err) { 
+          console.error("💀 ERROR COMPLETO:", err);
+          console.error("💀 STACK:", err.stack);
+          alert("Error leyendo el archivo: " + err.message + "\n\nRevisa la CONSOLA (F12) para ver el error completo.");
         }
       };
-      reader.readAsBinaryString(file);
-    } catch (error) { alert("Error subiendo el archivo: " + error.message);
+      reader.readAsArrayBuffer(file);
+    } catch (error) { 
+      console.error("💀 ERROR AL SUBIR:", error);
+      alert("Error subiendo el archivo: " + error.message);
     }
   };
 
@@ -1020,7 +1701,7 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const wb = XLSX.read(evt.target.result, { type: 'binary' });
+        const wb = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
         if (data.length > 0) {
@@ -1036,7 +1717,7 @@ export default function App() {
       } catch (err) { alert("Error al leer Excel: " + err.message);
       }
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   };
   const handleSearchInput = (e) => {
       const val = e.target.value.toUpperCase();
@@ -1067,6 +1748,16 @@ export default function App() {
   const parseExcelDate = (d) => {
     if (!d) return '2000-01-01';
     try {
+      // Red de seguridad: Si llega un objeto Date
+      if (d instanceof Date) {
+        if (!isNaN(d.getTime())) {
+          const dd = String(d.getDate()).padStart(2, '0');
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const yyyy = d.getFullYear();
+          return `${yyyy}-${mm}-${dd}`;
+        }
+        return '2000-01-01';
+      }
       if (typeof d === 'number') { const date = new Date(Math.round((d - 25569)*86400*1000));
       date.setMinutes(date.getMinutes() + date.getTimezoneOffset()); return !isNaN(date.getTime()) ? date.toISOString().split('T')[0] : '2000-01-01'; }
       if (typeof d === 'string') { if(d.includes('/')) { const p = d.split('/');
@@ -1137,31 +1828,48 @@ export default function App() {
       const necesitaEdicion = faltaHC || faltaDir;
 
       // 3. LÓGICA DE CARGA
-      if (isSameJurisdiction) {
-          const esContinuador = p.historialEst.some(h => cleanStr(h).includes(cleanStr(keyword)));
+      // ... (código anterior dentro de selectPatient) ...
+
+      // 1. DETECCIÓN MEJORADA: ¿Es APP? (Con o sin ceros)
+      // Buscamos "APP" en el nombre o en el DNI
+      const isActivityAPP = (p.dni && p.dni.includes("APP")) || (p.nombre && p.nombre.includes("APP"));
+
+      // 3. LÓGICA DE CARGA (MODIFICADA)
+      // Si es la misma jurisdicción O ES UNA ACTIVIDAD APP -> Carga Directa (Sin Alerta)
+      if (isSameJurisdiction || isActivityAPP) {
           
+          const esContinuador = p.historialEst.some(h => cleanStr(h).includes(cleanStr(keyword)));
+          const furEncontrada = p.last_fur ? parseExcelDate(p.last_fur) : '';
+          console.log("🔍 FUR DEBUG:", { raw: p.last_fur, tipo: typeof p.last_fur, parsed: furEncontrada });
+
           setPatientData(prev => ({ 
               ...prev,
               id: p.id, 
               dni: p.dni || "", 
               paciente: p.nombre || "", 
-              hc: p.hc || "", 
+              hc: p.hc || "", // Si es APP y no tiene HC, pasará vacío y ya no importa
               fecNac: safeFecNac, 
               sexo: p.sexo || 'M', 
               financiador: p.financiador || '2-SIS', 
               direccion: p.direccion || '', 
               distrito: p.distrito || '', 
-              estOrigen: p.estOrigen || '', 
-              condicion: '', 
-              fur: p.last_fur ? parseExcelDate(p.last_fur) : '', 
-              condEst: esContinuador ? "C" : "R", 
+              estOrigen: p.estOrigen || '',  
+              fur: furEncontrada, 
+	      //condicion: furEncontrada ? 'GESTANTE' : '',
+	      condicion: '',
+              // Si es APP, forzamos que parezca Continuador para evitar rojos
+              // Si ya fue atendido previamente (guardado en localStorage), es Continuador
+              condEst: isActivityAPP ? "C" : (esContinuador || fuePreviamenteAtendido(p.dni) ? "C" : "R"), 
               condServ: '' 
           }));
           
-          // LÓGICA SOLICITADA: SI FALTAN DATOS -> DESBLOQUEAR AUTOMÁTICAMENTE
+          // ¡ESTO ES CLAVE! Si es APP, bloqueamos los datos para que no pida editar
+          // Si es paciente normal sin HC, pedimos edición.
+          const necesitaEdicion = !isActivityAPP && (faltaHC || faltaDir);
           setIsPatientDataLocked(!necesitaEdicion); 
 
       } else {
+          // LÓGICA DE PACIENTE FORÁNEO (SOLO SI NO ES APP)
           setPatientData(prev => ({ 
               ...prev,
               id: p.id, 
@@ -1176,11 +1884,11 @@ export default function App() {
               fur: p.last_fur ? parseExcelDate(p.last_fur) : '', 
               estOrigen: adminData.establecimiento, 
               hc: "",                        
-              condEst: 'N',                   
-              condServ: 'N'                   
+              condEst: fuePreviamenteAtendido(p.dni) ? 'C' : 'N',                   
+              condServ: fuePreviamenteAtendido(p.dni) ? '' : 'N'                   
           }));
 
-          setIsPatientDataLocked(false); // Siempre desbloqueado si viene de fuera
+          setIsPatientDataLocked(false); 
 
           setValidationAlert({
               isOpen: true,
@@ -1189,8 +1897,7 @@ export default function App() {
               message: `El paciente pertenece a: "${p.estOrigen || 'DESCONOCIDO'}".\nSe procederá a registrar en: "${adminData.establecimiento}".`,
               details: '✅ Se han cargado sus datos personales.\n✅ La condición cambió automáticamente a NUEVO.\n✏️ POR FAVOR: Ingrese el N° de HISTORIA CLÍNICA de este establecimiento.'
           });
-      }
-      
+      }      
       // Auto-Focus inteligente: Si falta HC, ir ahí. Si falta Dirección (y hay HC), ir ahí.
       setTimeout(() => { 
           const hcInput = document.querySelector('input[name="hc"]');
@@ -1259,16 +1966,48 @@ export default function App() {
   const saveModalSelection = () => { if (!tempDx.desc || !tempDx.codigo) { alert("Debe seleccionar un diagnóstico válido."); return;
   } const newDiagnoses = [...diagnoses]; newDiagnoses[currentDxRow] = { ...tempDx }; setDiagnoses(newDiagnoses); if (dxErrors[currentDxRow]) { const newErrors = { ...dxErrors };
   delete newErrors[currentDxRow]; setDxErrors(newErrors); } setIsDxModalOpen(false); };
-  const handleAdmin = (e) => { const name = e.target.name; const val = e.target.value;
-  if (name === 'dniResp') { const encontrado = dbPersonal.find(p => p.dni === val.trim());
-  if (encontrado) { setAdminData(prev => ({ ...prev, dniResp: val, nombreResp: encontrado.nombre }));
-  } else { setAdminData(prev => ({ ...prev, dniResp: val })); } } else { setAdminData({ ...adminData, [name]: val });
-  } };
+
+ // const handleAdmin = (e) => { const name = e.target.name; const val = e.target.value;
+ // if (name === 'dniResp') { const encontrado = dbPersonal.find(p => p.dni === val.trim());
+ // if (encontrado) { setAdminData(prev => ({ ...prev, dniResp: val, nombreResp: encontrado.nombre }));
+ // } else { setAdminData(prev => ({ ...prev, dniResp: val })); } } else { setAdminData({ ...adminData, [name]: val });
+ // } };
+
+const handleAdmin = (e) => {
+    const name = e.target.name;
+    const val = e.target.value;
+
+    if (name === 'dniResp') {
+      // Busca coincidencias inmediatas (sin importar longitud)
+      const encontrado = dbPersonal.find(p => p.dni === val.trim());
+
+      if (encontrado) {
+        setAdminData(prev => ({
+          ...prev,
+          dniResp: val,
+          nombreResp: encontrado.nombre,
+          // AQUI ESTA EL CAMBIO: Asigna el establecimiento si existe en el archivo
+          establecimiento: encontrado.establecimiento || prev.establecimiento
+        }));
+      } else {
+        // Si no lo encuentra, solo permite seguir escribiendo
+        setAdminData(prev => ({ ...prev, dniResp: val }));
+      }
+    } else {
+      // Para el resto de campos (año, mes, etc.)
+      setAdminData({ ...adminData, [name]: val });
+    }
+  };
+
   
   const handlePatient = (e) => {
       setShowNewBtn(false);
       const { name, value } = e.target;
       let finalValue = value;
+      if (name === 'condicion' && value !== 'GESTANTE') {
+          setPatientData(prev => ({ ...prev, [name]: finalValue, fur: '' }));
+          return; // Cortamos aquí para no repetir el setPatientData abajo
+      }
 
       // --- VALIDACIÓN DE GESTANTE / PUÉRPERA ---
       if (name === "condicion" && (value === "GESTANTE" || value === "PUERPERA")) {
@@ -1338,6 +2077,7 @@ export default function App() {
       try {
           await idb.addPatient(nuevoPacienteBD);
           markAsContinuadorOnSave(nuevoPacienteBD); 
+          savePacienteNuevoLS(nuevoPacienteBD); // Persistir en localStorage
           setDbPacientes(prev => [...prev, nuevoPacienteBD]);
           
           setPatientData(prev => ({ 
@@ -1441,8 +2181,34 @@ export default function App() {
       setTimeout(() => { if (dxBottomRef.current) { dxBottomRef.current.scrollIntoView({ behavior: 'smooth' }); } }, 100); 
   };
   const removeDx = (i) => setDiagnoses(diagnoses.filter((_, idx) => idx !== i));
+
+  // --- REGISTRO PERSISTENTE DE PACIENTES ATENDIDOS (localStorage) ---
+  const ATENDIDOS_KEY = 'HIS_PACIENTES_ATENDIDOS';
+  const marcarDniComoAtendido = (dni) => {
+      if (!dni) return;
+      try {
+          const stored = JSON.parse(localStorage.getItem(ATENDIDOS_KEY) || '{}');
+          stored[dni.trim()] = Date.now();
+          localStorage.setItem(ATENDIDOS_KEY, JSON.stringify(stored));
+      } catch (e) { /* silencioso */ }
+  };
+  const fuePreviamenteAtendido = (dni) => {
+      if (!dni) return false;
+      try {
+          const stored = JSON.parse(localStorage.getItem(ATENDIDOS_KEY) || '{}');
+          return !!stored[dni.trim()];
+      } catch (e) { return false; }
+  };
+
   const updateToContinuador = (idPaciente) => {
       if (!idPaciente) return;
+      
+      // Buscar el DNI del paciente para marcarlo en localStorage
+      const paciente = dbPacientes.find(p => p.id === idPaciente);
+      if (paciente && paciente.dni) {
+          marcarDniComoAtendido(paciente.dni);
+      }
+
       setDbPacientes(prev => prev.map(p => {
           if (p.id === idPaciente) {
               const nuevoHistorial = p.historialEst ? [...p.historialEst] : [];
@@ -1474,6 +2240,8 @@ export default function App() {
   };
   const markAsContinuadorOnSave = (datosPaciente) => {
       if (!datosPaciente.id && !datosPaciente.dni) return;
+      // Persistir en localStorage para que sobreviva recargas
+      marcarDniComoAtendido(datosPaciente.dni);
       // CORRECCIÓN: Usar setDbPacientes en lugar de setAllPatients
       setDbPacientes(prevLista => prevLista.map(p => {
           if ((p.id && p.id === datosPaciente.id) || (p.dni && p.dni === datosPaciente.dni)) {
@@ -1507,14 +2275,14 @@ export default function App() {
         const code = d.codigo.trim().toUpperCase();
 
         if (code === 'D509') {
-            const validLabs = ['LEV', 'MOD', 'SEV'];
+            const validLabs = ['LEV', 'MOD', 'SEV', 'PR'];
             if (!validLabs.includes(d.lab1)) {
                 setValidationAlert({
                     isOpen: true,
                     type: 'ANEMIA',
                     title: 'Validación de Anemia (D509)',
                     message: `En la fila ${i + 1}, el diagnóstico ANEMIA (D509) requiere especificar la severidad en el campo LAB 1.`,
-                    details: 'Valores permitidos: LEV, MOD o SEV.'
+                    details: 'Valores permitidos: LEV, MOD, SEV o PR.'
                 });
                 return false;
             }
@@ -1639,22 +2407,41 @@ export default function App() {
     };
 
     // ========================================================================
-    // PASO 1: LÓGICA INTELIGENTE (SOLO VALIDA SI HAY DATOS)
+    // PASO 1: DATOS DEL PACIENTE
     // ========================================================================
     if (step === 1) {
-        // A. DETECCIÓN: ¿El usuario escribió algo en DNI o Nombre?
+        
+        // --- 1. LÓGICA ESPECIAL PARA ACTIVIDADES (APP...) ---
+        // Usamos .includes() para detectar si "APP" está en el nombre o en el DNI (ej: 000APP93)
+        const nombreMayus = patientData.paciente ? patientData.paciente.toUpperCase() : "";
+        const dniStr = patientData.dni ? String(patientData.dni).toUpperCase() : "";
+        
+        const esActividad = nombreMayus.includes("APP") || dniStr.includes("APP");
+
+        if (esActividad) {
+            // Si es una actividad APP, SOLO validamos que tenga fecha.
+            if (!patientData.fecAtencion) {
+                alert("⚠️ FALTA FECHA DE ATENCIÓN\n\nPor favor seleccione la fecha de la actividad.");
+                setIsCalendarOpen(true);
+                return;
+            }
+            
+            // ¡SALTO MÁGICO! Ignoramos HC, Dirección, Condición, etc.
+            setStep(prev => prev + 1);
+            return; // Detenemos la función aquí para este caso.
+        }
+
+        // --- 2. LÓGICA NORMAL PARA PACIENTES REALES (ESTRICTA) ---
+        
         const hayDatos = (patientData.dni && patientData.dni.trim().length > 0) || 
                          (patientData.paciente && patientData.paciente.trim().length > 0);
 
-        // B. SI NO HAY DATOS -> DEJAR PASAR (Navegación libre entre ventanas)
         if (!hayDatos) {
             setStep(prev => prev + 1);
             return;
         }
 
-        // C. SI HAY DATOS -> ENTONCES SÍ EXIGIMOS TODO (Modo estricto)
-        
-        // 1. Identidad
+        // Identidad
         if (!patientData.dni) { 
             alert("⚠️ FALTAN DATOS\nComplete el DNI."); 
             markError("dni"); return; 
@@ -1664,14 +2451,20 @@ export default function App() {
             markError("paciente"); return; 
         }
         
-        // 2. Fecha de Atención
+        // Fecha de Atención
         if (!patientData.fecAtencion) { 
             alert("⚠️ FALTA FECHA DE ATENCIÓN\n\nPor favor, seleccione Fecha de Atención para continuar."); 
-            setIsCalendarOpen(true); // <--- ESTA LÍNEA ABRE EL CALENDARIO AUTOMÁTICAMENTE
+            setIsCalendarOpen(true); 
             return; 
         }
-
-        // 3. Condiciones (Establecimiento y Servicio)
+         // Validación de Financiador (OBLIGATORIO)
+	 const financiadoresValidos = ["1-USUARIO", "2-SIS", "3-ESSALUD", "10-OTROS"];
+        if (!financiadoresValidos.includes(patientData.financiador)) {
+            alert("⚠️ FALTA FINANCIADOR\n\nPor favor, seleccione una opción válida en la casilla de Financiador.");
+            markError("financiador"); 
+            return; 
+        }
+        // Condiciones (Establecimiento y Servicio)
         if (!patientData.condEst || patientData.condEst === "") { 
             alert("⚠️ FALTA CONDICIÓN ESTABLECIMIENTO\nSeleccione: Nuevo, Continuador o Reingresante."); 
             markError("condEst"); return; 
@@ -1681,61 +2474,49 @@ export default function App() {
             markError("condServ"); return; 
         }
 
-        // --- VALIDACIONES DE CONSISTENCIA (TUS REGLAS ESPECÍFICAS) ---
-        
-        // Caso 1: Si es NUEVO en Est., debe ser NUEVO en Serv.
+        // Validaciones de Consistencia
         if (patientData.condEst === 'N' && patientData.condServ !== 'N') {
-            alert("⛔ ERROR DE CONSISTENCIA\n\nSi el paciente es NUEVO en el establecimiento, obligatoriamente debe ser NUEVO en el servicio.\n\nCorrija 'Cond. Serv' a NUEVO.");
+            alert("⛔ ERROR DE CONSISTENCIA\n\nSi el paciente es NUEVO en el establecimiento, obligatoriamente debe ser NUEVO en el servicio.");
             markError("condServ"); return;
         }
-
-        // Caso 2: Si es REINGRESANTE en Est., NO puede ser CONTINUADOR en Serv.
         if (patientData.condEst === 'R' && patientData.condServ === 'C') {
-             alert("⛔ ERROR DE CONSISTENCIA\n\nUn paciente REINGRESANTE al establecimiento no puede ser CONTINUADOR en el servicio inmediatamente.\n\nSeleccione NUEVO o REINGRESANTE para el servicio.");
+             alert("⛔ ERROR DE CONSISTENCIA\n\nUn paciente REINGRESANTE al establecimiento no puede ser CONTINUADOR en el servicio inmediatamente.");
              markError("condServ"); return;
         }
-        // --- NUEVA VALIDACIÓN: GESTANTE Y FUR ---
-        if (patientData.condicion === 'GESTANTE') {
-            // 1. Validar que la FUR no esté vacía
-            if (!patientData.fur) {
-                alert("⚠️ ATENCIÓN: GESTANTE SIN FUR\n\nAl seleccionar la condición 'GESTANTE', es OBLIGATORIO registrar la Fecha de Última Regla (FUR).");
-                markError("fur"); 
-                return;
-            }
 
-            // 2. Validar consistencia de fechas (FUR no puede ser mayor a Fecha de Atención)
+        // Validación Gestante
+        if (patientData.condicion === 'GESTANTE') {
+            if (!patientData.fur) {
+                alert("⚠️ ATENCIÓN: GESTANTE SIN FUR\n\nEs OBLIGATORIO registrar la Fecha de Última Regla (FUR).");
+                markError("fur"); return;
+            }
             const dFur = new Date(patientData.fur);
-            // Usamos la fecha de atención si existe, sino la fecha actual del sistema
             const dAtencion = patientData.fecAtencion ? new Date(patientData.fecAtencion) : new Date();
-            
-            // Normalizamos las horas a 00:00:00 para comparar solo días
             dFur.setHours(0,0,0,0); 
             dAtencion.setHours(0,0,0,0);
-
             if (dFur > dAtencion) {
-                alert(`⛔ ERROR DE FECHAS\n\nLa FUR (${patientData.fur}) no puede ser una fecha futura respecto a la Fecha de Atención (${patientData.fecAtencion}).\n\nPor favor corrija la fecha.`);
-                markError("fur");
-                return;
+                alert(`⛔ ERROR DE FECHAS\n\nLa FUR (${patientData.fur}) no puede ser futura.`);
+                markError("fur"); return;
             }
         }
-        // 4. Historia Clínica vs DNI
-        const dniStr = String(patientData.dni).trim();
-        const hcStr = String(patientData.hc || '').trim();
-        const dniNum = parseInt(dniStr, 10);
-        const hcNum = parseInt(hcStr, 10);
 
-        if (!hcStr) { 
+        // Historia Clínica vs DNI
+        const hcVal = String(patientData.hc || '').trim();
+        const dniVal = String(patientData.dni).trim();
+        const dniNum = parseInt(dniVal, 10);
+        const hcNum = parseInt(hcVal, 10);
+
+        if (!hcVal) { 
             alert("⚠️ FALTA HISTORIA CLÍNICA\nIngrese el N° de Historia clínica."); 
             markError("hc"); return; 
         }
         
-        // Si son iguales, bloqueamos (usando tu lógica original + numérica)
-        if (dniStr === hcStr || (dniNum === hcNum && dniNum > 0)) {
-             alert(`⛔ ERROR DE HISTORIA CLÍNICA\nLa H.C. (${hcStr}) es igual al DNI.\nEsto es incorrecto. Ingrese el N° DE HISTORIA CLINICA.`); 
+        if (dniVal === hcVal || (dniNum === hcNum && dniNum > 0)) {
+             alert(`⛔ ERROR DE HISTORIA CLÍNICA\nLa H.C. no puede ser igual al DNI.`); 
              markError("hc"); setIsPatientDataLocked(false); return;
         }
 
-        // 5. Dirección
+        // Dirección
         if (!patientData.direccion || patientData.direccion.trim().length < 2) { 
             alert("⚠️ FALTA DIRECCIÓN\nEl campo dirección no puede estar vacío."); 
             markError("direccion"); return; 
@@ -1743,10 +2524,7 @@ export default function App() {
     }
 
     // ========================================================================
-    // PASO 2: VALIDACIÓN MÉDICA INTELIGENTE (TU CÓDIGO ORIGINAL INTACTO)
-    // ========================================================================
-     // ========================================================================
-    // PASO 2: VALIDACIÓN MÉDICA INTELIGENTE (CON RANGOS DE AYUDA)
+    // PASO 2: VALIDACIÓN MÉDICA INTELIGENTE (TU CÓDIGO ORIGINAL)
     // ========================================================================
     if (step === 2) {
       const { talla, peso, hb, pAbd } = clinicalData;
@@ -1765,7 +2543,6 @@ export default function App() {
               markError("peso"); return; 
           }
       }
-
       // --- GRUPO 2: LACTANTE (1 mes a 11 meses) ---
       else if (y === 0 && m > 0) {
           if (t && (t < 45 || t > 85)) { 
@@ -1777,7 +2554,6 @@ export default function App() {
               markError("peso"); return; 
           }
       }
-
       // --- GRUPO 3: NIÑO PEQUEÑO (1 a 4 años) ---
       else if (y >= 1 && y < 5) {
           if (t && (t < 65 || t > 120)) { 
@@ -1789,7 +2565,6 @@ export default function App() {
               markError("peso"); return; 
           }
       }
-
       // --- GRUPO 4: ESCOLAR Y ADOLESCENTE (5 a 17 años) ---
       else if (y >= 5 && y < 18) {
           if (t && (t < 95 || t > 210)) { 
@@ -1801,7 +2576,6 @@ export default function App() {
               markError("peso"); return; 
           }
       }
-
       // --- GRUPO 5: ADULTO (18 años a más) ---
       else if (y >= 18) {
           if (t && (t < 130 || t > 250)) { 
@@ -1814,7 +2588,7 @@ export default function App() {
           }
       }
 
-      // Validaciones Generales (Hemoglobina y Perímetro Abdominal)
+      // Validaciones Generales
       if (hb && (hb < 3 || hb > 24)) { 
           alert("⛔ HEMOGLOBINA ERRÓNEA\nPOR FAVOR DEBE REGISTRAR VALORES ENTRE: 3.0 - 24.0"); 
           markError("hb"); return; 
@@ -1826,108 +2600,99 @@ export default function App() {
     }
 
     // ========================================================================
-    // PASO 3: VALIDACIÓN CIE-10
+    // PASO 3: VALIDACIÓN CIE-10 (TU CÓDIGO ORIGINAL)
     // ========================================================================
     if (step === 3) {
-         // >>> PEGA ESTO AQUÍ (VALIDACIÓN MAESTRA DE LABS) <<<
        for (let i = 0; i < diagnoses.length; i++) {
            const d = diagnoses[i];
            if (!d.codigo) continue;
 
            const currentCode = d.codigo.trim().toUpperCase();
-           // Buscamos la configuración igual que en los inputs (Exacta o 4 caracteres)
+           // A. BUSCAR CONFIGURACIÓN DE LABS
            const config = LAB_CONFIG[currentCode] || LAB_CONFIG[currentCode.substring(0, 4)];
 
            if (config) {
+               // Función auxiliar para saber si el campo permite estar vacío
+               const permiteVacio = (conf) => {
+                   if (!conf) return false; // No configurado
+                   const opciones = Array.isArray(conf) ? conf : (conf.options || []);
+                   return opciones.includes(''); // ¿Existe la opción vacía en la lista?
+               };
+
                // Validar LAB 1
-               if (config[1] !== undefined && (!d.lab1 || d.lab1.trim() === '')) {
-                   setValidationAlert({
-                       isOpen: true,
-                       type: 'LAB_MISSING',
-                       title: `Falta LAB 1 en Fila ${i + 1}`,
-                       message: `El diagnóstico ${currentCode} requiere obligatoriamente un valor en el primer campo LAB.`,
-                       details: 'El campo se muestra en rojo o habilitado. Por favor complételo.'
-                   });
-                   return; // DETIENE EL AVANCE
+               if (config[1] !== undefined) {
+                   // Si NO tiene valor Y NO permite vacío -> Error
+                   if ((!d.lab1 || d.lab1.trim() === '') && !permiteVacio(config[1])) {
+                       setValidationAlert({
+                           isOpen: true, type: 'LAB_MISSING',
+                           title: `Falta LAB 1 en Fila ${i + 1}`,
+                           message: `El diagnóstico ${currentCode} requiere valor en el LAB 1.`,
+                           details: 'Seleccione una opción.'
+                       });
+                       return; 
+                   }
                }
 
                // Validar LAB 2
-               if (config[2] !== undefined && (!d.lab2 || d.lab2.trim() === '')) {
-                   setValidationAlert({
-                       isOpen: true,
-                       type: 'LAB_MISSING',
-                       title: `Falta LAB 2 en Fila ${i + 1}`,
-                       message: `El diagnóstico ${currentCode} requiere obligatoriamente un valor en el segundo campo LAB.`,
-                       details: 'Este código exige múltiples valores LAB.'
-                   });
-                   return; // DETIENE EL AVANCE
-               }
-
-               // Validar LAB 3
-               if (config[3] !== undefined && (!d.lab3 || d.lab3.trim() === '')) {
-                   setValidationAlert({
-                       isOpen: true,
-                       type: 'LAB_MISSING',
-                       title: `Falta LAB 3 en Fila ${i + 1}`,
-                       message: `El diagnóstico ${currentCode} requiere obligatoriamente un valor en el tercer campo LAB.`,
-                       details: 'Este código exige completar todos los campos LAB.'
-                   });
-                   return; // DETIENE EL AVANCE
-               }
-           }
-
-              // Lógica para Z3493 / Z3593 + Lab 7 -> TA
-           const codigoActual = d.codigo ? d.codigo.trim().toUpperCase() : "";
-           const valorLab1 = d.lab1 ? d.lab1.trim().toUpperCase() : "";
-           const valorLab3 = d.lab3 ? d.lab3.trim().toUpperCase() : "";
-
-           if (codigoActual === 'Z3493' || codigoActual === 'Z3593') {
-               if (valorLab1 === '7') {
-                   if (valorLab3 !== 'TA') {
+               if (config[2] !== undefined) {
+                   if ((!d.lab2 || d.lab2.trim() === '') && !permiteVacio(config[2])) {
                        setValidationAlert({
-                           isOpen: true,
-                           type: 'LAB_MISSING',
-                           title: 'Validación de Tamizaje (TA)',
-                           message: `En la fila ${i + 1}, para el diagnóstico ${codigoActual} con Control Nº 7, es OBLIGATORIO registrar "TA" en el 3er LAB.`,
-                           details: '⚠️ REGLA:\nEn el 7mo control de gestante, se debe registrar el Tamizaje de Violencia o Alcohol.\n\nPor favor escriba "TA" en el campo LAB 3.'
+                           isOpen: true, type: 'LAB_MISSING',
+                           title: `Falta LAB 2 en Fila ${i + 1}`,
+                           message: `El diagnóstico ${currentCode} requiere valor en el LAB 2.`,
+                           details: 'Seleccione una opción.'
+                       });
+                       return; 
+                   }
+               }
+
+               // Validar LAB 3 (CON EXCEPCIÓN GESTANTES)
+               if (config[3] !== undefined) {
+                   const esExcepcionGestante = (currentCode === 'Z3593' || currentCode === 'Z3493' || currentCode === 'Z3591' || currentCode === 'Z3592');
+                   
+                   // Si NO tiene valor, NO es excepción gestante Y NO permite vacío -> Error
+                   if ((!d.lab3 || d.lab3.trim() === '') && !esExcepcionGestante && !permiteVacio(config[3])) {
+                       setValidationAlert({
+                           isOpen: true, type: 'LAB_MISSING',
+                           title: `Falta LAB 3 en Fila ${i + 1}`,
+                           message: `El diagnóstico ${currentCode} requiere valor en el LAB 3.`,
+                           details: 'Complete el campo.'
                        });
                        return; 
                    }
                }
            }
-       }
-                // VALIDACIÓN CRUZADA GESTANTE (Z359/Z349)
-       const hasEmbarazoCode = diagnoses.some(d => 
-           d.codigo && (d.codigo.toUpperCase().startsWith('Z359') || d.codigo.toUpperCase().startsWith('Z349'))
-       );
 
-       if (hasEmbarazoCode) {
-           // Si tiene código de embarazo, ES OBLIGATORIO que sea GESTANTE y tenga FUR
-           if (patientData.condicion !== 'GESTANTE' || !patientData.fur || patientData.fur.trim() === '') {
-                setValidationAlert({
-                   isOpen: true,
-                   type: 'GESTANTE_REQUIRED',
-                   title: 'Inconsistencia de Datos Maternos',
-                   message: 'Ha registrado códigos de Embarazo (Z359... o Z349...), pero faltan Datos.',
-                   // Fíjate en la comilla simple al inicio y al final
-                   details: '⚠️ REGLA:\nPara usar estos diagnósticos, es OBLIGATORIO:\n1. Que la Condición sea "GESTANTE".\n2. Que tenga registrada la FUR.\n\nEl sistema lo llevará al Paso 1 para corregirlo.'
-               });
-               return; // Detener avance
+           // Lógica para Z3493 / Z3593 + Lab 7 -> TA
+           if (currentCode === 'Z3493' || currentCode === 'Z3593') {
+               const valorLab1 = d.lab1 ? d.lab1.trim().toUpperCase() : "";
+               const valorLab3 = d.lab3 ? d.lab3.trim().toUpperCase() : "";
+               if (valorLab1 === '7') {
+                   if (valorLab3 !== 'TA') {
+                       setValidationAlert({ isOpen: true, type: 'LAB_MISSING', title: 'Validación de Tamizaje (TA)', message: `En la fila ${i + 1}, para el diagnóstico ${currentCode} con Control Nº 7, es OBLIGATORIO registrar "TA" en el 3er LAB.`, details: '⚠️ REGLA:\nEn el 7mo control de gestante, se debe registrar el Tamizaje de Violencia o Alcohol.\n\nPor favor escriba "TA" en el campo LAB 3.' });
+                       return; 
+                   }
+               }
            }
        }
 
+       // VALIDACIÓN CRUZADA GESTANTE (Z359/Z349)
+       const hasEmbarazoCode = diagnoses.some(d => d.codigo && (d.codigo.toUpperCase().startsWith('Z359') || d.codigo.toUpperCase().startsWith('Z349')));
+       if (hasEmbarazoCode) {
+           if (patientData.condicion !== 'GESTANTE' || !patientData.fur || patientData.fur.trim() === '') {
+                setValidationAlert({ isOpen: true, type: 'GESTANTE_REQUIRED', title: 'Inconsistencia de Datos Maternos', message: 'Ha registrado códigos de Embarazo, pero faltan Datos.', details: '⚠️ REGLA:\nPara usar estos diagnósticos, es OBLIGATORIO:\n1. Que la Condición sea "GESTANTE".\n2. Que tenga registrada la FUR.\n\nEl sistema lo llevará al Paso 1 para corregirlo.' });
+                return;
+           }
+       }
 
-       // Si hay paciente pero no diagnósticos -> Alerta
        if ((patientData.dni || patientData.paciente) && diagnoses.length === 0) { 
            alert("⚠️ FALTAN DIAGNÓSTICOS"); return; 
        }
        
-       // Si hay diagnósticos, validamos reglas específicas (D509, Sexo, Lab)
        if (diagnoses.length > 0) {
-           if (!validateDiagnoses()) return; // Llama a tu función externa
+           if (!validateDiagnoses()) return; 
        }
        
-       // Validación extra de sexo por código (tu lógica original)
        for (let d of diagnoses) {
            const code = d.codigo.toUpperCase();
            if (code.startsWith('O') && patientData.sexo !== 'F') { 
@@ -1936,10 +2701,9 @@ export default function App() {
        }
     }
 
-    // AVANZAR
+    // AVANZAR (Si llegó hasta aquí es que todo está bien)
     setStep(prev => prev + 1);
   };
-  
   const handleBack = () => { setDxErrors({}); setStep(s => s - 1); };
   const resetForm = () => { 
       setShowNewBtn(false);
@@ -1972,10 +2736,7 @@ export default function App() {
       // IMPORTANTE: Asegura que el calendario NO se abra
       // Nota: No llamamos a resetForm(), por lo que los datos se mantienen intactos.
   };
-
-  // 2. FUNCIÓN PARA EL BOTÓN "SÍ, DESEO GUARDAR"
-// 2. FUNCIÓN PARA EL BOTÓN "SÍ, DESEO GUARDAR" (LÓGICA HIS CORREGIDA)
-    // 2. FUNCIÓN PARA EL BOTÓN "SÍ, DESEO GUARDAR" (LÓGICA INTELIGENTE)
+   // 2. FUNCIÓN PARA EL BOTÓN "SÍ, DESEO GUARDAR" (CON PERSISTENCIA DE DATOS)
   const confirmSavePatient = () => {
       // 1. Empaquetamos los datos actuales
       const newRecord = { 
@@ -1985,7 +2746,7 @@ export default function App() {
           ageObj: { ...ageObj } 
       };
 
-      // 2. Actualizamos la lista con filtro inteligente
+      // 2. Actualizamos la lista Y GUARDAMOS EN EL DISCO (LocalStorage)
       setSavedPatients(prev => {
           const index = prev.findIndex(p => 
               p.patient.dni === newRecord.patient.dni &&
@@ -1993,38 +2754,93 @@ export default function App() {
               JSON.stringify(p.diagnoses) === JSON.stringify(newRecord.diagnoses)
           );
 
+          let updatedList; // Creamos una variable temporal
+
           if (index >= 0) {
-              const updated = [...prev];
-              updated[index] = newRecord;
-              return updated;
+              updatedList = [...prev];
+              updatedList[index] = newRecord;
           } else {
-              return [...prev, newRecord];
+              updatedList = [...prev, newRecord];
           }
+
+          // >>> AQUÍ ESTÁ EL CAMBIO CLAVE: GUARDAR EN MEMORIA DEL NAVEGADOR <<<
+          localStorage.setItem('HIS_LOTE_PENDIENTE', JSON.stringify(updatedList));
+          
+          return updatedList; // Retornamos la lista actualizada para que se vea en pantalla
       });
 
-      // 3. Actualizamos estado de "Continuador" en base de datos
+      // 3. Actualizamos estado de "Continuador" en base de datos local
       if (patientData.id) {
           updateToContinuador(patientData.id);
-      } 
+      }
+      // Siempre marcar por DNI también (para pacientes manuales sin id)
+      marcarDniComoAtendido(patientData.dni);
       
-      // --- CAMBIO CLAVE AQUÍ ---
-      // NO usamos resetForm() completo porque nos mandaría al paso 1.
-      // En su lugar, limpiamos los datos del formulario MANUALMENTE para evitar duplicados en la vista previa
-      // pero mantenemos el STEP en 4 para ver el botón.
-      
+      // Limpieza del formulario visual
       setPatientData({ ...initialPatient, fecAtencion: patientData.fecAtencion, estAtencion: adminData.establecimiento, condEst: '', condServ: '' });
       setClinicalData(initialClinical);
       setDiagnoses([{ desc: '', tipo: '-', lab1: '', lab2: '', lab3: '', codigo: '' }]);
       setSearchTerm("");
       
-      // ACTIVAMOS EL BOTÓN VERDE
+      // Reactivamos botones y cerramos modal
       setShowNewBtn(true);
-      
-      // Cerramos el modal de confirmación
       setShowSaveConfirm(false); 
-      alert("✅ Registro guardado exitosamente."); 
+      alert("✅ Registro guardado. (Se mantendrá en memoria si cierra el navegador)."); 
+  }; 
+  // =========================================================================
+  // >>> NUEVAS FUNCIONES PARA EDITAR Y ELIMINAR PACIENTES DESDE EL PASO 4 <<<
+  // =========================================================================
+  const handleEditPatient = (idx) => {
+      const isDraft = idx === savedPatients.length; // Si es el paciente actual (sin guardar)
+      
+      // Si el usuario intenta editar uno guardado, pero tiene datos a medias en el formulario actual
+      if (!isDraft && patientData.paciente && patientData.paciente.trim() !== '') {
+          const confirmacion = window.confirm("⚠️ Tienes un paciente en curso sin guardar.\nSi editas un registro anterior, perderás los datos en pantalla.\n¿Deseas continuar?");
+          if (!confirmacion) return;
+      }
+
+      if (isDraft) {
+          setStep(1); // Si es el borrador, solo lo enviamos al Paso 1
+      } else {
+          const recordToEdit = savedPatients[idx];
+          
+          // 1. Quitamos al paciente de la lista de guardados (Vuelve a estado "borrador")
+          const newSaved = [...savedPatients];
+          newSaved.splice(idx, 1);
+          setSavedPatients(newSaved);
+          localStorage.setItem('HIS_LOTE_PENDIENTE', JSON.stringify(newSaved));
+          
+          // 2. Cargamos todos sus datos al formulario para editarlos
+          setPatientData(recordToEdit.patient);
+          setClinicalData(recordToEdit.clinical);
+          setDiagnoses(recordToEdit.diagnoses);
+          setIsPatientDataLocked(true); // Bloqueamos el DNI/Nombres por seguridad
+          
+          // 3. Enviamos al usuario al Paso 1 para que corrija
+          setStep(1);
+      }
   };
 
+  const handleDeletePatient = (idx) => {
+      const confirmacion = window.confirm("🚨 ¿Estás seguro de ELIMINAR a este paciente del registro HIS?");
+      if (!confirmacion) return;
+
+      const isDraft = idx === savedPatients.length;
+
+      if (isDraft) {
+          // Si es el borrador actual, solo reseteamos el formulario
+          setPatientData({ ...initialPatient, fecAtencion: patientData.fecAtencion, estAtencion: adminData.establecimiento, condEst: '', condServ: '' });
+          setClinicalData(initialClinical);
+          setDiagnoses([{ desc: '', tipo: '-', lab1: '', lab2: '', lab3: '', codigo: '' }]);
+      } else {
+          // Si ya estaba guardado, lo eliminamos de la memoria permanentemente
+          const newSaved = [...savedPatients];
+          newSaved.splice(idx, 1);
+          setSavedPatients(newSaved);
+          localStorage.setItem('HIS_LOTE_PENDIENTE', JSON.stringify(newSaved));
+      }
+  };
+  // =========================================================================
   const generatePDF = () => {
     try {
         const allPatients = [...savedPatients];
@@ -2086,7 +2902,7 @@ export default function App() {
             antL: 7,  antV: 8,
             est: 4,   serv: 4,
             dx: 55,   
-            tipo: 4,  lab: 5.9,   cie: 13
+            tipo: 4,  lab: 6,   cie: 15
         };
 
         // --- CAMBIO 1: AUMENTAR ALTURA DE CASILLAS IZQUIERDAS (De 4 a 7) ---
@@ -2362,12 +3178,17 @@ export default function App() {
                     cell(c.dosaje ? `DOSAJE: ${c.dosaje}` : "", cx, y, wCenter, hRowName, {align:'center', fontSize:6, border: false}); 
                     cx += wCenter;
 
-                    const wFURLabel = w.lab * 2;
+		    const wFURLabel = w.lab * 2;
                     cell("FUR:", cx, y, wFURLabel, hRowName, {align:'right', bold:true, border: false, fontSize:6}); 
                     cx += wFURLabel;
 
                     const wFURVal = w.lab + w.cie;
-                    cell(p.fur ? p.fur.split('-').reverse().join('/') : "", cx, y, wFURVal, hRowName, {align:'center', fill:[240,240,240], border:true, bold:true, fontSize:7});
+                    // --- LÓGICA COLOR MORADO PARA FUR ---
+                    let colorFur = [240, 240, 240]; // Gris por defecto
+                    if (p.condicion === 'GESTANTE' && p.fur) {
+                        colorFur = [204, 153, 255]; // Morado
+                    }
+                    cell(p.fur ? p.fur.split('-').reverse().join('/') : "", cx, y, wFURVal, hRowName, {align:'center', fill: colorFur, border:true, bold:true, fontSize:7});
                 } else {
                     let cxEmpty = cx;
                     cell("", cxEmpty, y, w.dia + w.dni + w.fin + w.dist, hRowName, {border: true});
@@ -2392,7 +3213,13 @@ export default function App() {
                 cx += w.dia;
                 cell(p.dni, cx, yData, w.dni, hRowData, {align:'center', fontSize:7, bold:true});
                 cell(p.hc, cx, yData + hRowData, w.dni, hRowData, {align:'center', fontSize:7, bold:true});
-                cell(p.condicion, cx, yData + (hRowData*2), w.dni, hRowData, {align:'center', fontSize:5.5, bold:false});
+                //cell(p.condicion, cx, yData + (hRowData*2), w.dni, hRowData, {align:'center', fontSize:5.5, bold:false});
+		// --- LÓGICA COLOR MORADO PARA CONDICIÓN ---
+                let colorCondicion = null;
+                if (p.condicion === 'GESTANTE' || p.condicion === 'PUERPERA') {
+                    colorCondicion = [204, 153, 255]; // Morado
+                }
+                cell(p.condicion, cx, yData + (hRowData*2), w.dni, hRowData, {align:'center', fontSize:5.5, bold: !!colorCondicion, fill: colorCondicion});
                 cx += w.dni;
                 const fRaw = (p.financiador || '').toString().trim().toUpperCase();
 
@@ -2454,9 +3281,17 @@ export default function App() {
                 cell(p.condEst, cx, yData, w.est, hDataBlock, {align:'center', vAlign:'middle', bold:false, fontSize:7}); cx += w.est;
                 cell(p.condServ, cx, yData, w.serv, hDataBlock, {align:'center', vAlign:'middle', bold:false, fontSize:7}); cx += w.serv;
 
+                // --- INICIO NUEVO CÓDIGO PARA PINTAR "TIPO" EN PDF ---
+                const getBgColor = (tipo) => {
+                    if (tipo === 'R') return [255, 255, 0];   // Amarillo
+                    if (tipo === 'D') return [146, 208, 80];  // Verde
+                    if (tipo === 'P') return [204, 153, 255]; // Morado
+                    return null; // Blanco/Transparente por defecto
+                };
+
                 let cxDx = cx;
                 cell(d1.desc, cxDx, yData, w.dx, hRowData, {align:'left', fontSize:5.5, bold:false}); cxDx+=w.dx;
-                cell(d1.tipo, cxDx, yData, w.tipo, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.tipo;
+                cell(d1.tipo, cxDx, yData, w.tipo, hRowData, {align:'center', bold:true, fontSize:6, fill: getBgColor(d1.tipo)}); cxDx+=w.tipo;
                 cell(d1.lab1, cxDx, yData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d1.lab2, cxDx, yData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d1.lab3, cxDx, yData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
@@ -2464,7 +3299,7 @@ export default function App() {
 
                 cxDx = cx;
                 cell(d2.desc, cxDx, yData+hRowData, w.dx, hRowData, {align:'left', fontSize:5.5, bold:false}); cxDx+=w.dx;
-                cell(d2.tipo, cxDx, yData+hRowData, w.tipo, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.tipo;
+                cell(d2.tipo, cxDx, yData+hRowData, w.tipo, hRowData, {align:'center', bold:true, fontSize:6, fill: getBgColor(d2.tipo)}); cxDx+=w.tipo;
                 cell(d2.lab1, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d2.lab2, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d2.lab3, cxDx, yData+hRowData, w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
@@ -2472,12 +3307,12 @@ export default function App() {
 
                 cxDx = cx;
                 cell(d3.desc, cxDx, yData+(hRowData*2), w.dx, hRowData, {align:'left', fontSize:5.5, bold:false}); cxDx+=w.dx;
-                cell(d3.tipo, cxDx, yData+(hRowData*2), w.tipo, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.tipo;
+                cell(d3.tipo, cxDx, yData+(hRowData*2), w.tipo, hRowData, {align:'center', bold:true, fontSize:6, fill: getBgColor(d3.tipo)}); cxDx+=w.tipo;
                 cell(d3.lab1, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d3.lab2, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d3.lab3, cxDx, yData+(hRowData*2), w.lab, hRowData, {align:'center', bold:false, fontSize:6}); cxDx+=w.lab;
                 cell(d3.codigo, cxDx, yData+(hRowData*2), w.cie, hRowData, {align:'center', bold:true, fontSize:7});
-
+                // --- FIN NUEVO CÓDIGO PDF ---
                 y += hBlock;
             }
                // ==================================================================
@@ -2519,7 +3354,9 @@ export default function App() {
         setPrintCount(nextCount);
         localStorage.setItem('his_print_count', nextCount);
         // =====================================
-
+        // --- LIMPIEZA DE MEMORIA ---
+        localStorage.removeItem('HIS_LOTE_PENDIENTE'); // <--- AGREGA ESTO
+        
         setSavedPatients([]);
         resetForm();               
         setStep(1);                 
@@ -2779,13 +3616,65 @@ export default function App() {
                         if ([15, 16, 17].includes(C)) ws[cell_ref].s = centerSmallStyle; 
                     } 
                 }
+               if (!isHeaderBlock && currentPh !== -1) {
+                    const offset = R - currentPh;
+                    const cellVal = ws[cell_ref] && ws[cell_ref].v ? ws[cell_ref].v : null;
+
+                    // 1. PINTAR COLUMNA "TIPO" DE DIAGNÓSTICO (D, P, R)
+                    if (C === 14 && offset >= 1 && offset <= 3 && cellVal) {
+                        if (cellVal === 'R') ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "FFFF00" } } }; // Amarillo
+                        else if (cellVal === 'D') ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "92D050" } } }; // Verde
+                        else if (cellVal === 'P') ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "CC99FF" } } }; // Morado
+                    }
+                    
+                    // 2. PINTAR CONDICIÓN (GESTANTE O PUERPERA)
+                    if (C === 2 && offset === 3 && (cellVal === 'GESTANTE' || cellVal === 'PUERPERA')) {
+                        ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "CC99FF" } } }; // Morado
+                    }
+
+                    // 3. PINTAR FUR (SI ES GESTANTE)
+                    // El valor del FUR está en la fila 0 (offset === 0) y abarca las columnas combinadas 16, 17 y 18
+                    if (offset === 0 && (C >= 16 && C <= 18)) {
+                        // Verificamos si en este mismo paciente la condición dice GESTANTE
+                        const condCellRef = XLSX.utils.encode_cell({ c: 2, r: currentPh + 3 });
+                        const condVal = ws[condCellRef] ? ws[condCellRef].v : null;
+                        
+                        // Si es gestante y la celda FUR tiene datos (ya sea fecha o la palabra FUR)
+                        if (condVal === 'GESTANTE' && cellVal && cellVal !== '') {
+                            ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "CC99FF" } } }; // Morado
+                        }
+                    }
+                }
             }
+            // >>> NUEVO CÓDIGO PARA PINTAR CELDAS "TIPO" EN EXCEL <<<
+                // La columna 14 corresponde exactamente a la columna "TIPO"
+                if (!isHeaderBlock && C === 14 && ws[cell_ref] && ws[cell_ref].v) {
+                    const val = ws[cell_ref].v;
+                    if (val === 'R') {
+                        // Amarillo para REPETIDO
+                        ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "FFFF00" } } }; 
+                    } else if (val === 'D') {
+                        // Verde para DEFINITIVO
+                        ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "92D050" } } }; 
+                    } else if (val === 'P') {
+                        // Morado para PRESUNTIVO
+                        ws[cell_ref].s = { ...ws[cell_ref].s, fill: { fgColor: { rgb: "CC99FF" } } }; 
+                    }
+                }
+                // >>> FIN NUEVO CÓDIGO EXCEL <<<
             }
         }
         XLSX.utils.book_append_sheet(wb, ws, "HIS_Export");
         XLSX.writeFile(wb, `HIS_${adminData.mes}_${allPatients.length}_PACIENTES.xlsx`);
     
         // --- INICIO DEL CAMBIO: LIMPIEZA AUTOMÁTICA SIN PREGUNTAR ---
+        localStorage.removeItem('HIS_LOTE_PENDIENTE'); // <--- AGREGA ESTO
+        setSavedPatients([]);
+        
+        resetForm();
+        setStep(1);
+        setIsBatchFinished(false);
+        setIsCalendarOpen(true);
         setSavedPatients([]);
         // 1. Borra la lista de pacientes (Limpia el visor)
         resetForm();
@@ -2904,58 +3793,166 @@ export default function App() {
     );
   }
     if (!adminData.isConfigured) {
-    const cfgInputStyle = "w-full h-10 px-3 border-2 border-slate-200 rounded-xl bg-white text-slate-700 font-bold focus:border-slate-500 focus:ring-4 focus:ring-slate-100 outline-none transition-all shadow-sm text-sm hover:border-slate-300";
-    const cfgLabelStyle = "block text-xs font-bold text-slate-400 uppercase ml-2 mb-1";
+    const cfgInputStyle = "w-full h-10 px-3 border-2 border-slate-200 rounded-xl bg-white text-slate-700 font-bold focus:border-blue-400 focus:ring-4 focus:ring-blue-50 outline-none transition-all shadow-sm text-sm hover:border-slate-300";
+    const cfgLabelStyle = "block text-[10px] font-bold text-slate-400 uppercase ml-1 mb-0.5 tracking-wider";
+    
+    // Iniciales del profesional
+    const getInitials = (name) => {
+        if (!name) return '?';
+        const parts = name.split(' ').filter(Boolean);
+        if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+        return name[0].toUpperCase();
+    };
+
+    // Noticias del sistema
+    const NOTICIAS = [
+        { tipo: 'NUEVO', color: 'emerald', msg: 'Los valores históricos ahora parpadean para mejor visibilidad.' },
+        { tipo: 'MEJORA', color: 'blue', msg: 'Biblioteca Normativa: ahora se visualizan los PDFs dentro de la app.' },
+        { tipo: 'MEJORA', color: 'blue', msg: 'Pacientes atendidos como Nuevo/Reingresante serán auto-clasificados como Continuador en futuras atenciones.' },
+        { tipo: 'AVISO', color: 'amber', msg: 'Recuerda verificar el mes y turno antes de ingresar al sistema.' },
+        { tipo: 'TIP', color: 'violet', msg: 'Puedes buscar pacientes por DNI o por nombre en el buscador del Paso 1.' },
+    ];
+
     return (
-      <div className="min-h-screen w-full bg-[#f0f2f5] font-sans flex items-center justify-center p-4">
-        <div className="w-full max-w-5xl bg-white shadow-2xl rounded-[30px] overflow-hidden border border-slate-100 animate-in fade-in zoom-in duration-300 mx-auto">
-          <div className="bg-[#0F172A] px-10 py-6 flex justify-between items-end">
-            <div><h1 className="text-2xl font-bold text-white tracking-wide">REGISTRO HIS</h1><p className="text-slate-400 text-xs mt-1">Configuración de Sesión</p></div>
-            <div className="flex gap-2">
-              <div className="relative group"><input type="file" id="filePac" className="hidden" onChange={(e) => handleFileUpload(e, 'pacientes')} /><label htmlFor="filePac" className={`cursor-pointer px-5 py-2.5 rounded-xl border ${dbPacientes.length ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-xs font-bold transition-all shadow-lg`}><Database size={16}/> {dbPacientes.length ?
-                `BD OK (${dbPacientes.length})` : "Cargar Pacientes"}</label></div>
-              <div className="relative group"><input type="file" id="fileCie" className="hidden" onChange={(e) => handleFileUpload(e, 'cie10')} /><label htmlFor="fileCie" className={`cursor-pointer px-5 py-2.5 rounded-xl border ${dbCie10.length ?
-                'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-xs font-bold transition-all shadow-lg`}><FileSpreadsheet size={16}/> {dbCie10.length ?
-                `BD OK (${dbCie10.length})` : "Cargar CIE-10"}</label></div>
-              <div className="relative group"><input type="file" id="filePersonal" className="hidden" onChange={(e) => handleFileUpload(e, 'personal')} /><label htmlFor="filePersonal" className={`cursor-pointer px-5 py-2.5 rounded-xl border ${dbPersonal.length ?
-                'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-xs font-bold transition-all shadow-lg`}><Users size={16}/> {dbPersonal.length ?
-                `Personal OK` : "Cargar Personal"}</label></div>
+      <div className="min-h-screen w-full bg-gradient-to-br from-slate-100 via-slate-50 to-blue-50 font-sans flex items-center justify-center p-4">
+        <div className="w-full max-w-6xl animate-in fade-in zoom-in duration-500 mx-auto">
+          
+          {/* === CABECERA OSCURA CON BOTONES DE DATOS === */}
+          <div className="bg-[#0F172A] rounded-t-[2rem] px-8 py-5 flex flex-wrap justify-between items-center gap-4">
+            <div>
+              <h1 className="text-2xl font-black text-white tracking-tight">SMART HIS</h1>
+              <p className="text-slate-400 text-[11px] font-medium mt-0.5">Sistema de Registro de Atenciones</p>
+            </div>
+            <div className="flex flex-wrap gap-2 items-center">
+              <div className="relative group"><input type="file" id="filePac" className="hidden" onChange={(e) => handleFileUpload(e, 'pacientes')} /><label htmlFor="filePac" className={`cursor-pointer px-4 py-2 rounded-xl border ${dbPacientes.length ? 'bg-indigo-600 border-indigo-400 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-[11px] font-bold transition-all`}><Database size={14}/> {dbPacientes.length ? `Pacientes (${dbPacientes.length.toLocaleString()})` : "Cargar Pacientes"}</label></div>
+              <div className="relative group"><input type="file" id="fileCie" className="hidden" onChange={(e) => handleFileUpload(e, 'cie10')} /><label htmlFor="fileCie" className={`cursor-pointer px-4 py-2 rounded-xl border ${dbCie10.length ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-[11px] font-bold transition-all`}><FileSpreadsheet size={14}/> {dbCie10.length ? `CIE-10 (${dbCie10.length.toLocaleString()})` : "Cargar CIE-10"}</label></div>
+              <div className="relative group"><input type="file" id="filePersonal" className="hidden" onChange={(e) => handleFileUpload(e, 'personal')} /><label htmlFor="filePersonal" className={`cursor-pointer px-4 py-2 rounded-xl border ${dbPersonal.length ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-[11px] font-bold transition-all`}><Users size={14}/> {dbPersonal.length ? `Personal` : "Cargar Personal"}</label></div>
               
-              {dbStatus === 'ready' && (
-                  <button onClick={clearDatabase} className="bg-red-500 hover:bg-red-600 text-white px-3 py-2.5 rounded-xl border border-red-400 flex items-center gap-2 text-xs font-bold transition-all shadow-lg ml-2" title="Borrar Base de Datos Local de Pacientes">
-                      <Trash2 size={16}/> Borrar BD
+              {/* Padrón y Descargar */}
+              <div className="flex items-center gap-2 border-l border-slate-600 pl-3 ml-1">
+                {DNIS_AUTORIZADOS.includes(adminData.dniResp) && (
+                  <div className="relative group">
+                    <input type="file" id="fileMaster" className="hidden" accept=".xlsx, .xls" onChange={handleMasterPadronUpload} disabled={isProcessingMaster} />
+                    <label htmlFor="fileMaster" className={`cursor-pointer px-3 py-2 rounded-xl border flex items-center gap-2 text-[10px] font-bold transition-all whitespace-nowrap ${isProcessingMaster ? 'bg-purple-800 border-purple-600 text-purple-200 animate-pulse cursor-wait' : 'bg-purple-600 border-purple-400 text-white hover:bg-purple-500'}`}>
+                      {isProcessingMaster ? <>⏳ Procesando...</> : <><Database size={13}/> CARGAR PADRÓN</>}
+                    </label>
+                  </div>
+                )}
+                <button onClick={handleExportPadron} className={`px-3 py-2 rounded-xl border flex items-center gap-2 transition-all whitespace-nowrap ${dbPacientes.length > 0 ? 'bg-emerald-600 border-emerald-400 text-white hover:bg-emerald-500' : 'bg-slate-700 border-slate-600 text-slate-500 cursor-not-allowed'}`} disabled={!dbPacientes.length}>
+                  <Download size={13}/>
+                  <div className="flex flex-col items-start leading-none">
+                    <span className="uppercase text-[10px] font-black">Descargar</span>
+                    {padronDate && <span className="text-[9px] opacity-80">{padronDate}</span>}
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* === CUERPO: 2 COLUMNAS === */}
+          <div className="bg-white rounded-b-[2rem] shadow-2xl border border-slate-100 border-t-0 overflow-hidden">
+            <div className="flex flex-col lg:flex-row">
+
+              {/* --- COLUMNA IZQUIERDA: AVATAR + NOTICIAS --- */}
+              <div className="lg:w-[320px] bg-gradient-to-b from-slate-50 to-white p-8 border-r border-slate-100 flex flex-col items-center">
+                
+                {/* Avatar */}
+                <div className="relative mb-4">
+                  <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-xl shadow-blue-200/50 ring-4 ring-white">
+                    <span className="text-3xl font-black text-white tracking-tight">{getInitials(adminData.nombreResp)}</span>
+                  </div>
+                  <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center border-4 border-white shadow-sm">
+                    <CheckCircle size={14} className="text-white"/>
+                  </div>
+                </div>
+                
+                {/* Info del profesional */}
+                <h3 className="text-base font-black text-slate-800 text-center leading-tight">{adminData.nombreResp || 'SIN NOMBRE'}</h3>
+                <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full mt-2 uppercase tracking-wider">{adminData.ups || 'SIN UPS'}</span>
+                <span className="text-[10px] text-slate-400 font-medium mt-1">DNI: {adminData.dniResp || '---'}</span>
+
+                {/* Separador */}
+                <div className="w-full border-t border-slate-100 my-5"></div>
+
+                {/* Panel de Noticias */}
+                <div className="w-full">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                    <Siren size={12}/> NOVEDADES DEL SISTEMA
+                  </h4>
+                  <div className="space-y-2 max-h-[250px] overflow-y-auto no-scrollbar pr-1">
+                    {NOTICIAS.map((n, i) => (
+                      <div key={i} className="flex gap-2.5 p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors border border-slate-100 group">
+                        <span className={`shrink-0 text-[8px] font-black text-${n.color}-700 bg-${n.color}-100 px-1.5 py-0.5 rounded-md uppercase mt-0.5`}>{n.tipo}</span>
+                        <p className="text-[11px] text-slate-600 leading-snug font-medium">{n.msg}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Estadísticas rápidas */}
+                <div className="w-full border-t border-slate-100 mt-5 pt-4">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-indigo-50 rounded-xl p-2.5 text-center border border-indigo-100">
+                      <div className="text-lg font-black text-indigo-700">{dbPacientes.length > 0 ? (dbPacientes.length / 1000).toFixed(1) + 'K' : '0'}</div>
+                      <div className="text-[8px] font-bold text-indigo-400 uppercase">Pacientes</div>
+                    </div>
+                    <div className="bg-amber-50 rounded-xl p-2.5 text-center border border-amber-100">
+                      <div className="text-lg font-black text-amber-700">{savedPatients.length}</div>
+                      <div className="text-[8px] font-bold text-amber-400 uppercase">Lote Actual</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* --- COLUMNA DERECHA: FORMULARIO --- */}
+              <div className="flex-1 p-8 flex flex-col justify-between">
+                <div>
+                  <h2 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
+                    <Stethoscope size={16} className="text-blue-500"/> CONFIGURACIÓN DE SESIÓN
+                  </h2>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-4">
+                    {/* Fila 1 */}
+                    <div><label className={cfgLabelStyle}>Año</label><select name="anio" className={cfgInputStyle} value={adminData.anio} onChange={handleAdmin}><option>2025</option><option>2026</option><option>2027</option></select></div>
+                    <div><label className={cfgLabelStyle}>Mes</label><select name="mes" className={cfgInputStyle} value={adminData.mes} onChange={handleAdmin}>{MESES.map(m=><option key={m}>{m}</option>)}</select></div>
+                    <div className="col-span-2"><label className={cfgLabelStyle}>Establecimiento</label><select name="establecimiento" className={cfgInputStyle} value={adminData.establecimiento} onChange={handleAdmin}>{ESTABLECIMIENTOS.map(e=><option key={e}>{e}</option>)}</select></div>
+                    
+                    {/* Fila 2 */}
+                    <div><label className={cfgLabelStyle}>Turno</label><select name="turno" className={cfgInputStyle} value={adminData.turno} onChange={handleAdmin}><option>MAÑANA</option><option>TARDE</option><option>NOCHE</option></select></div>
+                    <div><label className={cfgLabelStyle}>UPS</label><select name="ups" className={cfgInputStyle} value={adminData.ups} onChange={handleAdmin}>{UPS_LIST.map(u=><option key={u}>{u}</option>)}</select></div>
+                    <div><label className={cfgLabelStyle}>DNI Responsable</label><input name="dniResp" className={cfgInputStyle + " bg-slate-100 cursor-not-allowed"} value={adminData.dniResp} readOnly /></div>
+                    <div><label className={cfgLabelStyle}>Nombre</label><input name="nombreResp" className={cfgInputStyle + " bg-slate-100 cursor-not-allowed uppercase text-xs"} value={adminData.nombreResp} readOnly /></div>
+                  </div>
+
+                  {/* Resumen visual de estado */}
+                  <div className="mt-6 p-4 rounded-2xl bg-gradient-to-r from-slate-50 to-blue-50 border border-slate-100">
+                    <div className="flex flex-wrap gap-3 items-center justify-center">
+                      {[
+                        { label: 'Base de Datos', ok: dbPacientes.length > 0, detail: dbPacientes.length > 0 ? `${dbPacientes.length.toLocaleString()} registros` : 'Sin cargar' },
+                        { label: 'CIE-10', ok: dbCie10.length > 0, detail: dbCie10.length > 0 ? `${dbCie10.length.toLocaleString()} códigos` : 'Sin cargar' },
+                        { label: 'Personal', ok: dbPersonal.length > 0, detail: dbPersonal.length > 0 ? 'Configurado' : 'Sin cargar' },
+                      ].map((item, i) => (
+                        <div key={i} className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-bold ${item.ok ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-400 border border-red-200'}`}>
+                          {item.ok ? <CheckCircle size={13}/> : <AlertTriangle size={13}/>}
+                          <span>{item.label}: {item.detail}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Botón ingresar */}
+                <div className="flex justify-end mt-8">
+                  <button 
+                    onClick={() => setAdminData({...adminData, isConfigured: true})} 
+                    className="group bg-[#0F172A] hover:bg-blue-700 text-white px-10 py-4 rounded-2xl shadow-xl font-black flex items-center gap-3 transition-all hover:scale-[1.03] hover:shadow-2xl text-sm tracking-wide"
+                  >
+                    INGRESAR AL SISTEMA 
+                    <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform"/>
                   </button>
-              )}
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="p-10 grid grid-cols-1 md:grid-cols-4 gap-6 bg-white">
-            <div className="flex flex-col gap-1"><label className={cfgLabelStyle}>Año</label><select name="anio" className={cfgInputStyle} value={adminData.anio} onChange={handleAdmin}><option>2025</option><option>2026</option></select></div>
-            <div className="flex flex-col gap-1"><label className={cfgLabelStyle}>Mes</label><select name="mes" className={cfgInputStyle} value={adminData.mes} onChange={handleAdmin}>{MESES.map(m=><option key={m}>{m}</option>)}</select></div>
-            <div className="md:col-span-2 flex flex-col gap-1"><label className={cfgLabelStyle}>Establecimiento</label><select name="establecimiento" className={cfgInputStyle} value={adminData.establecimiento} onChange={handleAdmin}>{ESTABLECIMIENTOS.map(e=><option key={e}>{e}</option>)}</select></div>
-            <div className="flex flex-col gap-1"><label className={cfgLabelStyle}>Turno</label><select name="turno" className={cfgInputStyle} value={adminData.turno} onChange={handleAdmin}><option>MAÑANA</option><option>TARDE</option><option>NOCHE</option></select></div>
-            <div className="flex flex-col gap-1"><label className={cfgLabelStyle}>UPS</label><select name="ups" className={cfgInputStyle} value={adminData.ups} onChange={handleAdmin}>{UPS_LIST.map(u=><option key={u}>{u}</option>)}</select></div>
-            
-            <div className="flex flex-col gap-1">
-                <label className={cfgLabelStyle}>DNI Responsable</label>
-                <input 
-                    name="dniResp" 
-                    className={cfgInputStyle + " bg-slate-200 text-slate-600 cursor-not-allowed border-slate-300 shadow-inner"} 
-                    value={adminData.dniResp} 
-                    readOnly={true} 
-                />
-            </div>
-            <div className="md:col-span-2 flex flex-col gap-1">
-                <label className={cfgLabelStyle}>Nombre Responsable</label>
-                <input 
-                    name="nombreResp" 
-                    className={cfgInputStyle + " uppercase bg-slate-200 text-slate-600 cursor-not-allowed border-slate-300 shadow-inner"} 
-                    value={adminData.nombreResp} 
-                    readOnly={true} 
-                />
-            </div>
-          </div>
-          <div className="bg-slate-50 px-10 py-6 flex justify-end border-t border-slate-100">
-            <button onClick={() => setAdminData({...adminData, isConfigured: true})} className="bg-[#0F172A] hover:bg-slate-800 text-white px-8 py-3 rounded-xl shadow-xl font-bold flex items-center gap-3 transition-transform hover:scale-[1.02] text-sm">INGRESAR AL SISTEMA <ArrowRight size={18}/></button>
           </div>
         </div>
       </div>
@@ -3057,12 +4054,10 @@ export default function App() {
                         { titulo: 'MANUAL GESTANTES', archivo: '/normas/gestante.pdf' },
                         { titulo: 'CALENDARIO VACUNAS', archivo: '/normas/vacunas.pdf' },
                     ].map((pdf, idx) => (
-                        <a 
+                        <button 
                             key={idx}
-                            href={pdf.archivo} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="group flex flex-col items-center justify-center w-24 h-24 bg-slate-50 border-2 border-slate-100 rounded-2xl hover:bg-red-50 hover:border-red-200 transition-all cursor-pointer shadow-sm hover:shadow-md hover:-translate-y-1 text-center p-2 no-underline"
+                            onClick={() => setActivePdf(pdf)}
+                            className="group flex flex-col items-center justify-center w-24 h-24 bg-slate-50 border-2 border-slate-100 rounded-2xl hover:bg-red-50 hover:border-red-200 transition-all cursor-pointer shadow-sm hover:shadow-md hover:-translate-y-1 text-center p-2"
                             title="Clic para leer documento"
                         >
                             <div className="mb-2 text-slate-400 group-hover:text-red-500 transition-colors">
@@ -3071,7 +4066,7 @@ export default function App() {
                             <span className="text-[9px] font-bold text-slate-600 group-hover:text-red-700 uppercase leading-tight">
                                 {pdf.titulo}
                             </span>
-                        </a>
+                        </button>
                     ))}
                 </div>
             </div>
@@ -3440,22 +4435,34 @@ export default function App() {
 
       {/* BOTÓN */}
       <div className="px-8 py-5 bg-slate-50 border-t border-slate-100 flex justify-end">
+         {/* BOTÓN DE ACCIÓN EN LA ALERTA */}
          <button 
             onClick={() => { 
-                setValidationAlert({ ...validationAlert, isOpen: false }); 
+                setValidationAlert({ ...validationAlert, isOpen: false });
                 
-                // NOTA: ELIMINÉ LA LÍNEA setStep(2) PARA QUE TE QUEDES EN DIAGNÓSTICOS A CORREGIR EL LAB
-                
-                // Si es transferencia, enfocar la HC
+                // --- LÓGICA NUEVA: SI ES ERROR DE HEMOGLOBINA ---
+                if (validationAlert.title.includes('Hemoglobina')) {
+                    setStep(2); // 1. Te lleva al Paso 2 (Datos Clínicos)
+                    setShowHbError(true); // 2. Activa la "Alarma" visual para pintar de rojo
+                    
+                    // Pequeño delay para enfocar el input automáticamente
+                    setTimeout(() => {
+                        const hbInput = document.querySelector('input[name="hb"]');
+                        if(hbInput) hbInput.focus();
+                    }, 300);
+                    return;
+                }
+
+                // Lógica existente de Transferencia
                 if (validationAlert.type === 'TRANSFER') {
                     setTimeout(() => {
                         const hcInput = document.querySelector('input[name="hc"]');
                         if (hcInput) { hcInput.focus(); hcInput.select(); }
                     }, 100);
                 }
-                // >>> AGREGAR ESTO: SI EL ERROR ES DE GESTANTE, IR AL PASO 1 <<<
+                // Lógica existente de Gestante
                 if (validationAlert.type === 'GESTANTE_REQUIRED') {
-                    setStep(1); // Regresamos al Paso 1 para que pueda poner la FUR
+                    setStep(1); 
                 }
             }}
             className={`px-8 py-3 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-sm tracking-wide text-white 
@@ -3518,7 +4525,7 @@ export default function App() {
                                 onChange={(e) => setManualData({...manualData, financiador: e.target.value})}
                             >
                                 <option value="2-SIS">2-SIS</option>
-                                <option value="1-PAGANTE">1-PAGANTE</option>
+                                <option value="1-USUARIO">1-USUARIO</option>
                                 <option value="3-ESSALUD">3-ESSALUD</option>
                                 <option value="10-OTROS">10-OTROS</option>
                             </select>
@@ -3686,11 +4693,21 @@ export default function App() {
                             </div>
                             
                             {/* FINANCIADOR REINTEGRADO */}
-                            <div>
+                             <div>
                                 <label className="text-[9px] font-extrabold text-violet-700 uppercase ml-1 mb-0.5 block">Financiador</label>
-                                <select name="financiador" value={patientData.financiador} onChange={handlePatient} className="w-full h-8 px-2 rounded-lg border-2 border-violet-200 bg-white font-bold text-xs text-violet-900 outline-none focus:border-violet-500 transition-all cursor-pointer shadow-sm">
+                                <select 
+                                    name="financiador" 
+                                    // Esta línea fuerza a que si el dato no es exacto, se ponga en "SELECCIONAR..."
+                                    value={["1-USUARIO", "2-SIS", "3-ESSALUD", "10-OTROS"].includes(patientData.financiador) ? patientData.financiador : ""} 
+                                    onChange={handlePatient} 
+                                    // Aquí está la magia del color ROJO
+                                    className={`w-full h-8 px-2 rounded-lg border-2 bg-white font-bold text-xs outline-none transition-all cursor-pointer shadow-sm
+                                        ${["1-USUARIO", "2-SIS", "3-ESSALUD", "10-OTROS"].includes(patientData.financiador) 
+                                            ? 'border-violet-200 text-violet-900 focus:border-violet-500' 
+                                            : 'border-red-500 text-red-700 bg-red-50 animate-pulse focus:border-red-600'}`}
+                                >
                                     <option value="">SELECCIONAR...</option>
-                                    <option value="1-PAGANTE">1-PAGANTE</option>
+                                    <option value="1-USUARIO">1-USUARIO</option>
                                     <option value="2-SIS">2-SIS</option>
                                     <option value="3-ESSALUD">3-ESSALUD</option>
                                     <option value="10-OTROS">10-OTROS</option>
@@ -3945,31 +4962,67 @@ export default function App() {
                                         }
                                     }
                                     const isHbAlert = (item.isHb && showHbError && !clinicalData.hb);
+				    return (
+        <div key={idx} className={`relative group transition-all ${isLocked ? 'opacity-60 grayscale' : ''}`}>
+            <div className="flex items-center gap-3 p-2 rounded-[2rem] border border-slate-100 bg-white shadow-sm hover:shadow-md transition-all h-[5.5rem]">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ml-1 ${isLocked ? 'bg-slate-200 text-slate-400' : `bg-${item.color}-100 text-${item.color}-600`}`}>
+                    {item.icon}
+                </div>
+                <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
+                    <div className="flex justify-between items-center px-1">
+                        <label className="text-[9px] font-bold text-slate-500 uppercase truncate">{item.label}</label>
+                        {item.specialBtn && !clinicalData[item.name] && !isLocked && ( <button onClick={() => { if(item.name==='pAbd') setIgnorePAbdValidation(true); if(item.name==='pCef') setIgnorePCefValidation(true); if(item.name==='pPreGest') setIgnorePreGestValidation(true); }} className="text-[8px] bg-slate-100 text-slate-400 hover:bg-red-100 hover:text-red-500 px-2 py-0.5 rounded-full font-bold transition-colors">OMITIR</button> )}
+                        {pAbdStatus.text && ( <span className={`text-[8px] font-black px-2 py-0.5 rounded-lg ${pAbdStatus.bg} ${pAbdStatus.textCol} animate-in fade-in zoom-in`}>{pAbdStatus.text}</span> )}
+                    </div>
+                    <div className="relative">
+                        {/* --- AQUÍ ESTÁ LA LÓGICA DE COLORES CORREGIDA --- */}
+                        {(() => {
+                            // Variables de estado visual
+                            const isHbError = item.isHb && showHbError && !clinicalData.hb;
+                            const isHbSuccess = item.isHb && clinicalData.hb && clinicalData.hb.length > 0;
+                            const isPAbdError = item.name === 'pAbd' && !isLocked && pAbdStatus.color.includes('red');
+                            
+                            // Definir clases base
+                            let inputClasses = "w-full h-10 border-2 rounded-2xl px-3 text-xl font-black outline-none transition-all placeholder-slate-300 disabled:cursor-not-allowed ";
+                            
+                            // Aplicar estilos condicionales
+                            if (isHbError) {
+                                // ROJO: Si falta HB y se activó el error
+                                inputClasses += "border-red-500 bg-red-50 text-red-600 placeholder-red-300 animate-pulse";
+                            } else if (isHbSuccess) {
+                                // VERDE: Si es HB y ya tiene valor
+                                inputClasses += "border-emerald-500 bg-emerald-50 text-emerald-700";
+                            } else if (item.name === 'pAbd' && !isLocked) {
+                                // Lógica especial P. Abdominal
+                                inputClasses += `${pAbdStatus.bg} ${pAbdStatus.color} ${pAbdStatus.textCol}`;
+                            } else {
+                                // Estilo por defecto (Azul/Slate)
+                                inputClasses += `bg-slate-50 border-slate-200 text-slate-700 focus:border-${item.color}-400 focus:bg-white focus:ring-4 focus:ring-${item.color}-50`;
+                            }
 
-                                    return (
-                                        <div key={idx} className={`relative group transition-all ${isLocked ? 'opacity-60 grayscale' : ''}`}>
-                                            <div className="flex items-center gap-3 p-2 rounded-[2rem] border border-slate-100 bg-white shadow-sm hover:shadow-md transition-all h-[5.5rem]">
-                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ml-1 ${isLocked ? 'bg-slate-200 text-slate-400' : `bg-${item.color}-100 text-${item.color}-600`}`}>
-                                                    {item.icon}
-                                                </div>
-                                                <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
-                                                    <div className="flex justify-between items-center px-1">
-                                                        <label className="text-[9px] font-bold text-slate-500 uppercase truncate">{item.label}</label>
-                                                        {item.specialBtn && !clinicalData[item.name] && !isLocked && ( <button onClick={() => { if(item.name==='pAbd') setIgnorePAbdValidation(true); if(item.name==='pCef') setIgnorePCefValidation(true); if(item.name==='pPreGest') setIgnorePreGestValidation(true); }} className="text-[8px] bg-slate-100 text-slate-400 hover:bg-red-100 hover:text-red-500 px-2 py-0.5 rounded-full font-bold transition-colors">OMITIR</button> )}
-                                                        {pAbdStatus.text && ( <span className={`text-[8px] font-black px-2 py-0.5 rounded-lg ${pAbdStatus.bg} ${pAbdStatus.textCol} animate-in fade-in zoom-in`}>{pAbdStatus.text}</span> )}
-                                                    </div>
-                                                    <div className="relative">
-                                                        <input name={item.name} disabled={isLocked} value={clinicalData[item.name] || ''} onChange={(e) => handleNumericInput(e, item.min, item.max)} placeholder="0.0" className={`w-full h-10 border-2 rounded-2xl px-3 text-xl font-black outline-none transition-all placeholder-slate-300 disabled:cursor-not-allowed ${isHbAlert ? 'border-red-300 bg-red-50 text-red-500 placeholder-red-300' : ''} ${item.name === 'pAbd' && !isLocked ? `${pAbdStatus.bg} ${pAbdStatus.color} ${pAbdStatus.textCol}` : `bg-slate-50 border-slate-200 text-slate-700 focus:border-${item.color}-400 focus:bg-white focus:ring-4 focus:ring-${item.color}-50`}`}/>
-                                                        <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold uppercase pointer-events-none ${item.name === 'pAbd' && !isLocked && clinicalData.pAbd ? pAbdStatus.textCol : 'text-slate-400'}`}>{item.unit}</span>
-                                                    </div>
-                                                </div>
-                                                <div className="w-20 flex flex-col items-end justify-center border-l border-slate-200 pl-2 h-14 mr-1">
-                                                    {hasHist ? ( <><span className="text-[8px] text-slate-400 leading-none mb-1.5">{item.hist.date}</span><div className="text-sm font-black text-teal-700 bg-teal-100 px-2 py-1.5 rounded-2xl border border-teal-200 text-center w-full shadow-sm flex items-center justify-center">{item.hist.val}</div></>) : ( <span className="text-[8px] font-bold text-slate-300 bg-slate-100 px-3 py-1.5 rounded-2xl block text-center w-full">---</span> )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
+                            return (
+                                <input 
+                                    name={item.name} 
+                                    disabled={isLocked} 
+                                    value={clinicalData[item.name] || ''} 
+                                    onChange={(e) => handleNumericInput(e, item.min, item.max)} 
+                                    placeholder="0.0" 
+                                    className={inputClasses}
+                                />
+                            );
+                        })()}
+                        
+                        <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold uppercase pointer-events-none ${item.name === 'pAbd' && !isLocked && clinicalData.pAbd ? pAbdStatus.textCol : 'text-slate-400'}`}>{item.unit}</span>
+                    </div>
+                </div>
+                <div className="w-20 flex flex-col items-end justify-center border-l border-slate-200 pl-2 h-14 mr-1">
+                    {hasHist ? ( <><span className="text-[8px] text-slate-400 leading-none mb-1.5">{item.hist.date}</span><div className="text-sm font-black text-teal-700 bg-teal-100 px-2 py-1.5 rounded-2xl border border-teal-200 text-center w-full shadow-sm flex items-center justify-center animate-hist-pulse">{item.hist.val}</div></>) : ( <span className="text-[8px] font-bold text-slate-300 bg-slate-100 px-3 py-1.5 rounded-2xl block text-center w-full">---</span> )}
+                </div>
+            </div>
+        </div>
+    );
+                                    
+                                 })}
                               </div>
                           </div>
                       </div>
@@ -3989,7 +5042,32 @@ export default function App() {
                                       <div className="text-base font-black text-slate-700">{clinicalData.imc || '--'}</div>
                                   </div>
                                   <div className="flex-1">
-                                      <input name="riesgo" value={clinicalData.riesgo} onChange={handleClinical} className={`w-full h-full border-2 rounded-2xl px-3 text-[10px] font-bold outline-none uppercase text-center transition-all duration-300 ${clinicalData.riesgo === 'NORMAL' ? 'bg-emerald-100 border-emerald-300 text-emerald-800 shadow-inner' : (clinicalData.riesgo && clinicalData.riesgo.includes('TABLA')) ? 'bg-amber-100 border-amber-300 text-amber-800' : clinicalData.riesgo ? 'bg-red-100 border-red-300 text-red-800 animate-pulse' : 'bg-slate-50 border-slate-200 text-slate-700 placeholder-slate-300 focus:border-teal-500'}`} placeholder="DIAGNÓSTICO..." />
+					<div 
+    className="w-full h-full border-2 rounded-2xl px-3 flex items-center justify-center text-[10px] font-black uppercase shadow-sm transition-all"
+    style={{
+        /* LÓGICA DE COLOR SÓLIDO (USANDO UN DIV NO FALLA) */
+        backgroundColor: clinicalData.riesgo === 'NORMAL' 
+            ? '#10b981'  // VERDE SÓLIDO
+            : (clinicalData.riesgo && clinicalData.riesgo.includes('TABLA')) 
+                ? '#fcd34d' // AMARILLO SÓLIDO
+                : (clinicalData.riesgo && clinicalData.riesgo.length > 0)
+                    ? '#dc2626' // ROJO SÓLIDO (Obesidad, Sobrepeso...)
+                    : '#f8fafc', // GRIS (Vacío)
+
+        color: (clinicalData.riesgo && !clinicalData.riesgo.includes('TABLA') && clinicalData.riesgo.length > 0)
+            ? '#ffffff'  // TEXTO BLANCO (Para Rojo y Verde)
+            : '#475569', // TEXTO GRIS (Para Amarillo o Vacío)
+
+        borderColor: clinicalData.riesgo === 'NORMAL' 
+            ? '#047857' 
+            : (clinicalData.riesgo && !clinicalData.riesgo.includes('TABLA') && clinicalData.riesgo.length > 0)
+                ? '#991b1b' 
+                : '#cbd5e1'
+    }}
+>
+    {clinicalData.riesgo || "DIAGNÓSTICO..."} </div>
+        
+                                      
                                   </div>
                               </div>
                           </div>
@@ -4039,60 +5117,146 @@ export default function App() {
               {/* PASO 3: DIAGNÓSTICOS */}
               {/* PASO 3: DIAGNÓSTICOS CON LAB INTERACTIVO */}
               {/* PASO 3: DIAGNÓSTICOS CON LAB INTERACTIVO (CORREGIDO) */}
+        {/* PASO 3: DIAGNÓSTICOS (DISEÑO MEJORADO + PRIMERA FILA PROTEGIDA) */}
       {step === 3 && (
-        <div className="animate-in fade-in slide-in-from-right-8 duration-300 w-full max-w-[95%] mx-auto">
-           <div className={`flex justify-between items-end mb-6 p-5 rounded-2xl border ${getTheme(3).bgLight} ${getTheme(3).border}`}>
-              <div><h3 className="font-extrabold text-slate-700 text-lg">Diagnósticos CIE-10</h3><p className={`text-xs mt-1 font-medium ${getTheme(3).labelText}`}>Haga clic en las filas para buscar y editar</p></div>
+        <div className="animate-in fade-in slide-in-from-right-8 duration-300 w-full max-w-[95%] mx-auto pb-10">
+           
+           {/* CABECERA */}
+           <div className="flex justify-between items-end mb-6 p-6 rounded-3xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-white shadow-sm">
+              <div>
+                  <h3 className="font-black text-indigo-900 text-xl tracking-tight">Diagnósticos y Procedimientos (CIE-10)</h3>
+                  <p className="text-xs mt-1.5 font-bold text-indigo-400 uppercase tracking-wider">
+                      Registre los diagnósticos.
+                  </p>
+              </div>
+              <div className="bg-white px-4 py-2 rounded-xl border border-indigo-100 shadow-sm">
+                  <span className="text-[10px] font-black text-slate-400 uppercase">Registros:</span>
+                  <span className="ml-2 text-lg font-black text-indigo-600">{diagnoses.length}</span>
+              </div>
            </div>
+
+           {/* ENCABEZADOS DE LA TABLA */}
+           <div className="hidden md:grid grid-cols-12 gap-4 px-4 mb-2 text-[9px] font-extrabold text-slate-400 uppercase tracking-widest">
+              <div className="col-span-1 text-center">Buscar</div>
+              <div className="col-span-6 pl-2">Descripción del Diagnóstico</div>
+              <div className="col-span-1 text-center">Tipo</div>
+              <div className="col-span-2 text-center">Campos LAB</div>
+              <div className="col-span-2 text-center">Código / Acción</div>
+           </div>
+
            <div className="space-y-3">
-              <div className={`grid grid-cols-12 gap-3 text-[10px] font-bold uppercase px-3 items-center ${getTheme(3).labelText}`}><div className="col-span-1 text-center">Opción</div><div className="col-span-6">Diagnóstico Seleccionado</div><div className="col-span-1 text-center">Tipo</div><div className="col-span-2 text-center">Lab</div><div className="col-span-2 text-center">CIE-10</div></div>
-            
             {diagnoses.map((dx, idx) => {
               const hasError = dxErrors[idx];
-              const errorBorder = hasError ? "border-red-500 ring-2 ring-red-100" : "border-slate-200"; 
+              const containerClass = hasError 
+                  ? "border-red-500 ring-2 ring-red-100 bg-red-50/10" 
+                  : "border-slate-200 bg-white hover:border-indigo-300 hover:shadow-md";
+              
               const showAddButton = (idx === diagnoses.length - 1);
               
-              // 1. OBTENER CÓDIGO ACTUAL (Limpiamos espacios)
-              const currentCode = dx.codigo ? dx.codigo.trim().toUpperCase() : "";
-              
-              // NOTA: Aquí borré la línea que causaba el error (LAB_SUGGESTIONS)
+              // --- ESTA VARIABLE PROTEGE LA PRIMERA FILA ---
+              const isFirstRow = idx === 0; 
 
               return (
-              <div key={idx} className={`grid grid-cols-12 gap-3 items-center bg-white p-3 rounded-xl border ${errorBorder} hover:shadow-lg transition-all group relative z-0`}>
+              <div key={idx} className={`grid grid-cols-12 gap-4 items-center p-2 pr-4 rounded-2xl border transition-all duration-300 group relative ${containerClass}`}>
                 
-                {/* BOTÓN BUSCAR */}
-                <div className="col-span-1 flex justify-center"><button onClick={() => openDxSearch(idx)} className={`w-10 h-10 rounded-xl bg-${stepColors[2]}-50 text-${stepColors[2]}-600 flex items-center justify-center border border-${stepColors[2]}-200 hover:bg-${stepColors[2]}-600 hover:text-white transition-colors`}><Search size={18}/></button></div>
+                {/* 1. BOTÓN LUPA */}
+                <div className="col-span-1 flex justify-center">
+                    <button 
+                        onClick={() => openDxSearch(idx)} 
+                        className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-500 hover:bg-indigo-600 hover:text-white border border-indigo-100 flex items-center justify-center transition-all active:scale-95 shadow-sm"
+                    >
+                        <Search size={18} strokeWidth={2.5}/>
+                    </button>
+                </div>
                 
-                {/* DESCRIPCIÓN */}
-                <div className="col-span-6 relative" onClick={() => openDxSearch(idx)}><div className={`w-full h-10 px-3 border-2 rounded-xl flex items-center bg-slate-50 cursor-pointer hover:bg-white hover:border-${stepColors[2]}-300 transition-colors`}>{dx.desc ? <span className="text-xs font-bold text-slate-700 truncate uppercase">{dx.desc}</span> : <span className="text-xs text-slate-400 italic">Clic para buscar diagnóstico...</span>}</div></div>
+                {/* 2. BARRA DE DESCRIPCIÓN */}
+                {/* 2. BARRA DE DESCRIPCIÓN (CON BORRADOR TIPO "X") */}
+                <div className="col-span-6 relative group/input" onClick={() => openDxSearch(idx)}>
+                    <div className="absolute inset-y-0 left-0 w-1 bg-indigo-500 rounded-l-xl opacity-0 group-hover/input:opacity-100 transition-opacity"></div>
+                    
+                    {/* Contenedor principal */}
+                    <div className="w-full h-12 pl-4 pr-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center cursor-pointer group-hover/input:bg-white group-hover/input:border-indigo-300 transition-all shadow-sm relative">
+                        
+                        {/* Texto del Diagnóstico */}
+                        {dx.desc ? (
+                            <span className="text-xs font-bold text-slate-700 truncate uppercase tracking-tight w-full">
+                                {dx.desc}
+                            </span>
+                        ) : (
+                            <span className="text-xs font-bold text-slate-300 italic flex items-center gap-2">
+                                <Search size={12}/> Seleccionar diagnóstico...
+                            </span>
+                        )}
+
+                        {/* --- BOTÓN DE BORRAR (X) --- */}
+                        {/* Solo aparece si hay un diagnóstico seleccionado */}
+                        {dx.desc && (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation(); // ¡IMPORTANTE! Evita que se abra el modal al borrar
+                                    
+                                    // Reseteamos esta fila a valores vacíos
+                                    const newDx = [...diagnoses];
+                                    newDx[idx] = { 
+                                        desc: '', 
+                                        tipo: '', // O el valor por defecto que prefieras
+                                        lab1: '', lab2: '', lab3: '', 
+                                        codigo: '' 
+                                    };
+                                    setDiagnoses(newDx);
+                                }}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full text-slate-400 hover:bg-red-100 hover:text-red-500 transition-all z-10 hover:scale-110"
+                                title="Borrar selección"
+                            >
+                                <X size={16} strokeWidth={2.5} />
+                            </button>
+                        )}
+                    </div>
+                </div>
+                {/* 3. TIPO */}
+                <div className="col-span-1 flex justify-center">
+                    <div className={`
+                        w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm text-white shadow-sm border-2 border-white ring-2 ring-opacity-50 transition-all cursor-pointer hover:scale-110
+                        ${dx.tipo === 'P' ? 'bg-amber-500 ring-amber-100' : 
+                          dx.tipo === 'D' ? 'bg-blue-600 ring-blue-100' : 
+                          dx.tipo === 'R' ? 'bg-emerald-500 ring-emerald-100' : 'bg-slate-200 text-slate-400 ring-slate-100'}
+                    `}
+                    onClick={() => openDxSearch(idx)}
+                    >
+                        {dx.tipo || '-'}
+                    </div>
+                </div>
                 
-                               {/* TIPO (P/D/R) */}
-                <div className="col-span-1 flex justify-center"><div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black text-base text-white shadow-sm ${dx.tipo === 'P' ? 'bg-amber-500' : dx.tipo === 'D' ? 'bg-blue-600' : dx.tipo === 'R' ? 'bg-emerald-500' : 'bg-slate-300'}`}>{dx.tipo}</div></div>
-                
-                {/* --- CAMPOS LAB INTERACTIVOS (MULTI-LAB 1, 2, 3) --- */}
-                 {/* --- CAMPOS LAB INTERACTIVOS (CON TEXTO PERSONALIZADO) --- */}
-                <div className="col-span-2 flex gap-2 justify-center relative">
+                {/* 4. CAMPOS LAB */}
+                {/* 4. CAMPOS LAB (REDSEÑADOS: ETIQUETA ADENTRO + ALERTA ROJA) */}
+		{/* 4. CAMPOS LAB (TEXTO LIBRE, SIN ETIQUETAS, O CON MENÚ) */}
+                {/* 4. CAMPOS LAB (CON LÓGICA DE COLOR PARA "VACÍO") */}
+                <div className="col-span-2 flex gap-1.5 justify-center">
                     {[1, 2, 3].map((n) => {
-                        // 1. OBTENER CONFIGURACIÓN
+                        // 1. Obtener configuración
                         const currentCode = dx.codigo ? dx.codigo.trim().toUpperCase() : "";
                         const codeConfig = LAB_CONFIG[currentCode] || LAB_CONFIG[currentCode.substring(0, 4)];
-                        
-                        // 2. EXTRAER DATOS DE LA CASILLA (Soporta Array o Objeto)
                         const configItem = codeConfig ? codeConfig[n] : undefined;
-                        const isSlotActive = configItem !== undefined;
                         
-                        // Si es Array, es simple. Si es Objeto, tiene label y options.
+                        // 2. Determinar estado y opciones
+                        const isSlotActive = configItem !== undefined;
                         const slotOptions = Array.isArray(configItem) ? configItem : (configItem?.options || []);
-                        const slotLabel = (!Array.isArray(configItem) && configItem?.label) ? configItem.label : "LAB";
+                        
+                        // ¿Este campo permite estar vacío?
+                        const canBeEmpty = slotOptions.includes('');
 
+                        // Etiqueta (Placeholder)
+                        const slotLabel = (!Array.isArray(configItem) && configItem?.label) ? configItem.label : `LAB ${n}`;
+                        
                         const isFocused = focusedLab.rowIndex === idx && focusedLab.labNum === n;
                         const hasValue = dx[`lab${n}`] && dx[`lab${n}`].length > 0;
 
                         return (
-                            <div key={n} className="relative">
-                                {/* MENÚ FLOTANTE */}
+                            <div key={n} className="relative group/lab">
+                                
+                                {/* MENÚ DE SUGERENCIAS */}
                                 {isFocused && isSlotActive && slotOptions.length > 0 && (
-                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white border border-slate-200 shadow-xl rounded-xl p-1.5 flex gap-1 z-50 animate-in zoom-in duration-200 min-w-[120px] justify-center flex-wrap">
+                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white border border-slate-200 shadow-xl rounded-xl p-1.5 flex gap-1 z-50 animate-in zoom-in duration-200 min-w-[80px] justify-center flex-wrap">
                                         {slotOptions.map(sug => (
                                             <button 
                                                 key={sug}
@@ -4103,33 +5267,40 @@ export default function App() {
                                                     setDiagnoses(newDx);
                                                     setFocusedLab({ rowIndex: null, labNum: null });
                                                 }}
-                                                className="px-2 py-1 bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-700 text-[10px] font-bold rounded-lg transition-colors border border-blue-100"
+                                                className={`px-2 py-1 text-[9px] font-bold rounded-md transition-colors border
+                                                    ${sug === '' 
+                                                        ? 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200' 
+                                                        : 'bg-indigo-50 hover:bg-indigo-500 hover:text-white text-indigo-700 border-indigo-100'
+                                                    }`}
                                             >
-                                                {sug}
+                                                {sug === '' ? '(VACÍO)' : sug}
                                             </button>
                                         ))}
                                     </div>
                                 )}
 
-                                {/* INPUT INTELIGENTE */}
+                                {/* INPUT CON LÓGICA TRICOLOR (VERDE, ROJO, GRIS) */}
                                 <input 
-                                    className={`w-16 h-12 border-2 rounded-xl text-center text-xs font-black outline-none transition-all uppercase
+                                    className={`
+                                        w-14 h-11 border-2 rounded-xl text-center text-[10px] font-black outline-none transition-all uppercase shadow-sm
                                         ${!isSlotActive 
-                                            ? 'border-slate-100 bg-slate-100 text-slate-300 cursor-not-allowed' 
+                                            ? 'border-slate-50 bg-slate-50 text-transparent cursor-default' // Deshabilitado
                                             : isFocused 
-                                                ? 'border-blue-500 ring-4 ring-blue-100 bg-white z-20 relative placeholder:text-blue-300' 
+                                                ? 'border-indigo-500 bg-white ring-4 ring-indigo-100 z-20 relative placeholder:text-indigo-200' // Foco
                                                 : hasValue
-                                                    ? 'border-emerald-500 bg-emerald-100 text-emerald-800 shadow-sm' 
-                                                    : 'border-red-300 bg-red-50 placeholder-red-400 text-red-900 animate-pulse' 
+                                                    ? 'border-emerald-500 bg-emerald-50 text-emerald-800' // Lleno (Verde)
+                                                    : canBeEmpty
+                                                        ? 'border-slate-300 bg-white text-slate-600 placeholder:text-slate-300' // Vacío PERMITIDO (Gris) <--- ESTO PEDISTE
+                                                        : 'border-red-300 bg-red-50 text-red-900 placeholder:text-red-400/70' // Vacío OBLIGATORIO (Rojo)
                                         } 
-                                        placeholder:text-[9px] placeholder:font-extrabold`} // AJUSTE DE TEXTO AQUÍ
+                                    `}
+                                    // Placeholder visible si está activo
+                                    placeholder={isSlotActive ? slotLabel : ""}
                                     
-                                    placeholder={isSlotActive ? slotLabel : "-"}
                                     disabled={!isSlotActive}
                                     maxLength={4}
                                     value={dx[`lab${n}`] || ''}
                                     onFocus={() => setFocusedLab({ rowIndex: idx, labNum: n })}
-                                    // SIN onBlur PARA QUE FUNCIONE EL CLIC DEL MENÚ
                                     onChange={(e) => {
                                         const val = e.target.value.toUpperCase().slice(0, 4);
                                         const newDx = [...diagnoses];
@@ -4140,19 +5311,45 @@ export default function App() {
                             </div>
                         );
                     })}
-                </div>                
-                {/* CÓDIGO CIE-10 + BOTONES ACCIÓN */}
-                <div className="col-span-2 flex justify-center items-center gap-2 relative">
-                    <div className="font-black text-slate-800 text-sm bg-slate-100 px-3 py-2 rounded-lg min-w-[60px] text-center">{dx.codigo || '---'}</div>
-                    {showAddButton && ( <button onClick={addDx} title="Agregar siguiente fila" className="w-8 h-8 bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-full flex items-center justify-center transition-colors shadow-sm animate-in zoom-in"><Plus size={16} strokeWidth={3} /></button> )}
-                    <button onClick={(e) => { e.stopPropagation(); removeDx(idx); }} className="absolute -right-2 top-2 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={16}/></button>
+                </div>
+                {/* 5. CÓDIGO + ACCIONES */}
+                <div className="col-span-2 flex justify-end items-center gap-3">
+                    <div className={`px-3 py-2 rounded-lg font-black text-xs min-w-[70px] text-center shadow-sm border
+                        ${dx.codigo ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-100 text-slate-300 border-slate-200'}`}>
+                        {dx.codigo || '---'}
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                        {showAddButton && ( 
+                            <button 
+                                onClick={addDx} 
+                                title="Agregar nueva fila" 
+                                className="w-9 h-9 bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white rounded-full flex items-center justify-center transition-all shadow-md hover:shadow-lg hover:scale-110 active:scale-95 animate-in zoom-in"
+                            >
+                                <Plus size={18} strokeWidth={3} />
+                            </button> 
+                        )}
+                        
+                        {/* BOTÓN ELIMINAR (SOLO SI NO ES LA PRIMERA FILA) */}
+                        {!isFirstRow ? (
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); removeDx(idx); }} 
+                                className="w-9 h-9 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full flex items-center justify-center transition-all"
+                                title="Eliminar fila"
+                            >
+                                <Trash2 size={18}/>
+                            </button>
+                        ) : (
+                            <div className="w-9 h-9"></div> // Espacio vacío
+                        )}
+                    </div>
                   </div>
                </div>
             )})}
-            <div ref={dxBottomRef} className="h-24 w-full bg-transparent"></div>
+            <div ref={dxBottomRef} className="h-32 w-full bg-transparent"></div>
           </div>
         </div>
-      )}
+      )}     
               {/* PASO 4: EXCEL PREVIEW */}
               {/* PASO 4: EXCEL PREVIEW (MEJORADO PRO) */}
       {/* PASO 4: EXCEL PREVIEW (ALINEACIÓN PERFECTA) */}
@@ -4190,11 +5387,11 @@ export default function App() {
                         <col className="w-24" /> {/* DISTRITO */}
                         <col className="w-6" />  {/* EDAD */}
                         <col className="w-6" />  {/* SEXO */}
-                        <col className="w-8" />  {/* PESO (Muy angosto) */}
-                        <col className="w-8" />  {/* TALLA */}
-                        <col className="w-8" />  {/* P.C */}
-                        <col className="w-8" />  {/* P.AB */}
-                        <col className="w-6" />  {/* HB */}
+                        {/* ANTROPOMETRÍA: 4 columnas (label, valor, label, valor) */}
+                        <col style={{width:'30px'}} />  {/* Label izq */}
+                        <col style={{width:'32px'}} />  {/* Valor izq */}
+                        <col style={{width:'30px'}} />  {/* Label der */}
+                        <col style={{width:'32px'}} />  {/* Valor der */}
                         <col className="w-6" />  {/* EST */}
                         <col className="w-6" />  {/* SER */}
                         <col className="w-auto" /> {/* DIAGNÓSTICO (El resto del espacio) */}
@@ -4215,10 +5412,9 @@ export default function App() {
                             <th className="border border-black p-0 align-middle" rowSpan={2}>EDAD</th>
                             <th className="border border-black p-0 align-middle" rowSpan={2}>SEX</th>
                             
-                            {/* CABECERA ANTROPOMETRÍA */}
-                            <th className="border border-black p-0 h-4 align-middle" colSpan={4}>ANTROPOMETRÍA</th>
+                            {/* CABECERA ANTROPOMETRÍA - fusionada con sub-cabecera */}
+                            <th className="border border-black p-0 align-middle" colSpan={4} rowSpan={2}>ANTROPOMETRÍA</th>
                             
-                            <th className="border border-black p-0 align-middle" rowSpan={2}>HB</th>
                             <th className="border border-black p-0 align-middle" rowSpan={2}>EST</th>
                             <th className="border border-black p-0 align-middle" rowSpan={2}>SER</th>
                             <th className="border border-black p-1 align-middle text-[10px]" rowSpan={2}>DIAGNÓSTICO MOTIVO DE CONSULTA</th>
@@ -4227,12 +5423,8 @@ export default function App() {
                             <th className="border border-black p-0 align-middle" rowSpan={2}>CIE</th>
                         </tr>
                         
-                        {/* SUB-CABECERAS MUY PEQUEÑAS (text-[7px]) PARA QUE QUEPAN */}
+                        {/* SUB-CABECERAS (solo LAB) */}
                         <tr className="bg-gray-50 text-gray-700 font-bold text-center uppercase text-[7px]">
-                            <th className="border border-black p-0 h-4 align-middle">PESO</th>
-                            <th className="border border-black p-0 h-4 align-middle">TALLA</th>
-                            <th className="border border-black p-0 h-4 align-middle">P.C.</th>
-                            <th className="border border-black p-0 h-4 align-middle">P.AB</th>
                             <th className="border border-black p-0 h-4 align-middle">1</th>
                             <th className="border border-black p-0 h-4 align-middle">2</th>
                             <th className="border border-black p-0 h-4 align-middle">3</th>
@@ -4241,7 +5433,7 @@ export default function App() {
 
                     <tbody className="text-[10px]">
                         {consolidatedPatients.length === 0 ? (
-                             <tr><td colSpan={20} className="text-center p-10 font-bold text-gray-400 border border-black">SIN DATOS</td></tr>
+                             <tr><td colSpan={19} className="text-center p-10 font-bold text-gray-400 border border-black">SIN DATOS</td></tr>
                         ) : (
                             consolidatedPatients.map((rec, idx) => {
                                 const p = rec.patient;
@@ -4257,23 +5449,33 @@ export default function App() {
                                 return blocks.map((block, blockIdx) => (
                                     <React.Fragment key={`${idx}-${blockIdx}`}>
                                         
-                                        {/* FILA 1 */}
+                                        {/* FILA 1: Talla + P.C. */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
                                             <td className="border border-black text-center font-bold align-middle bg-white" rowSpan={3}>{(p.fecAtencion || "").split('-')[2]}</td>
                                             <td className="border border-black text-center font-bold align-middle bg-white text-[9px]" rowSpan={3}>{p.dni}</td>
-                                            <td className="border border-black px-1 align-middle font-bold bg-white uppercase truncate text-[9px]" rowSpan={3} title={p.paciente}>{p.paciente}</td>
+                                            {/* --- CELDA DE PACIENTE CON BOTONES DE EDICIÓN FLOTANTES --- */}
+                                            <td className="border border-black px-1 align-middle font-bold bg-white uppercase text-[9px] relative group/row hover:bg-slate-50 transition-colors" rowSpan={3}>
+                                                <div className="w-full h-full relative flex items-center justify-between gap-1">
+                                                    <span className="truncate w-full block" title={p.paciente}>{p.paciente || "(SIN NOMBRE)"}</span>
+                                                    
+                                                    {/* Contenedor de Botones */}
+                                                    <div className="flex flex-col gap-1 absolute right-0 top-1/2 -translate-y-1/2 opacity-100 lg:opacity-0 lg:group-hover/row:opacity-100 transition-opacity bg-white/90 p-1 rounded-l-md shadow-sm border border-r-0 border-slate-200 z-10">
+                                                        <button onClick={() => handleEditPatient(idx)} className="bg-blue-100 text-blue-700 hover:bg-blue-600 hover:text-white p-1 rounded transition-colors" title="Editar"><Edit size={12}/></button>
+                                                        <button onClick={() => handleDeletePatient(idx)} className="bg-red-100 text-red-700 hover:bg-red-600 hover:text-white p-1 rounded transition-colors" title="Eliminar"><Trash2 size={12}/></button>
+                                                    </div>
+                                                </div>
+                                            </td>
                                             <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.financiador === 'SIS' ? '2' : '1'}</td>
                                             <td className="border border-black px-1 align-middle text-[8px] bg-white truncate" rowSpan={3} title={p.distrito}>{p.distrito}</td>
                                             <td className="border border-black text-center font-bold align-middle bg-white" rowSpan={3}>{a.y > 0 ? a.y : a.m > 0 ? a.m + 'm' : a.d + 'd'}</td>
                                             <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.sexo}</td>
                                             
-                                            {/* ANTROPOMETRÍA (SOLO NÚMEROS PEQUEÑOS) */}
-                                            <td className="border border-black text-center align-middle bg-white font-mono text-[9px]" rowSpan={3}>{c.peso}</td>
-                                            <td className="border border-black text-center align-middle bg-white font-mono text-[9px]" rowSpan={3}>{c.talla}</td>
-                                            <td className="border border-black text-center align-middle bg-white font-mono text-[9px]" rowSpan={3}>{c.pCef}</td>
-                                            <td className="border border-black text-center align-middle bg-white font-mono text-[9px]" rowSpan={3}>{c.pAbd}</td>
+                                            {/* ANTROPOMETRÍA FILA 1: Talla | valor | P.C. | valor */}
+                                            <td className="border border-black text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">Talla</td>
+                                            <td className="border border-black text-center align-middle bg-white font-bold text-[9px]">{c.talla}</td>
+                                            <td className="border border-black text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.C.</td>
+                                            <td className="border border-black text-center align-middle bg-white font-bold text-[9px]">{c.pCef}</td>
                                             
-                                            <td className="border border-black text-center font-bold align-middle bg-white" rowSpan={3}>{c.hb}</td>
                                             <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.condEst}</td>
                                             <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.condServ}</td>
 
@@ -4286,8 +5488,12 @@ export default function App() {
                                             <td className="border border-black text-center font-bold align-middle text-[9px]">{block[0].codigo}</td>
                                         </tr>
 
-                                        {/* FILA 2 */}
+                                        {/* FILA 2: Peso + P.Abd */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
+                                            <td className="border border-black text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">Peso</td>
+                                            <td className="border border-black text-center align-middle bg-white font-bold text-[9px]">{c.peso}</td>
+                                            <td className="border border-black text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.Abd</td>
+                                            <td className="border border-black text-center align-middle bg-white font-bold text-[9px]">{c.pAbd}</td>
                                             <td className="border border-black px-1 align-middle uppercase text-[9px] truncate">{block[1].desc}</td>
                                             <td className="border border-black text-center font-bold align-middle">{block[1].tipo}</td>
                                             <td className="border border-black text-center align-middle font-mono text-[9px]">{block[1].lab1}</td>
@@ -4296,8 +5502,12 @@ export default function App() {
                                             <td className="border border-black text-center font-bold align-middle text-[9px]">{block[1].codigo}</td>
                                         </tr>
 
-                                        {/* FILA 3 */}
+                                        {/* FILA 3: HB + P.Preg */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
+                                            <td className="border border-black text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">HB</td>
+                                            <td className="border border-black text-center align-middle bg-white font-bold text-[9px]">{c.hb}</td>
+                                            <td className="border border-black text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.Preg</td>
+                                            <td className="border border-black text-center align-middle bg-white font-bold text-[9px]">{c.pPreGest}</td>
                                             <td className="border border-black px-1 align-middle uppercase text-[9px] truncate">{block[2].desc}</td>
                                             <td className="border border-black text-center font-bold align-middle">{block[2].tipo}</td>
                                             <td className="border border-black text-center align-middle font-mono text-[9px]">{block[2].lab1}</td>
@@ -4306,7 +5516,7 @@ export default function App() {
                                             <td className="border border-black text-center font-bold align-middle text-[9px]">{block[2].codigo}</td>
                                         </tr>
                                         
-                                        <tr className="h-[2px] bg-black"><td colSpan={20} className="bg-black p-0 border-0"></td></tr>
+                                        <tr className="h-[2px] bg-black"><td colSpan={19} className="bg-black p-0 border-0"></td></tr>
                                     </React.Fragment>
                                 ));
                             })
@@ -4653,6 +5863,49 @@ export default function App() {
       <NutritionalStatusModal isOpen={showNutriModal} onClose={() => setShowNutriModal(false)} />
       <CredFollowUpModal isOpen={showCredModal} onClose={() => setShowCredModal(false)} />
       
+      {/* --- VISOR DE PDF INTEGRADO --- */}
+      {activePdf && (
+        <div className="fixed inset-0 z-[300] bg-slate-900/90 backdrop-blur-md flex flex-col animate-in fade-in duration-200">
+          {/* BARRA SUPERIOR */}
+          <div className="flex items-center justify-between px-6 py-3 bg-[#0F172A] border-b border-slate-700 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="bg-red-500 p-2 rounded-lg text-white">
+                <FileText size={20} strokeWidth={2.5}/>
+              </div>
+              <div>
+                <h3 className="text-white font-black text-sm tracking-wide">{activePdf.titulo}</h3>
+                <p className="text-slate-400 text-[10px] font-medium">Biblioteca Normativa — Lectura Rápida</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <a 
+                href={activePdf.archivo} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold flex items-center gap-2 transition-all"
+                title="Abrir en pestaña nueva"
+              >
+                <ArrowRight size={14}/> ABRIR EN PESTAÑA
+              </a>
+              <button 
+                onClick={() => setActivePdf(null)} 
+                className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-red-400 transition-all"
+              >
+                <X size={24} strokeWidth={2.5}/>
+              </button>
+            </div>
+          </div>
+          {/* VISOR PDF */}
+          <div className="flex-1 w-full">
+            <iframe 
+              src={activePdf.archivo} 
+              className="w-full h-full border-0"
+              title={activePdf.titulo}
+            />
+          </div>
+        </div>
+      )}
+      
       {/* MODAL DE SEGUIMIENTO INDIVIDUAL */}
       {selectedGestanteForModal && (
         <SeguimientoIndividualModal 
@@ -4661,7 +5914,7 @@ export default function App() {
         />
       )}
 
-      <style>{` .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; } input[type="date"]::-webkit-calendar-picker-indicator { opacity: 1; display: block; width: 1em; height: 1em; position: absolute; top: 50%; right: 12px; transform: translateY(-50%); color: #475569; cursor: pointer; } input[type="date"] { text-align: center; padding-left: 0.5rem; padding-right: 2.5rem; } `}</style>
+      <style>{` .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; } input[type="date"]::-webkit-calendar-picker-indicator { opacity: 1; display: block; width: 1em; height: 1em; position: absolute; top: 50%; right: 12px; transform: translateY(-50%); color: #475569; cursor: pointer; } input[type="date"] { text-align: center; padding-left: 0.5rem; padding-right: 2.5rem; position: relative; } @keyframes histPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.25); opacity: 0.85; } } .animate-hist-pulse { animation: histPulse 2s ease-in-out infinite; } `}</style>
     </div>
   );
 }

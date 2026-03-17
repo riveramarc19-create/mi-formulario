@@ -4303,7 +4303,7 @@ const handleAdmin = (e) => {
           </div>
         ) : (
           /* VISTA FORMULARIO MODAL PRINCIPAL */
-          <div className={`bg-white shadow-2xl border border-slate-200 overflow-hidden flex flex-col w-full animate-in zoom-in-95 duration-200 ring-1 ring-black/5 ${step === 4 ? 'max-w-full h-full' : 'max-w-[95%] h-[90vh] rounded-[30px] m-auto'}`}>
+          <div className="bg-white rounded-[30px] shadow-2xl border border-slate-200 overflow-hidden flex flex-col w-full max-w-[95%] h-[90vh] animate-in zoom-in-95 duration-200 ring-1 ring-black/5 m-auto">
             {/* CABECERA DEL FORMULARIO */}
             <div className="flex border-b border-slate-100 bg-white px-6 shrink-0 justify-between items-center">
               <div className="flex-1 flex">
@@ -5372,68 +5372,73 @@ const handleAdmin = (e) => {
              </div>
           </div>
 
-          <div className="flex-1 overflow-auto bg-white">
-            <div className="w-full min-h-[800px] p-3">
+          <div className="flex-1 overflow-auto p-8 flex justify-center bg-gray-200">
+            <div className="bg-white shadow-2xl w-full max-w-[1900px] min-h-[800px] p-8 border border-gray-300">
                 
-                {/* TABLA */}
-                <table className="w-full border-collapse border border-gray-500 font-sans rounded-2xl overflow-hidden" style={{tableLayout:'auto', borderRadius:'16px'}}>
+                {/* TABLA: table-fixed es CLAVE para que respete los anchos */}
+                <table className="w-full border-collapse border border-black font-sans table-fixed">
                     
                     {/* DEFINICIÓN DE ANCHOS DE COLUMNA (Colgroup) */}
                     <colgroup>
-                        <col style={{width:'28px'}} />  {/* DÍA */}
-                        <col style={{width:'70px'}} />  {/* DNI */}
-                        <col style={{width:'200px'}} /> {/* NOMBRES */}
-                        <col style={{width:'24px'}} />  {/* FIN */}
-                        <col style={{width:'100px'}} /> {/* DISTRITO */}
-                        <col style={{width:'32px'}} />  {/* EDAD */}
-                        <col style={{width:'24px'}} />  {/* SEXO */}
-                        {/* ANTROPOMETRÍA: 4 columnas */}
-                        <col style={{width:'30px'}} />  {/* Label izq */}
-                        <col style={{width:'34px'}} />  {/* Valor izq */}
-                        <col style={{width:'30px'}} />  {/* Label der */}
-                        <col style={{width:'34px'}} />  {/* Valor der */}
-                        <col style={{width:'22px'}} />  {/* EST */}
-                        <col style={{width:'22px'}} />  {/* SER */}
-                        <col />                         {/* DIAGNÓSTICO (llena el resto) */}
-                        <col style={{width:'28px'}} />  {/* TIPO */}
-                        <col style={{width:'28px'}} />  {/* LAB 1 */}
-                        <col style={{width:'28px'}} />  {/* LAB 2 */}
-                        <col style={{width:'28px'}} />  {/* LAB 3 */}
-                        <col style={{width:'60px'}} />  {/* CIE */}
+                        <col className="w-6" />  {/* DÍA */}
+                        <col className="w-16" /> {/* DNI */}
+                        <col className="w-48" /> {/* NOMBRES */}
+                        <col className="w-6" />  {/* FIN */}
+                        <col className="w-24" /> {/* DISTRITO */}
+                        <col className="w-6" />  {/* EDAD */}
+                        <col className="w-6" />  {/* SEXO */}
+                        <col className="w-8" />  {/* PESO (Muy angosto) */}
+                        <col className="w-8" />  {/* TALLA */}
+                        <col className="w-8" />  {/* P.C */}
+                        <col className="w-8" />  {/* P.AB */}
+                        <col className="w-6" />  {/* HB */}
+                        <col className="w-6" />  {/* EST */}
+                        <col className="w-6" />  {/* SER */}
+                        <col className="w-auto" /> {/* DIAGNÓSTICO (El resto del espacio) */}
+                        <col className="w-6" />  {/* TIPO */}
+                        <col className="w-8" />  {/* LAB 1 */}
+                        <col className="w-8" />  {/* LAB 2 */}
+                        <col className="w-8" />  {/* LAB 3 */}
+                        <col className="w-10" /> {/* CIE */}
                     </colgroup>
 
                     <thead>
                         <tr className="bg-gray-100 text-gray-800 font-bold text-center uppercase text-[9px]">
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>DÍA</th>
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>DNI</th>
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>PACIENTE</th>
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>FIN</th>
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>DISTRITO</th>
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>EDAD</th>
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>SEX</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>DÍA</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>DNI</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>PACIENTE</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>FIN</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>DISTRITO</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>EDAD</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>SEX</th>
                             
-                            {/* CABECERA ANTROPOMETRÍA - fusionada con sub-cabecera */}
-                            <th className="border border-gray-500 p-0 align-middle" colSpan={4} rowSpan={2}>ANTROPOMETRÍA</th>
+                            {/* CABECERA ANTROPOMETRÍA */}
+                            <th className="border border-black p-0 h-4 align-middle" colSpan={4}>ANTROPOMETRÍA</th>
                             
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>EST</th>
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>SER</th>
-                            <th className="border border-gray-500 p-1 align-middle text-[10px]" rowSpan={2}>DIAGNÓSTICO MOTIVO DE CONSULTA</th>
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>TIPO</th>
-                            <th className="border border-gray-500 p-0 align-middle" colSpan={3}>LAB</th>
-                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>CIE</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>HB</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>EST</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>SER</th>
+                            <th className="border border-black p-1 align-middle text-[10px]" rowSpan={2}>DIAGNÓSTICO MOTIVO DE CONSULTA</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>TIPO</th>
+                            <th className="border border-black p-0 align-middle" colSpan={3}>LAB</th>
+                            <th className="border border-black p-0 align-middle" rowSpan={2}>CIE</th>
                         </tr>
                         
-                        {/* SUB-CABECERAS (solo LAB) */}
+                        {/* SUB-CABECERAS MUY PEQUEÑAS (text-[7px]) PARA QUE QUEPAN */}
                         <tr className="bg-gray-50 text-gray-700 font-bold text-center uppercase text-[7px]">
-                            <th className="border border-gray-500 p-0 h-4 align-middle">1</th>
-                            <th className="border border-gray-500 p-0 h-4 align-middle">2</th>
-                            <th className="border border-gray-500 p-0 h-4 align-middle">3</th>
+                            <th className="border border-black p-0 h-4 align-middle">PESO</th>
+                            <th className="border border-black p-0 h-4 align-middle">TALLA</th>
+                            <th className="border border-black p-0 h-4 align-middle">P.C.</th>
+                            <th className="border border-black p-0 h-4 align-middle">P.AB</th>
+                            <th className="border border-black p-0 h-4 align-middle">1</th>
+                            <th className="border border-black p-0 h-4 align-middle">2</th>
+                            <th className="border border-black p-0 h-4 align-middle">3</th>
                         </tr>
                     </thead>
 
                     <tbody className="text-[10px]">
                         {consolidatedPatients.length === 0 ? (
-                             <tr><td colSpan={19} className="text-center p-10 font-bold text-gray-400 border border-gray-500">SIN DATOS</td></tr>
+                             <tr><td colSpan={20} className="text-center p-10 font-bold text-gray-400 border border-black">SIN DATOS</td></tr>
                         ) : (
                             consolidatedPatients.map((rec, idx) => {
                                 const p = rec.patient;
@@ -5449,80 +5454,86 @@ const handleAdmin = (e) => {
                                 return blocks.map((block, blockIdx) => (
                                     <React.Fragment key={`${idx}-${blockIdx}`}>
                                         
-                                        {/* FILA 1: Talla + P.C. */}
+                                        {/* FILA 1 */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
-                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white" rowSpan={3}>{(p.fecAtencion || "").split('-')[2]}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white text-[9px]" rowSpan={3}>{p.dni}</td>
+                                            <td className="border border-black text-center font-bold align-middle bg-white" rowSpan={3}>{(p.fecAtencion || "").split('-')[2]}</td>
+                                            <td className="border border-black text-center font-bold align-middle bg-white text-[9px]" rowSpan={3}>{p.dni}</td>
                                             {/* --- CELDA DE PACIENTE CON BOTONES DE EDICIÓN FLOTANTES --- */}
-                                            <td className="border border-gray-500 px-1 align-middle font-bold bg-white uppercase text-[9px] relative group/row hover:bg-slate-50 transition-colors" rowSpan={3}>
+                                            <td className="border border-black px-1 align-middle font-bold bg-white uppercase text-[9px] relative group/row hover:bg-slate-50 transition-colors" rowSpan={3}>
                                                 <div className="w-full h-full relative flex items-center justify-between gap-1">
                                                     <span className="truncate w-full block" title={p.paciente}>{p.paciente || "(SIN NOMBRE)"}</span>
                                                     
-                                                    {/* Contenedor de Botones */}
+                                                    {/* Contenedor de Botones (Oculto en PC hasta hacer hover, siempre visible en pantallas táctiles) */}
                                                     <div className="flex flex-col gap-1 absolute right-0 top-1/2 -translate-y-1/2 opacity-100 lg:opacity-0 lg:group-hover/row:opacity-100 transition-opacity bg-white/90 p-1 rounded-l-md shadow-sm border border-r-0 border-slate-200 z-10">
-                                                        <button onClick={() => handleEditPatient(idx)} className="bg-blue-100 text-blue-700 hover:bg-blue-600 hover:text-white p-1 rounded transition-colors" title="Editar"><Edit size={12}/></button>
-                                                        <button onClick={() => handleDeletePatient(idx)} className="bg-red-100 text-red-700 hover:bg-red-600 hover:text-white p-1 rounded transition-colors" title="Eliminar"><Trash2 size={12}/></button>
+                                                        <button 
+                                                            onClick={() => handleEditPatient(idx)} 
+                                                            className="bg-blue-100 text-blue-700 hover:bg-blue-600 hover:text-white p-1 rounded transition-colors" 
+                                                            title="Editar toda la información del paciente"
+                                                        >
+                                                            <Edit size={12}/>
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleDeletePatient(idx)} 
+                                                            className="bg-red-100 text-red-700 hover:bg-red-600 hover:text-white p-1 rounded transition-colors" 
+                                                            title="Eliminar registro"
+                                                        >
+                                                            <Trash2 size={12}/>
+                                                        </button>
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.financiador === 'SIS' ? '2' : '1'}</td>
-                                            <td className="border border-gray-500 px-1 align-middle text-[8px] bg-white truncate" rowSpan={3} title={p.distrito}>{p.distrito}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white" rowSpan={3}>{a.y > 0 ? a.y : a.m > 0 ? a.m + 'm' : a.d + 'd'}</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.sexo}</td>
+                                            {/* -------------------------------------------------------- */}
+                                            <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.financiador === 'SIS' ? '2' : '1'}</td>
+                                            <td className="border border-black px-1 align-middle text-[8px] bg-white truncate" rowSpan={3} title={p.distrito}>{p.distrito}</td>
+                                            <td className="border border-black text-center font-bold align-middle bg-white" rowSpan={3}>{a.y > 0 ? a.y : a.m > 0 ? a.m + 'm' : a.d + 'd'}</td>
+                                            <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.sexo}</td>
                                             
-                                            {/* ANTROPOMETRÍA FILA 1: Talla | valor | P.C. | valor */}
-                                            <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">Talla</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.talla}</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.C.</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.pCef}</td>
+                                            {/* ANTROPOMETRÍA (SOLO NÚMEROS PEQUEÑOS) */}
+                                            <td className="border border-black text-center align-middle bg-white font-mono text-[9px]" rowSpan={3}>{c.peso}</td>
+                                            <td className="border border-black text-center align-middle bg-white font-mono text-[9px]" rowSpan={3}>{c.talla}</td>
+                                            <td className="border border-black text-center align-middle bg-white font-mono text-[9px]" rowSpan={3}>{c.pCef}</td>
+                                            <td className="border border-black text-center align-middle bg-white font-mono text-[9px]" rowSpan={3}>{c.pAbd}</td>
                                             
-                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.condEst}</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.condServ}</td>
+                                            <td className="border border-black text-center font-bold align-middle bg-white" rowSpan={3}>{c.hb}</td>
+                                            <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.condEst}</td>
+                                            <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.condServ}</td>
 
                                             {/* DIAGNÓSTICO 1 (EXPANDIDO) */}
-                                            <td className="border border-gray-500 px-1 align-middle uppercase text-[9px] truncate">{block[0].desc}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle">{block[0].tipo}</td>
-                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[0].lab1}</td>
-                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[0].lab2}</td>
-                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[0].lab3}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle text-[9px]">{block[0].codigo}</td>
+                                            <td className="border border-black px-1 align-middle uppercase text-[9px] truncate">{block[0].desc}</td>
+                                            <td className="border border-black text-center font-bold align-middle">{block[0].tipo}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[0].lab1}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[0].lab2}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[0].lab3}</td>
+                                            <td className="border border-black text-center font-bold align-middle text-[9px]">{block[0].codigo}</td>
                                         </tr>
 
-                                        {/* FILA 2: Peso + P.Abd */}
+                                        {/* FILA 2 */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
-                                            <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">Peso</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.peso}</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.Abd</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.pAbd}</td>
-                                            <td className="border border-gray-500 px-1 align-middle uppercase text-[9px] truncate">{block[1].desc}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle">{block[1].tipo}</td>
-                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[1].lab1}</td>
-                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[1].lab2}</td>
-                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[1].lab3}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle text-[9px]">{block[1].codigo}</td>
+                                            <td className="border border-black px-1 align-middle uppercase text-[9px] truncate">{block[1].desc}</td>
+                                            <td className="border border-black text-center font-bold align-middle">{block[1].tipo}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[1].lab1}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[1].lab2}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[1].lab3}</td>
+                                            <td className="border border-black text-center font-bold align-middle text-[9px]">{block[1].codigo}</td>
                                         </tr>
 
-                                        {/* FILA 3: HB + P.Preg */}
+                                        {/* FILA 3 */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
-                                            <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">HB</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.hb}</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.Preg</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.pPreGest}</td>
-                                            <td className="border border-gray-500 px-1 align-middle uppercase text-[9px] truncate">{block[2].desc}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle">{block[2].tipo}</td>
-                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[2].lab1}</td>
-                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[2].lab2}</td>
-                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[2].lab3}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle text-[9px]">{block[2].codigo}</td>
+                                            <td className="border border-black px-1 align-middle uppercase text-[9px] truncate">{block[2].desc}</td>
+                                            <td className="border border-black text-center font-bold align-middle">{block[2].tipo}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[2].lab1}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[2].lab2}</td>
+                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[2].lab3}</td>
+                                            <td className="border border-black text-center font-bold align-middle text-[9px]">{block[2].codigo}</td>
                                         </tr>
                                         
-                                        <tr className="h-[2px] bg-gray-500"><td colSpan={19} className="bg-gray-500 p-0 border-0"></td></tr>
+                                        <tr className="h-[2px] bg-black"><td colSpan={20} className="bg-black p-0 border-0"></td></tr>
                                     </React.Fragment>
                                 ));
                             })
                         )}
                         {consolidatedPatients.length < 5 && Array.from({length: 3}).map((_, i) => (
-                             <tr key={`filler-${i}`}><td className="border border-gray-500 h-16" colSpan={7}></td><td className="border border-gray-500" colSpan={4}></td><td className="border border-gray-500" colSpan={3}></td><td className="border border-gray-500" colSpan={6}></td></tr>
+                             <tr key={`filler-${i}`}><td className="border border-black h-16" colSpan={7}></td><td className="border border-black" colSpan={4}></td><td className="border border-black" colSpan={3}></td><td className="border border-black" colSpan={6}></td></tr>
                         ))}
                     </tbody>
                 </table>
