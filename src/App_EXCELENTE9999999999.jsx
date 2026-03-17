@@ -3717,32 +3717,14 @@ const handleAdmin = (e) => {
             {/* Logo SVG */}
             <div className="w-[110px] h-[110px] rounded-[24px] overflow-hidden shadow-xl" style={{boxShadow: '0 8px 30px rgba(109,40,217,0.35), 0 4px 15px rgba(5,150,105,0.25)'}}>
               <svg width="110" height="110" viewBox="0 0 140 140">
-                <style>{`
-                  @keyframes smartSlide {
-                    0% { transform: translate(-15px, 15px); opacity: 0; }
-                    20% { transform: translate(0px, 0px); opacity: 1; }
-                    40% { transform: translate(0px, 0px); opacity: 1; }
-                    50% { transform: translate(0px, 0px) scale(1.2); opacity: 1; }
-                    60% { transform: translate(0px, 0px) scale(1); opacity: 1; }
-                    90% { transform: translate(0px, 0px); opacity: 1; }
-                    100% { transform: translate(0px, 0px); opacity: 1; }
-                  }
-                  .smart-anim {
-                    animation: smartSlide 4s ease-in-out infinite;
-                    transform-box: fill-box;
-                    transform-origin: center center;
-                  }
-                `}</style>
                 <rect x="0" y="0" width="140" height="140" rx="28" fill="#6D28D9"/>
                 <defs><clipPath id="logo-clip"><rect x="0" y="0" width="140" height="140" rx="28"/></clipPath></defs>
                 <g clipPath="url(#logo-clip)">
                   <polygon points="0,140 140,0 140,140" fill="#059669"/>
                 </g>
                 <g transform="translate(18,102) rotate(-45)">
-                  <g className="smart-anim">
-                    <text style={{fontFamily:'Dancing Script, Segoe Script, cursive', fontSize:'52px', fontWeight:700, fill:'#FFFFFF', fontStyle:'italic'}}>S</text>
-                    <text x="30" style={{fontFamily:'Dancing Script, Segoe Script, cursive', fontSize:'32px', fontWeight:700, fill:'#FFFFFF', fontStyle:'italic'}}>mart</text>
-                  </g>
+                  <text style={{fontFamily:'Dancing Script, Segoe Script, cursive', fontSize:'52px', fontWeight:700, fill:'#FFFFFF', fontStyle:'italic'}}>S</text>
+                  <text x="30" style={{fontFamily:'Dancing Script, Segoe Script, cursive', fontSize:'32px', fontWeight:700, fill:'#FFFFFF', fontStyle:'italic'}}>mart</text>
                 </g>
                 <text transform="translate(72,134) rotate(-45)" style={{fontFamily:'sans-serif', fontSize:'36px', fontWeight:900, fill:'#FFFFFF', letterSpacing:'2px'}}>HIS</text>
               </svg>

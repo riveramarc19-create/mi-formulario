@@ -22988,3 +22988,228 @@ export const SEGUIMIENTO_BUCAL = [
     "ATENDIO_2": null
   }
 ];
+
+// Funciones auxiliares para trabajar con los datos
+
+/**
+ * Obtener todos los registros bucales
+ * @returns {Array} Array con todos los registros
+ */
+function obtenerTodosRegistros() {
+  return SEGUIMIENTO_BUCAL;
+}
+
+/**
+ * Buscar paciente por DNI
+ * @param {string|number} dni - DNI del paciente
+ * @returns {Array} Array con todos los registros del paciente (puede tener múltiples años)
+ */
+function buscarPorDNI(dni) {
+  return SEGUIMIENTO_BUCAL.filter(p => p.N_DNI_HIS == dni);
+}
+
+/**
+ * Buscar pacientes por nombre (búsqueda parcial)
+ * @param {string} nombre - Nombre o parte del nombre
+ * @returns {Array} Array con pacientes que coinciden
+ */
+function buscarPorNombre(nombre) {
+  const nombreUpper = nombre.toUpperCase();
+  return SEGUIMIENTO_BUCAL.filter(p => 
+    p.Nombres_P && p.Nombres_P.toUpperCase().includes(nombreUpper)
+  );
+}
+
+/**
+ * Filtrar registros por IPRESS
+ * @param {string} ipress - Nombre del IPRESS
+ * @returns {Array} Array con registros del IPRESS especificado
+ */
+function filtrarPorIPRESS(ipress) {
+  return SEGUIMIENTO_BUCAL.filter(p => p.IPRESS_HIS === ipress);
+}
+
+/**
+ * Obtener lista única de IPRESS
+ * @returns {Array} Array con nombres de IPRESS únicos
+ */
+function obtenerIPRESS() {
+  const ipress = new Set();
+  SEGUIMIENTO_BUCAL.forEach(p => {
+    if (p.IPRESS_HIS) ipress.add(p.IPRESS_HIS);
+  });
+  return Array.from(ipress).sort();
+}
+
+/**
+ * Filtrar registros por año
+ * @param {number} anio - Año de registro
+ * @returns {Array} Array con registros del año especificado
+ */
+function filtrarPorAnio(anio) {
+  return SEGUIMIENTO_BUCAL.filter(p => p.A OS === anio);
+}
+
+/**
+ * Filtrar por rango de edad
+ * @param {number} edadMin - Edad mínima
+ * @param {number} edadMax - Edad máxima
+ * @returns {Array} Array con pacientes en el rango
+ */
+function filtrarPorEdad(edadMin, edadMax) {
+  return SEGUIMIENTO_BUCAL.filter(p => 
+    p.Edad >= edadMin && p.Edad <= edadMax
+  );
+}
+
+/**
+ * Buscar por domicilio (búsqueda parcial)
+ * @param {string} domicilio - Domicilio o parte del domicilio
+ * @returns {Array} Array con pacientes que coinciden
+ */
+function buscarPorDomicilio(domicilio) {
+  const domicilioUpper = domicilio.toUpperCase();
+  return SEGUIMIENTO_BUCAL.filter(p => 
+    p.Domicilio && p.Domicilio.toUpperCase().includes(domicilioUpper)
+  );
+}
+
+/**
+ * Contar controles bucales realizados
+ * @param {Object} registro - Objeto registro
+ * @returns {number} Cantidad de controles realizados
+ */
+function contarControles(registro) {
+  let count = 0;
+  if (registro.C_1 && registro.C_1 !== '') count++;
+  if (registro.C_2 && registro.C_2 !== '') count++;
+  return count;
+}
+
+/**
+ * Obtener pacientes con controles incompletos
+ * @returns {Array} Array con pacientes que solo tienen 1 control
+ */
+function pacientesConControlesIncompletos() {
+  return SEGUIMIENTO_BUCAL.filter(p => contarControles(p) < 2);
+}
+
+/**
+ * Obtener pacientes sin controles
+ * @returns {Array} Array con pacientes sin ningún control registrado
+ */
+function pacientesSinControles() {
+  return SEGUIMIENTO_BUCAL.filter(p => contarControles(p) === 0);
+}
+
+/**
+ * Obtener historial de controles
+ * @param {Object} registro - Objeto registro
+ * @returns {Array} Array con controles ordenados
+ */
+function obtenerHistorialControles(registro) {
+  const controles = [];
+  
+  if (registro.C_1 && registro.C_1 !== '') {
+    controles.push({
+      numero: 1,
+      fecha: registro.C_1,
+      atendio: registro.ATENDIO_1 || 'No registrado'
+    });
+  }
+  
+  if (registro.C_2 && registro.C_2 !== '') {
+    controles.push({
+      numero: 2,
+      fecha: registro.C_2,
+      atendio: registro.ATENDIO_2 || 'No registrado'
+    });
+  }
+  
+  return controles;
+}
+
+/**
+ * Obtener lista única de personal de salud bucal
+ * @returns {Array} Array con nombres de personal únicos
+ */
+function obtenerPersonalSalud() {
+  const personal = new Set();
+  SEGUIMIENTO_BUCAL.forEach(p => {
+    if (p.ATENDIO_1) personal.add(p.ATENDIO_1);
+    if (p.ATENDIO_2) personal.add(p.ATENDIO_2);
+  });
+  return Array.from(personal).sort();
+}
+
+/**
+ * Filtrar registros por personal que atendió
+ * @param {string} nombrePersonal - Nombre del personal
+ * @returns {Array} Array con registros atendidos por el personal
+ */
+function filtrarPorPersonal(nombrePersonal) {
+  return SEGUIMIENTO_BUCAL.filter(p => 
+    p.ATENDIO_1 === nombrePersonal || p.ATENDIO_2 === nombrePersonal
+  );
+}
+
+/**
+ * Estadísticas generales
+ * @returns {Object} Objeto con estadísticas del sistema
+ */
+function obtenerEstadisticas() {
+  const total = SEGUIMIENTO_BUCAL.length;
+  const controlesIncompletos = pacientesConControlesIncompletos().length;
+  const sinControles = pacientesSinControles().length;
+  
+  // Edad promedio
+  const edades = SEGUIMIENTO_BUCAL.map(p => p.Edad).filter(e => e > 0);
+  const edadPromedio = edades.length > 0 
+    ? (edades.reduce((a, b) => a + b, 0) / edades.length).toFixed(1)
+    : 0;
+  
+  // Controles promedio
+  const totalControles = SEGUIMIENTO_BUCAL.reduce((sum, p) => 
+    sum + contarControles(p), 0
+  );
+  const controlesPromedio = (totalControles / total).toFixed(2);
+  
+  // Pacientes con 2 controles completos
+  const controlesCompletos = SEGUIMIENTO_BUCAL.filter(p => contarControles(p) === 2).length;
+  
+  return {
+    totalRegistros: total,
+    pacientesConControlesCompletos: controlesCompletos,
+    porcentajeCompletos: ((controlesCompletos / total) * 100).toFixed(2) + '%',
+    pacientesConControlesIncompletos: controlesIncompletos,
+    porcentajeIncompletos: ((controlesIncompletos / total) * 100).toFixed(2) + '%',
+    pacientesSinControles: sinControles,
+    porcentajeSinControles: ((sinControles / total) * 100).toFixed(2) + '%',
+    edadPromedio: edadPromedio,
+    controlesPromedio: controlesPromedio,
+    totalIPRESS: obtenerIPRESS().length,
+    totalPersonalSalud: obtenerPersonalSalud().length
+  };
+}
+
+// Exportar para uso en Node.js (si aplica)
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    SEGUIMIENTO_BUCAL,
+    obtenerTodosRegistros,
+    buscarPorDNI,
+    buscarPorNombre,
+    filtrarPorIPRESS,
+    obtenerIPRESS,
+    filtrarPorAnio,
+    filtrarPorEdad,
+    buscarPorDomicilio,
+    contarControles,
+    pacientesConControlesIncompletos,
+    pacientesSinControles,
+    obtenerHistorialControles,
+    obtenerPersonalSalud,
+    filtrarPorPersonal,
+    obtenerEstadisticas
+  };
+}
