@@ -41,6 +41,10 @@ export default defineConfig({
   define: {
     global: 'globalThis',
     'process.env': {},
+    '__BUILD_DATE__': JSON.stringify(
+      new Date().toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: 'America/Lima' }) + ' ' +
+      new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Lima' })
+    ),
   },
 
   build: {

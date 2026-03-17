@@ -127,6 +127,39 @@ const clearExcelFromLS = () => {
   localStorage.removeItem('EXCEL_TYPE');
 };
 
+// --- PERSISTENCIA DE PACIENTES REGISTRADOS MANUALMENTE ---
+const NUEVOS_KEY = 'HIS_PACIENTES_NUEVOS';
+
+const savePacienteNuevoLS = (paciente) => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(NUEVOS_KEY) || '[]');
+    // Evitar duplicados por DNI
+    const exists = stored.findIndex(p => p.dni === paciente.dni);
+    if (exists >= 0) {
+      stored[exists] = paciente; // Actualizar si ya existe
+    } else {
+      stored.push(paciente);
+    }
+    localStorage.setItem(NUEVOS_KEY, JSON.stringify(stored));
+    console.log(`💾 Paciente nuevo guardado en localStorage (total: ${stored.length})`);
+  } catch (e) {
+    console.warn("⚠️ No se pudo guardar paciente nuevo en localStorage:", e.message);
+  }
+};
+
+const getPacientesNuevosLS = () => {
+  try {
+    return JSON.parse(localStorage.getItem(NUEVOS_KEY) || '[]');
+  } catch (e) {
+    return [];
+  }
+};
+
+const clearPacientesNuevosLS = () => {
+  localStorage.removeItem(NUEVOS_KEY);
+  console.log("🧹 Pacientes nuevos locales limpiados (nuevo padrón cargado)");
+};
+
 // Parsear el Excel en el formato de pacientes
 const parseExcelToPacientes = (uint8Data, uploadType) => {
   const wb = XLSX.read(uint8Data, { type: 'array' });
@@ -1293,29 +1326,62 @@ export default function App() {
   });
   useEffect(() => {
     const initDB = async () => {
+        let basePacientes = [];
+        
+        // 1. Intentar IndexedDB
         try {
             const patients = await idb.getPatients();
             if (patients && patients.length > 0) {
-                setDbPacientes(patients);
-                setDbStatus('ready');
-            } else {
-                setDbStatus('empty');
+                basePacientes = patients;
+                console.log(`✅ ${patients.length} pacientes desde IndexedDB`);
             }
         } catch (e) {
             console.error("Error cargando BD", e);
-            // Intentar recuperar desde localStorage directamente
+        }
+
+        // 2. Si IndexedDB no tenía datos, intentar localStorage
+        if (basePacientes.length === 0) {
             const saved = loadExcelFromLS();
             if (saved) {
                 try {
-                    const patients = parseExcelToPacientes(saved.data, saved.type);
-                    setDbPacientes(patients);
-                    setDbStatus('ready');
-                    console.log(`🔧 Recuperados ${patients.length} pacientes desde localStorage`);
-                    return;
+                    basePacientes = parseExcelToPacientes(saved.data, saved.type);
+                    console.log(`🔧 Recuperados ${basePacientes.length} pacientes desde localStorage`);
                 } catch (parseErr) {
                     console.error("Error parseando Excel guardado:", parseErr);
                 }
             }
+        }
+
+        // 3. Si aún no hay datos, usar datos estáticos del código fuente (Vercel deploy)
+        if (basePacientes.length === 0 && typeof pacientesFormateados !== 'undefined' && Array.isArray(pacientesFormateados) && pacientesFormateados.length > 0) {
+            basePacientes = pacientesFormateados.map(p => ({
+                ...p,
+                busqueda: ((p.dni || "") + " " + (p.nombre || "")).toUpperCase()
+            }));
+            console.log(`📦 ${basePacientes.length} pacientes cargados desde datos estáticos (deploy)`);
+        }
+
+        // 4. Fusionar pacientes registrados manualmente
+        const nuevos = getPacientesNuevosLS();
+        if (nuevos.length > 0) {
+            const dnisBase = new Set(basePacientes.map(p => p.dni));
+            const sinDuplicar = nuevos.filter(n => !dnisBase.has(n.dni));
+            if (sinDuplicar.length > 0) {
+                basePacientes = [...basePacientes, ...sinDuplicar];
+                console.log(`👤 ${sinDuplicar.length} pacientes nuevos fusionados (${nuevos.length - sinDuplicar.length} ya estaban en el padrón)`);
+            }
+        }
+
+        if (basePacientes.length > 0) {
+            setDbPacientes(basePacientes);
+            setDbStatus('ready');
+            // Si no hay fecha de padrón en localStorage pero sí hay datos, 
+            // significa que los datos vienen del deploy (código fuente)
+            if (!localStorage.getItem('PADRON_DATE') && basePacientes.length > 0) {
+                const fechaDeploy = 'Datos precargados';
+                setPadronDate(fechaDeploy);
+            }
+        } else {
             setDbStatus('empty');
         }
     };
@@ -1478,6 +1544,9 @@ export default function App() {
         
         // Guardar Excel crudo en localStorage para persistir entre recargas
         saveExcelToLS(evt.target.result, 'master');
+        
+        // Limpiar pacientes nuevos locales (el nuevo padrón ya los incluye)
+        clearPacientesNuevosLS();
 
       } catch (err) {
         alert("❌ Error: " + err.message);
@@ -1620,6 +1689,9 @@ export default function App() {
             
             // Guardar Excel crudo en localStorage para persistir entre recargas
             saveExcelToLS(evt.target.result, 'pacientes');
+            
+            // Limpiar pacientes nuevos locales (el nuevo Excel ya los incluye)
+            clearPacientesNuevosLS();
                    
           } else if (type === 'cie10') {
             const procesados = rawData.slice(1).map(r => ({ CODIGO: r[0] ? String(r[0]).trim() : "", DESCRIPCION: r[1] ? String(r[1]).trim() : "", BUSQUEDA: (String(r[0]||"") + " " + String(r[1]||"")).toUpperCase() })).filter(d => d.CODIGO);
@@ -1806,7 +1878,8 @@ export default function App() {
 	      //condicion: furEncontrada ? 'GESTANTE' : '',
 	      condicion: '',
               // Si es APP, forzamos que parezca Continuador para evitar rojos
-              condEst: isActivityAPP ? "C" : (esContinuador ? "C" : "R"), 
+              // Si ya fue atendido previamente (guardado en localStorage), es Continuador
+              condEst: isActivityAPP ? "C" : (esContinuador || fuePreviamenteAtendido(p.dni) ? "C" : "R"), 
               condServ: '' 
           }));
           
@@ -1831,8 +1904,8 @@ export default function App() {
               fur: p.last_fur ? parseExcelDate(p.last_fur) : '', 
               estOrigen: adminData.establecimiento, 
               hc: "",                        
-              condEst: 'N',                   
-              condServ: 'N'                   
+              condEst: fuePreviamenteAtendido(p.dni) ? 'C' : 'N',                   
+              condServ: fuePreviamenteAtendido(p.dni) ? '' : 'N'                   
           }));
 
           setIsPatientDataLocked(false); 
@@ -2024,6 +2097,7 @@ const handleAdmin = (e) => {
       try {
           await idb.addPatient(nuevoPacienteBD);
           markAsContinuadorOnSave(nuevoPacienteBD); 
+          savePacienteNuevoLS(nuevoPacienteBD); // Persistir en localStorage
           setDbPacientes(prev => [...prev, nuevoPacienteBD]);
           
           setPatientData(prev => ({ 
@@ -2127,8 +2201,34 @@ const handleAdmin = (e) => {
       setTimeout(() => { if (dxBottomRef.current) { dxBottomRef.current.scrollIntoView({ behavior: 'smooth' }); } }, 100); 
   };
   const removeDx = (i) => setDiagnoses(diagnoses.filter((_, idx) => idx !== i));
+
+  // --- REGISTRO PERSISTENTE DE PACIENTES ATENDIDOS (localStorage) ---
+  const ATENDIDOS_KEY = 'HIS_PACIENTES_ATENDIDOS';
+  const marcarDniComoAtendido = (dni) => {
+      if (!dni) return;
+      try {
+          const stored = JSON.parse(localStorage.getItem(ATENDIDOS_KEY) || '{}');
+          stored[dni.trim()] = Date.now();
+          localStorage.setItem(ATENDIDOS_KEY, JSON.stringify(stored));
+      } catch (e) { /* silencioso */ }
+  };
+  const fuePreviamenteAtendido = (dni) => {
+      if (!dni) return false;
+      try {
+          const stored = JSON.parse(localStorage.getItem(ATENDIDOS_KEY) || '{}');
+          return !!stored[dni.trim()];
+      } catch (e) { return false; }
+  };
+
   const updateToContinuador = (idPaciente) => {
       if (!idPaciente) return;
+      
+      // Buscar el DNI del paciente para marcarlo en localStorage
+      const paciente = dbPacientes.find(p => p.id === idPaciente);
+      if (paciente && paciente.dni) {
+          marcarDniComoAtendido(paciente.dni);
+      }
+
       setDbPacientes(prev => prev.map(p => {
           if (p.id === idPaciente) {
               const nuevoHistorial = p.historialEst ? [...p.historialEst] : [];
@@ -2160,6 +2260,8 @@ const handleAdmin = (e) => {
   };
   const markAsContinuadorOnSave = (datosPaciente) => {
       if (!datosPaciente.id && !datosPaciente.dni) return;
+      // Persistir en localStorage para que sobreviva recargas
+      marcarDniComoAtendido(datosPaciente.dni);
       // CORRECCIÓN: Usar setDbPacientes en lugar de setAllPatients
       setDbPacientes(prevLista => prevLista.map(p => {
           if ((p.id && p.id === datosPaciente.id) || (p.dni && p.dni === datosPaciente.dni)) {
@@ -2690,7 +2792,9 @@ const handleAdmin = (e) => {
       // 3. Actualizamos estado de "Continuador" en base de datos local
       if (patientData.id) {
           updateToContinuador(patientData.id);
-      } 
+      }
+      // Siempre marcar por DNI también (para pacientes manuales sin id)
+      marcarDniComoAtendido(patientData.dni);
       
       // Limpieza del formulario visual
       setPatientData({ ...initialPatient, fecAtencion: patientData.fecAtencion, estAtencion: adminData.establecimiento, condEst: '', condServ: '' });
@@ -3709,108 +3813,166 @@ const handleAdmin = (e) => {
     );
   }
     if (!adminData.isConfigured) {
-    const cfgInputStyle = "w-full h-10 px-3 border-2 border-slate-200 rounded-xl bg-white text-slate-700 font-bold focus:border-slate-500 focus:ring-4 focus:ring-slate-100 outline-none transition-all shadow-sm text-sm hover:border-slate-300";
-    const cfgLabelStyle = "block text-xs font-bold text-slate-400 uppercase ml-2 mb-1";
+    const cfgInputStyle = "w-full h-10 px-3 border-2 border-slate-200 rounded-xl bg-white text-slate-700 font-bold focus:border-blue-400 focus:ring-4 focus:ring-blue-50 outline-none transition-all shadow-sm text-sm hover:border-slate-300";
+    const cfgLabelStyle = "block text-[10px] font-bold text-slate-400 uppercase ml-1 mb-0.5 tracking-wider";
+    
+    // Iniciales del profesional
+    const getInitials = (name) => {
+        if (!name) return '?';
+        const parts = name.split(' ').filter(Boolean);
+        if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+        return name[0].toUpperCase();
+    };
+
+    // Noticias del sistema
+    const NOTICIAS = [
+        { tipo: 'NUEVO', color: 'emerald', msg: 'Los valores históricos ahora parpadean para mejor visibilidad.' },
+        { tipo: 'MEJORA', color: 'blue', msg: 'Biblioteca Normativa: ahora se visualizan los PDFs dentro de la app.' },
+        { tipo: 'MEJORA', color: 'blue', msg: 'Pacientes atendidos como Nuevo/Reingresante serán auto-clasificados como Continuador en futuras atenciones.' },
+        { tipo: 'AVISO', color: 'amber', msg: 'Recuerda verificar el mes y turno antes de ingresar al sistema.' },
+        { tipo: 'TIP', color: 'violet', msg: 'Puedes buscar pacientes por DNI o por nombre en el buscador del Paso 1.' },
+    ];
+
     return (
-      <div className="min-h-screen w-full bg-[#f0f2f5] font-sans flex items-center justify-center p-4">
-        <div className="w-full max-w-5xl bg-white shadow-2xl rounded-[30px] overflow-hidden border border-slate-100 animate-in fade-in zoom-in duration-300 mx-auto">
-          <div className="bg-[#0F172A] px-10 py-6 flex justify-between items-end">
-            <div><h1 className="text-2xl font-bold text-white tracking-wide">REGISTRO HIS</h1><p className="text-slate-200 text-xs mt-1">Configuración de Sesión</p></div>
-                             <div className="flex gap-2">
-              <div className="relative group"><input type="file" id="filePac" className="hidden" onChange={(e) => handleFileUpload(e, 'pacientes')} /><label htmlFor="filePac" className={`cursor-pointer px-5 py-2.5 rounded-xl border ${dbPacientes.length ? 'bg-indigo-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-xs font-bold transition-all shadow-lg`}><Database size={16}/> {dbPacientes.length ?
-                `Pacientes (${dbPacientes.length})` : "Cargar Pacientes"}</label></div>
-              <div className="relative group"><input type="file" id="fileCie" className="hidden" onChange={(e) => handleFileUpload(e, 'cie10')} /><label htmlFor="fileCie" className={`cursor-pointer px-5 py-2.5 rounded-xl border ${dbCie10.length ?
-                'bg-esmerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-xs font-bold transition-all shadow-lg`}><FileSpreadsheet size={16}/> {dbCie10.length ?
-                `CIE_10 (${dbCie10.length})` : "Cargar CIE-10"}</label></div>
-              <div className="relative group"><input type="file" id="filePersonal" className="hidden" onChange={(e) => handleFileUpload(e, 'personal')} /><label htmlFor="filePersonal" className={`cursor-pointer px-5 py-2.5 rounded-xl border ${dbPersonal.length ?
-                'bg-esmerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-xs font-bold transition-all shadow-lg`}><Users size={16}/> {dbPersonal.length ?
-                `Personal` : "Cargar Personal"}</label></div>
+      <div className="min-h-screen w-full bg-gradient-to-br from-slate-100 via-slate-50 to-blue-50 font-sans flex items-center justify-center p-4">
+        <div className="w-full max-w-6xl animate-in fade-in zoom-in duration-500 mx-auto">
+          
+          {/* === CABECERA OSCURA CON BOTONES DE DATOS === */}
+          <div className="bg-[#0F172A] rounded-t-[2rem] px-8 py-5 flex flex-wrap justify-between items-center gap-4">
+            <div>
+              <h1 className="text-2xl font-black text-white tracking-tight">SMART HIS</h1>
+              <p className="text-slate-400 text-[11px] font-medium mt-0.5">Sistema de Registro de Atenciones</p>
+            </div>
+            <div className="flex flex-wrap gap-2 items-center">
+              <div className="relative group"><input type="file" id="filePac" className="hidden" onChange={(e) => handleFileUpload(e, 'pacientes')} /><label htmlFor="filePac" className={`cursor-pointer px-4 py-2 rounded-xl border ${dbPacientes.length ? 'bg-indigo-600 border-indigo-400 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-[11px] font-bold transition-all`}><Database size={14}/> {dbPacientes.length ? `Pacientes (${dbPacientes.length.toLocaleString()})` : "Cargar Pacientes"}</label></div>
+              <div className="relative group"><input type="file" id="fileCie" className="hidden" onChange={(e) => handleFileUpload(e, 'cie10')} /><label htmlFor="fileCie" className={`cursor-pointer px-4 py-2 rounded-xl border ${dbCie10.length ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-[11px] font-bold transition-all`}><FileSpreadsheet size={14}/> {dbCie10.length ? `CIE-10 (${dbCie10.length.toLocaleString()})` : "Cargar CIE-10"}</label></div>
+              <div className="relative group"><input type="file" id="filePersonal" className="hidden" onChange={(e) => handleFileUpload(e, 'personal')} /><label htmlFor="filePersonal" className={`cursor-pointer px-4 py-2 rounded-xl border ${dbPersonal.length ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'} flex items-center gap-2 text-[11px] font-bold transition-all`}><Users size={14}/> {dbPersonal.length ? `Personal` : "Cargar Personal"}</label></div>
               
-              
-                {/* --- ZONA DE CARGA MASIVA (PADRÓN GENERAL) --- */}
+              {/* Padrón y Descargar */}
               <div className="flex items-center gap-2 border-l border-slate-600 pl-3 ml-1">
-                  
-                  {/* BOTÓN 5: SOLO VISIBLE SI EL DNI COINCIDE CON EL TUYO */}
-                  {/* 👇👇👇 ¡PON TU DNI AQUÍ ABAJO! 👇👇👇 */}
-                  {DNIS_AUTORIZADOS.includes(adminData.dniResp) && (
-                      <div className={`relative group transition-all duration-300`}>
-                          <input type="file" id="fileMaster" className="hidden" accept=".xlsx, .xls" onChange={handleMasterPadronUpload} disabled={isProcessingMaster} />
-                          <label 
-                              htmlFor="fileMaster" 
-                              className={`cursor-pointer px-3 h-8 rounded-xl border flex items-center justify-center gap-2 text-[10px] font-bold transition-all shadow-lg whitespace-nowrap
-                                  ${isProcessingMaster 
-                                      ? 'bg-purple-800 border-purple-600 text-purple-200 animate-pulse cursor-wait' 
-                                      : 'bg-purple-600 border-purple-500 text-white hover:bg-purple-500 hover:scale-105 active:scale-95'
-                                  }`}
-                              style={{ minHeight: '50px', maxHeight: '32px' }}
-                          >
-                              {isProcessingMaster ? (
-                                  <>⏳ Procesando...</>
-                              ) : (
-                                  <>
-                                      <Database size={14} className="shrink-0"/> 
-                                      <span>CARGAR PADRÓN</span>
-                                  </>
-                              )}
-                          </label>
-                      </div>
-                  )}
-
-                  {/* BOTÓN 6: DESCARGAR (Visible para todos, muestra fecha) */}
-                  {/* BOTÓN 6: DESCARGAR (Espaciado mejorado) */}
-                  <button 
-                      onClick={handleExportPadron}
-                      className={`px-3 h-8 rounded-xl border flex items-center gap-2 transition-all shadow-lg whitespace-nowrap
-                          ${dbPacientes.length > 0 
-                              ? 'bg-emerald-600 border-emerald-500 text-white hover:bg-emerald-500 hover:scale-105' 
-                              : 'bg-slate-700 border-slate-600 text-slate-500 cursor-not-allowed'
-                          }`}
-                      disabled={!dbPacientes.length}
-                      title="Descargar base de datos actual"
-                      style={{ minHeight: '50px', maxHeight: '32px' }}
-                  >
-                      <Download size={14} className="shrink-0"/> 
-                      
-                      {/* --- AQUÍ ESTÁ EL AJUSTE VISUAL --- */}
-                      {/* Usamos 'gap-0.6' para separar y 'leading-none' para que no ocupen mucho alto */}
-                      <div className="flex flex-col items-start justify-center gap-0.6 leading-none">
-                          <span className="uppercase text-[10px] font-black tracking-wide">Descargar</span>
-                          {padronDate && <span className="text-[10px] opacity-90 font-medium text-emerald-100">{padronDate}</span>}
-                      </div>
-                  </button>
-
+                {DNIS_AUTORIZADOS.includes(adminData.dniResp) && (
+                  <div className="relative group">
+                    <input type="file" id="fileMaster" className="hidden" accept=".xlsx, .xls" onChange={handleMasterPadronUpload} disabled={isProcessingMaster} />
+                    <label htmlFor="fileMaster" className={`cursor-pointer px-3 py-2 rounded-xl border flex items-center gap-2 text-[10px] font-bold transition-all whitespace-nowrap ${isProcessingMaster ? 'bg-purple-800 border-purple-600 text-purple-200 animate-pulse cursor-wait' : 'bg-purple-600 border-purple-400 text-white hover:bg-purple-500'}`}>
+                      {isProcessingMaster ? <>⏳ Procesando...</> : <><Database size={13}/> CARGAR PADRÓN</>}
+                    </label>
+                  </div>
+                )}
+                <button onClick={handleExportPadron} className={`px-3 py-2 rounded-xl border flex items-center gap-2 transition-all whitespace-nowrap ${dbPacientes.length > 0 ? 'bg-emerald-600 border-emerald-400 text-white hover:bg-emerald-500' : 'bg-slate-700 border-slate-600 text-slate-500 cursor-not-allowed'}`} disabled={!dbPacientes.length}>
+                  <Download size={13}/>
+                  <div className="flex flex-col items-start leading-none">
+                    <span className="uppercase text-[10px] font-black">Descargar</span>
+                    {padronDate && <span className="text-[9px] opacity-80">{padronDate}</span>}
+                  </div>
+                </button>
               </div>
             </div>
           </div>
 
-          <div className="p-10 grid grid-cols-1 md:grid-cols-4 gap-6 bg-white">
-            <div className="flex flex-col gap-1"><label className={cfgLabelStyle}>Año</label><select name="anio" className={cfgInputStyle} value={adminData.anio} onChange={handleAdmin}><option>2025</option><option>2026</option></select></div>
-            <div className="flex flex-col gap-1"><label className={cfgLabelStyle}>Mes</label><select name="mes" className={cfgInputStyle} value={adminData.mes} onChange={handleAdmin}>{MESES.map(m=><option key={m}>{m}</option>)}</select></div>
-            <div className="md:col-span-2 flex flex-col gap-1"><label className={cfgLabelStyle}>Establecimiento</label><select name="establecimiento" className={cfgInputStyle} value={adminData.establecimiento} onChange={handleAdmin}>{ESTABLECIMIENTOS.map(e=><option key={e}>{e}</option>)}</select></div>
-            <div className="flex flex-col gap-1"><label className={cfgLabelStyle}>Turno</label><select name="turno" className={cfgInputStyle} value={adminData.turno} onChange={handleAdmin}><option>MAÑANA</option><option>TARDE</option><option>NOCHE</option></select></div>
-            <div className="flex flex-col gap-1"><label className={cfgLabelStyle}>UPS</label><select name="ups" className={cfgInputStyle} value={adminData.ups} onChange={handleAdmin}>{UPS_LIST.map(u=><option key={u}>{u}</option>)}</select></div>
-            
-            <div className="flex flex-col gap-1">
-                <label className={cfgLabelStyle}>DNI Responsable</label>
-                <input 
-                    name="dniResp" 
-                    className={cfgInputStyle + " bg-slate-200 text-slate-600 cursor-not-allowed border-slate-300 shadow-inner"} 
-                    value={adminData.dniResp} 
-                    readOnly={true} 
-                />
+          {/* === CUERPO: 2 COLUMNAS === */}
+          <div className="bg-white rounded-b-[2rem] shadow-2xl border border-slate-100 border-t-0 overflow-hidden">
+            <div className="flex flex-col lg:flex-row">
+
+              {/* --- COLUMNA IZQUIERDA: AVATAR + NOTICIAS --- */}
+              <div className="lg:w-[320px] bg-gradient-to-b from-slate-50 to-white p-8 border-r border-slate-100 flex flex-col items-center">
+                
+                {/* Avatar */}
+                <div className="relative mb-4">
+                  <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-xl shadow-blue-200/50 ring-4 ring-white">
+                    <span className="text-3xl font-black text-white tracking-tight">{getInitials(adminData.nombreResp)}</span>
+                  </div>
+                  <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center border-4 border-white shadow-sm">
+                    <CheckCircle size={14} className="text-white"/>
+                  </div>
+                </div>
+                
+                {/* Info del profesional */}
+                <h3 className="text-base font-black text-slate-800 text-center leading-tight">{adminData.nombreResp || 'SIN NOMBRE'}</h3>
+                <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full mt-2 uppercase tracking-wider">{adminData.ups || 'SIN UPS'}</span>
+                <span className="text-[10px] text-slate-400 font-medium mt-1">DNI: {adminData.dniResp || '---'}</span>
+
+                {/* Separador */}
+                <div className="w-full border-t border-slate-100 my-5"></div>
+
+                {/* Panel de Noticias */}
+                <div className="w-full">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                    <Siren size={12}/> NOVEDADES DEL SISTEMA
+                  </h4>
+                  <div className="space-y-2 max-h-[250px] overflow-y-auto no-scrollbar pr-1">
+                    {NOTICIAS.map((n, i) => (
+                      <div key={i} className="flex gap-2.5 p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors border border-slate-100 group">
+                        <span className={`shrink-0 text-[8px] font-black text-${n.color}-700 bg-${n.color}-100 px-1.5 py-0.5 rounded-md uppercase mt-0.5`}>{n.tipo}</span>
+                        <p className="text-[11px] text-slate-600 leading-snug font-medium">{n.msg}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Estadísticas rápidas */}
+                <div className="w-full border-t border-slate-100 mt-5 pt-4">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-indigo-50 rounded-xl p-2.5 text-center border border-indigo-100">
+                      <div className="text-lg font-black text-indigo-700">{dbPacientes.length > 0 ? (dbPacientes.length / 1000).toFixed(1) + 'K' : '0'}</div>
+                      <div className="text-[8px] font-bold text-indigo-400 uppercase">Pacientes</div>
+                    </div>
+                    <div className="bg-amber-50 rounded-xl p-2.5 text-center border border-amber-100">
+                      <div className="text-lg font-black text-amber-700">{savedPatients.length}</div>
+                      <div className="text-[8px] font-bold text-amber-400 uppercase">Lote Actual</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* --- COLUMNA DERECHA: FORMULARIO --- */}
+              <div className="flex-1 p-8 flex flex-col justify-between">
+                <div>
+                  <h2 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
+                    <Stethoscope size={16} className="text-blue-500"/> CONFIGURACIÓN DE SESIÓN
+                  </h2>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-4">
+                    {/* Fila 1 */}
+                    <div><label className={cfgLabelStyle}>Año</label><select name="anio" className={cfgInputStyle} value={adminData.anio} onChange={handleAdmin}><option>2025</option><option>2026</option><option>2027</option></select></div>
+                    <div><label className={cfgLabelStyle}>Mes</label><select name="mes" className={cfgInputStyle} value={adminData.mes} onChange={handleAdmin}>{MESES.map(m=><option key={m}>{m}</option>)}</select></div>
+                    <div className="col-span-2"><label className={cfgLabelStyle}>Establecimiento</label><select name="establecimiento" className={cfgInputStyle} value={adminData.establecimiento} onChange={handleAdmin}>{ESTABLECIMIENTOS.map(e=><option key={e}>{e}</option>)}</select></div>
+                    
+                    {/* Fila 2 */}
+                    <div><label className={cfgLabelStyle}>Turno</label><select name="turno" className={cfgInputStyle} value={adminData.turno} onChange={handleAdmin}><option>MAÑANA</option><option>TARDE</option><option>NOCHE</option></select></div>
+                    <div><label className={cfgLabelStyle}>UPS</label><select name="ups" className={cfgInputStyle} value={adminData.ups} onChange={handleAdmin}>{UPS_LIST.map(u=><option key={u}>{u}</option>)}</select></div>
+                    <div><label className={cfgLabelStyle}>DNI Responsable</label><input name="dniResp" className={cfgInputStyle + " bg-slate-100 cursor-not-allowed"} value={adminData.dniResp} readOnly /></div>
+                    <div><label className={cfgLabelStyle}>Nombre</label><input name="nombreResp" className={cfgInputStyle + " bg-slate-100 cursor-not-allowed uppercase text-xs"} value={adminData.nombreResp} readOnly /></div>
+                  </div>
+
+                  {/* Resumen visual de estado */}
+                  <div className="mt-6 p-4 rounded-2xl bg-gradient-to-r from-slate-50 to-blue-50 border border-slate-100">
+                    <div className="flex flex-wrap gap-3 items-center justify-center">
+                      {[
+                        { label: 'Base de Datos', ok: dbPacientes.length > 0, detail: dbPacientes.length > 0 ? `${dbPacientes.length.toLocaleString()} registros` : 'Sin cargar' },
+                        { label: 'CIE-10', ok: dbCie10.length > 0, detail: dbCie10.length > 0 ? `${dbCie10.length.toLocaleString()} códigos` : 'Sin cargar' },
+                        { label: 'Personal', ok: dbPersonal.length > 0, detail: dbPersonal.length > 0 ? 'Configurado' : 'Sin cargar' },
+                      ].map((item, i) => (
+                        <div key={i} className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-bold ${item.ok ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-400 border border-red-200'}`}>
+                          {item.ok ? <CheckCircle size={13}/> : <AlertTriangle size={13}/>}
+                          <span>{item.label}: {item.detail}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Botón ingresar */}
+                <div className="flex justify-end mt-8">
+                  <button 
+                    onClick={() => setAdminData({...adminData, isConfigured: true})} 
+                    className="group bg-[#0F172A] hover:bg-blue-700 text-white px-10 py-4 rounded-2xl shadow-xl font-black flex items-center gap-3 transition-all hover:scale-[1.03] hover:shadow-2xl text-sm tracking-wide"
+                  >
+                    INGRESAR AL SISTEMA 
+                    <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform"/>
+                  </button>
+                </div>
+              </div>
             </div>
-            <div className="md:col-span-2 flex flex-col gap-1">
-                <label className={cfgLabelStyle}>Nombre Responsable</label>
-                <input 
-                    name="nombreResp" 
-                    className={cfgInputStyle + " uppercase bg-slate-200 text-slate-600 cursor-not-allowed border-slate-300 shadow-inner"} 
-                    value={adminData.nombreResp} 
-                    readOnly={true} 
-                />
-            </div>
-          </div>
-          <div className="bg-slate-50 px-10 py-6 flex justify-end border-t border-slate-100">
-            <button onClick={() => setAdminData({...adminData, isConfigured: true})} className="bg-[#0F172A] hover:bg-slate-800 text-white px-8 py-3 rounded-xl shadow-xl font-bold flex items-center gap-3 transition-transform hover:scale-[1.02] text-sm">INGRESAR AL SISTEMA <ArrowRight size={18}/></button>
           </div>
         </div>
       </div>
@@ -4161,7 +4323,7 @@ const handleAdmin = (e) => {
           </div>
         ) : (
           /* VISTA FORMULARIO MODAL PRINCIPAL */
-          <div className="bg-white rounded-[30px] shadow-2xl border border-slate-200 overflow-hidden flex flex-col w-full max-w-[95%] h-[90vh] animate-in zoom-in-95 duration-200 ring-1 ring-black/5 m-auto">
+          <div className={`bg-white shadow-2xl border border-slate-200 overflow-hidden flex flex-col w-full animate-in zoom-in-95 duration-200 ring-1 ring-black/5 ${step === 4 ? 'max-w-full h-full' : 'max-w-[95%] h-[90vh] rounded-[30px] m-auto'}`}>
             {/* CABECERA DEL FORMULARIO */}
             <div className="flex border-b border-slate-100 bg-white px-6 shrink-0 justify-between items-center">
               <div className="flex-1 flex">
@@ -5230,73 +5392,68 @@ const handleAdmin = (e) => {
              </div>
           </div>
 
-          <div className="flex-1 overflow-auto p-8 flex justify-center bg-gray-200">
-            <div className="bg-white shadow-2xl w-full max-w-[1900px] min-h-[800px] p-8 border border-gray-300">
+          <div className="flex-1 overflow-auto bg-white">
+            <div className="w-full min-h-[800px] p-3">
                 
-                {/* TABLA: table-fixed es CLAVE para que respete los anchos */}
-                <table className="w-full border-collapse border border-black font-sans table-fixed">
+                {/* TABLA */}
+                <table className="w-full border-collapse border border-gray-500 font-sans rounded-2xl overflow-hidden" style={{tableLayout:'auto', borderRadius:'16px'}}>
                     
                     {/* DEFINICIÓN DE ANCHOS DE COLUMNA (Colgroup) */}
                     <colgroup>
-                        <col className="w-6" />  {/* DÍA */}
-                        <col className="w-16" /> {/* DNI */}
-                        <col className="w-48" /> {/* NOMBRES */}
-                        <col className="w-6" />  {/* FIN */}
-                        <col className="w-24" /> {/* DISTRITO */}
-                        <col className="w-6" />  {/* EDAD */}
-                        <col className="w-6" />  {/* SEXO */}
-                        <col className="w-8" />  {/* PESO (Muy angosto) */}
-                        <col className="w-8" />  {/* TALLA */}
-                        <col className="w-8" />  {/* P.C */}
-                        <col className="w-8" />  {/* P.AB */}
-                        <col className="w-6" />  {/* HB */}
-                        <col className="w-6" />  {/* EST */}
-                        <col className="w-6" />  {/* SER */}
-                        <col className="w-auto" /> {/* DIAGNÓSTICO (El resto del espacio) */}
-                        <col className="w-6" />  {/* TIPO */}
-                        <col className="w-8" />  {/* LAB 1 */}
-                        <col className="w-8" />  {/* LAB 2 */}
-                        <col className="w-8" />  {/* LAB 3 */}
-                        <col className="w-10" /> {/* CIE */}
+                        <col style={{width:'28px'}} />  {/* DÍA */}
+                        <col style={{width:'70px'}} />  {/* DNI */}
+                        <col style={{width:'200px'}} /> {/* NOMBRES */}
+                        <col style={{width:'24px'}} />  {/* FIN */}
+                        <col style={{width:'100px'}} /> {/* DISTRITO */}
+                        <col style={{width:'32px'}} />  {/* EDAD */}
+                        <col style={{width:'24px'}} />  {/* SEXO */}
+                        {/* ANTROPOMETRÍA: 4 columnas */}
+                        <col style={{width:'30px'}} />  {/* Label izq */}
+                        <col style={{width:'34px'}} />  {/* Valor izq */}
+                        <col style={{width:'30px'}} />  {/* Label der */}
+                        <col style={{width:'34px'}} />  {/* Valor der */}
+                        <col style={{width:'22px'}} />  {/* EST */}
+                        <col style={{width:'22px'}} />  {/* SER */}
+                        <col />                         {/* DIAGNÓSTICO (llena el resto) */}
+                        <col style={{width:'28px'}} />  {/* TIPO */}
+                        <col style={{width:'28px'}} />  {/* LAB 1 */}
+                        <col style={{width:'28px'}} />  {/* LAB 2 */}
+                        <col style={{width:'28px'}} />  {/* LAB 3 */}
+                        <col style={{width:'60px'}} />  {/* CIE */}
                     </colgroup>
 
                     <thead>
                         <tr className="bg-gray-100 text-gray-800 font-bold text-center uppercase text-[9px]">
-                            <th className="border border-black p-0 align-middle" rowSpan={2}>DÍA</th>
-                            <th className="border border-black p-0 align-middle" rowSpan={2}>DNI</th>
-                            <th className="border border-black p-0 align-middle" rowSpan={2}>PACIENTE</th>
-                            <th className="border border-black p-0 align-middle" rowSpan={2}>FIN</th>
-                            <th className="border border-black p-0 align-middle" rowSpan={2}>DISTRITO</th>
-                            <th className="border border-black p-0 align-middle" rowSpan={2}>EDAD</th>
-                            <th className="border border-black p-0 align-middle" rowSpan={2}>SEX</th>
+                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>DÍA</th>
+                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>DNI</th>
+                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>PACIENTE</th>
+                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>FIN</th>
+                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>DISTRITO</th>
+                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>EDAD</th>
+                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>SEX</th>
                             
-                            {/* CABECERA ANTROPOMETRÍA */}
-                            <th className="border border-black p-0 h-4 align-middle" colSpan={4}>ANTROPOMETRÍA</th>
+                            {/* CABECERA ANTROPOMETRÍA - fusionada con sub-cabecera */}
+                            <th className="border border-gray-500 p-0 align-middle" colSpan={4} rowSpan={2}>ANTROPOMETRÍA</th>
                             
-                            <th className="border border-black p-0 align-middle" rowSpan={2}>HB</th>
-                            <th className="border border-black p-0 align-middle" rowSpan={2}>EST</th>
-                            <th className="border border-black p-0 align-middle" rowSpan={2}>SER</th>
-                            <th className="border border-black p-1 align-middle text-[10px]" rowSpan={2}>DIAGNÓSTICO MOTIVO DE CONSULTA</th>
-                            <th className="border border-black p-0 align-middle" rowSpan={2}>TIPO</th>
-                            <th className="border border-black p-0 align-middle" colSpan={3}>LAB</th>
-                            <th className="border border-black p-0 align-middle" rowSpan={2}>CIE</th>
+                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>EST</th>
+                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>SER</th>
+                            <th className="border border-gray-500 p-1 align-middle text-[10px]" rowSpan={2}>DIAGNÓSTICO MOTIVO DE CONSULTA</th>
+                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>TIPO</th>
+                            <th className="border border-gray-500 p-0 align-middle" colSpan={3}>LAB</th>
+                            <th className="border border-gray-500 p-0 align-middle" rowSpan={2}>CIE</th>
                         </tr>
                         
-                        {/* SUB-CABECERAS MUY PEQUEÑAS (text-[7px]) PARA QUE QUEPAN */}
+                        {/* SUB-CABECERAS (solo LAB) */}
                         <tr className="bg-gray-50 text-gray-700 font-bold text-center uppercase text-[7px]">
-                            <th className="border border-black p-0 h-4 align-middle">PESO</th>
-                            <th className="border border-black p-0 h-4 align-middle">TALLA</th>
-                            <th className="border border-black p-0 h-4 align-middle">P.C.</th>
-                            <th className="border border-black p-0 h-4 align-middle">P.AB</th>
-                            <th className="border border-black p-0 h-4 align-middle">1</th>
-                            <th className="border border-black p-0 h-4 align-middle">2</th>
-                            <th className="border border-black p-0 h-4 align-middle">3</th>
+                            <th className="border border-gray-500 p-0 h-4 align-middle">1</th>
+                            <th className="border border-gray-500 p-0 h-4 align-middle">2</th>
+                            <th className="border border-gray-500 p-0 h-4 align-middle">3</th>
                         </tr>
                     </thead>
 
                     <tbody className="text-[10px]">
                         {consolidatedPatients.length === 0 ? (
-                             <tr><td colSpan={20} className="text-center p-10 font-bold text-gray-400 border border-black">SIN DATOS</td></tr>
+                             <tr><td colSpan={19} className="text-center p-10 font-bold text-gray-400 border border-gray-500">SIN DATOS</td></tr>
                         ) : (
                             consolidatedPatients.map((rec, idx) => {
                                 const p = rec.patient;
@@ -5312,86 +5469,80 @@ const handleAdmin = (e) => {
                                 return blocks.map((block, blockIdx) => (
                                     <React.Fragment key={`${idx}-${blockIdx}`}>
                                         
-                                        {/* FILA 1 */}
+                                        {/* FILA 1: Talla + P.C. */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
-                                            <td className="border border-black text-center font-bold align-middle bg-white" rowSpan={3}>{(p.fecAtencion || "").split('-')[2]}</td>
-                                            <td className="border border-black text-center font-bold align-middle bg-white text-[9px]" rowSpan={3}>{p.dni}</td>
+                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white" rowSpan={3}>{(p.fecAtencion || "").split('-')[2]}</td>
+                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white text-[9px]" rowSpan={3}>{p.dni}</td>
                                             {/* --- CELDA DE PACIENTE CON BOTONES DE EDICIÓN FLOTANTES --- */}
-                                            <td className="border border-black px-1 align-middle font-bold bg-white uppercase text-[9px] relative group/row hover:bg-slate-50 transition-colors" rowSpan={3}>
+                                            <td className="border border-gray-500 px-1 align-middle font-bold bg-white uppercase text-[9px] relative group/row hover:bg-slate-50 transition-colors" rowSpan={3}>
                                                 <div className="w-full h-full relative flex items-center justify-between gap-1">
                                                     <span className="truncate w-full block" title={p.paciente}>{p.paciente || "(SIN NOMBRE)"}</span>
                                                     
-                                                    {/* Contenedor de Botones (Oculto en PC hasta hacer hover, siempre visible en pantallas táctiles) */}
+                                                    {/* Contenedor de Botones */}
                                                     <div className="flex flex-col gap-1 absolute right-0 top-1/2 -translate-y-1/2 opacity-100 lg:opacity-0 lg:group-hover/row:opacity-100 transition-opacity bg-white/90 p-1 rounded-l-md shadow-sm border border-r-0 border-slate-200 z-10">
-                                                        <button 
-                                                            onClick={() => handleEditPatient(idx)} 
-                                                            className="bg-blue-100 text-blue-700 hover:bg-blue-600 hover:text-white p-1 rounded transition-colors" 
-                                                            title="Editar toda la información del paciente"
-                                                        >
-                                                            <Edit size={12}/>
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => handleDeletePatient(idx)} 
-                                                            className="bg-red-100 text-red-700 hover:bg-red-600 hover:text-white p-1 rounded transition-colors" 
-                                                            title="Eliminar registro"
-                                                        >
-                                                            <Trash2 size={12}/>
-                                                        </button>
+                                                        <button onClick={() => handleEditPatient(idx)} className="bg-blue-100 text-blue-700 hover:bg-blue-600 hover:text-white p-1 rounded transition-colors" title="Editar"><Edit size={12}/></button>
+                                                        <button onClick={() => handleDeletePatient(idx)} className="bg-red-100 text-red-700 hover:bg-red-600 hover:text-white p-1 rounded transition-colors" title="Eliminar"><Trash2 size={12}/></button>
                                                     </div>
                                                 </div>
                                             </td>
-                                            {/* -------------------------------------------------------- */}
-                                            <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.financiador === 'SIS' ? '2' : '1'}</td>
-                                            <td className="border border-black px-1 align-middle text-[8px] bg-white truncate" rowSpan={3} title={p.distrito}>{p.distrito}</td>
-                                            <td className="border border-black text-center font-bold align-middle bg-white" rowSpan={3}>{a.y > 0 ? a.y : a.m > 0 ? a.m + 'm' : a.d + 'd'}</td>
-                                            <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.sexo}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.financiador === 'SIS' ? '2' : '1'}</td>
+                                            <td className="border border-gray-500 px-1 align-middle text-[8px] bg-white truncate" rowSpan={3} title={p.distrito}>{p.distrito}</td>
+                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white" rowSpan={3}>{a.y > 0 ? a.y : a.m > 0 ? a.m + 'm' : a.d + 'd'}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.sexo}</td>
                                             
-                                            {/* ANTROPOMETRÍA (SOLO NÚMEROS PEQUEÑOS) */}
-                                            <td className="border border-black text-center align-middle bg-white font-mono text-[9px]" rowSpan={3}>{c.peso}</td>
-                                            <td className="border border-black text-center align-middle bg-white font-mono text-[9px]" rowSpan={3}>{c.talla}</td>
-                                            <td className="border border-black text-center align-middle bg-white font-mono text-[9px]" rowSpan={3}>{c.pCef}</td>
-                                            <td className="border border-black text-center align-middle bg-white font-mono text-[9px]" rowSpan={3}>{c.pAbd}</td>
+                                            {/* ANTROPOMETRÍA FILA 1: Talla | valor | P.C. | valor */}
+                                            <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">Talla</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.talla}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.C.</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.pCef}</td>
                                             
-                                            <td className="border border-black text-center font-bold align-middle bg-white" rowSpan={3}>{c.hb}</td>
-                                            <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.condEst}</td>
-                                            <td className="border border-black text-center align-middle bg-white" rowSpan={3}>{p.condServ}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.condEst}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.condServ}</td>
 
                                             {/* DIAGNÓSTICO 1 (EXPANDIDO) */}
-                                            <td className="border border-black px-1 align-middle uppercase text-[9px] truncate">{block[0].desc}</td>
-                                            <td className="border border-black text-center font-bold align-middle">{block[0].tipo}</td>
-                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[0].lab1}</td>
-                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[0].lab2}</td>
-                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[0].lab3}</td>
-                                            <td className="border border-black text-center font-bold align-middle text-[9px]">{block[0].codigo}</td>
+                                            <td className="border border-gray-500 px-1 align-middle uppercase text-[9px] truncate">{block[0].desc}</td>
+                                            <td className="border border-gray-500 text-center font-bold align-middle">{block[0].tipo}</td>
+                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[0].lab1}</td>
+                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[0].lab2}</td>
+                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[0].lab3}</td>
+                                            <td className="border border-gray-500 text-center font-bold align-middle text-[9px]">{block[0].codigo}</td>
                                         </tr>
 
-                                        {/* FILA 2 */}
+                                        {/* FILA 2: Peso + P.Abd */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
-                                            <td className="border border-black px-1 align-middle uppercase text-[9px] truncate">{block[1].desc}</td>
-                                            <td className="border border-black text-center font-bold align-middle">{block[1].tipo}</td>
-                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[1].lab1}</td>
-                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[1].lab2}</td>
-                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[1].lab3}</td>
-                                            <td className="border border-black text-center font-bold align-middle text-[9px]">{block[1].codigo}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">Peso</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.peso}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.Abd</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.pAbd}</td>
+                                            <td className="border border-gray-500 px-1 align-middle uppercase text-[9px] truncate">{block[1].desc}</td>
+                                            <td className="border border-gray-500 text-center font-bold align-middle">{block[1].tipo}</td>
+                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[1].lab1}</td>
+                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[1].lab2}</td>
+                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[1].lab3}</td>
+                                            <td className="border border-gray-500 text-center font-bold align-middle text-[9px]">{block[1].codigo}</td>
                                         </tr>
 
-                                        {/* FILA 3 */}
+                                        {/* FILA 3: HB + P.Preg */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
-                                            <td className="border border-black px-1 align-middle uppercase text-[9px] truncate">{block[2].desc}</td>
-                                            <td className="border border-black text-center font-bold align-middle">{block[2].tipo}</td>
-                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[2].lab1}</td>
-                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[2].lab2}</td>
-                                            <td className="border border-black text-center align-middle font-mono text-[9px]">{block[2].lab3}</td>
-                                            <td className="border border-black text-center font-bold align-middle text-[9px]">{block[2].codigo}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">HB</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.hb}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.Preg</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.pPreGest}</td>
+                                            <td className="border border-gray-500 px-1 align-middle uppercase text-[9px] truncate">{block[2].desc}</td>
+                                            <td className="border border-gray-500 text-center font-bold align-middle">{block[2].tipo}</td>
+                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[2].lab1}</td>
+                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[2].lab2}</td>
+                                            <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[2].lab3}</td>
+                                            <td className="border border-gray-500 text-center font-bold align-middle text-[9px]">{block[2].codigo}</td>
                                         </tr>
                                         
-                                        <tr className="h-[2px] bg-black"><td colSpan={20} className="bg-black p-0 border-0"></td></tr>
+                                        <tr className="h-[2px] bg-gray-500"><td colSpan={19} className="bg-gray-500 p-0 border-0"></td></tr>
                                     </React.Fragment>
                                 ));
                             })
                         )}
                         {consolidatedPatients.length < 5 && Array.from({length: 3}).map((_, i) => (
-                             <tr key={`filler-${i}`}><td className="border border-black h-16" colSpan={7}></td><td className="border border-black" colSpan={4}></td><td className="border border-black" colSpan={3}></td><td className="border border-black" colSpan={6}></td></tr>
+                             <tr key={`filler-${i}`}><td className="border border-gray-500 h-16" colSpan={7}></td><td className="border border-gray-500" colSpan={4}></td><td className="border border-gray-500" colSpan={3}></td><td className="border border-gray-500" colSpan={6}></td></tr>
                         ))}
                     </tbody>
                 </table>
