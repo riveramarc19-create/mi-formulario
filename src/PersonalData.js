@@ -13,7 +13,7 @@ export const PERSONAL_LIST = [
 { dni: "76307612", nombre: "CASTILLO CAUCHA LUDUVINDA", password: "LIAM20", ups: "OBSTETRICIA", establecimiento: "P.S I-1 LAGUNAS DE SAN PABLO"}, //200 EL 02/02/2026 (E,M)
 { dni: "48014885", nombre: "PARDO ANCAJIMA YEFRI EDINSON", password: "Ypardo0804", ups: "OBSTETRICIA", establecimiento: "E.S I-4 PACAIPAMPA"},//100 EL 02/02/26(E)
 { dni: "48245394", nombre: "CHAVEZ HUAMAN ARACELLY", password: "ARAX26", ups: "ENFERMERIA", establecimiento: "E.S I-4 PACAIPAMPA"}, //100 EL 03/02/2026 (M)
-
+{ dni: "42512318", nombre: "ALVARADO FLORES FRANKLIN", password: "F2026", ups: "ENFERMERIA", establecimiento: "E.S I-4 PACAIPAMPA"},
 { dni: "02860100", nombre: "CORDOVA MAZA ENOE", password: "1234", ups: "ENFERMERIA", establecimiento: "P.S I-2 EL PUERTO"},
 { dni: "123", nombre: "MARCO", password: "012", ups: "ENFERMERIA", establecimiento: "E.S I-4 PACAIPAMPA"},
 
