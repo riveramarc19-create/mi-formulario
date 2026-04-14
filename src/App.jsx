@@ -917,7 +917,13 @@ const LAB_CONFIG = {
          1: { label: ['N°'] , options: ['1','2','']}
             },
 '99404.01': {
-         1: { label: ['N°'] , options: ['HA','']}
+         1: { label: ['N°'] , options: ['HA','VR','']}
+            },
+'99199.58': {
+         1: { label: ['N°'] , options: ['1','2','']}
+            },
+'U266': {
+         1: { label: ['N°'] , options: ['RN','RP','']}
             },
 '86318.01': { 
         1: { label: 'R.VIH', options: ['RN','RP'] }, 
