@@ -839,7 +839,7 @@ const LAB_CONFIG = {
          1: { label: ['TIPO'] , options: ['G', '']}
             },
 '99402.05': {
-         1: { label: ['N°'] , options: ['1','2']}
+         1: { label: ['N°'] , options: ['1','2','']}
             },
 '99401.02': {
          1: { label: ['N°'] , options: ['1','2','3']}
@@ -910,6 +910,10 @@ const LAB_CONFIG = {
          1: { label: ['N°'] , options: ['1','2','']}
             },
     '99401.34': {
+         1: { label: ['N°'] , options: ['1','2','']}
+            },
+
+'99401.24': {
          1: { label: ['N°'] , options: ['1','2','']}
             },
 '86318.01': { 
