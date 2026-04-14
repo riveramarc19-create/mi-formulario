@@ -916,6 +916,9 @@ const LAB_CONFIG = {
 '99401.24': {
          1: { label: ['N°'] , options: ['1','2','']}
             },
+'99404.01': {
+         1: { label: ['N°'] , options: ['HA','']}
+            },
 '86318.01': { 
         1: { label: 'R.VIH', options: ['RN','RP'] }, 
         2: { label: 'R.SIFILIS', options: ['RN','RP'] } // 'SEM' es mejor para el espacio pequeño
