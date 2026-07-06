@@ -317,40 +317,6 @@ const idb = {
   }
 };
 
-// --- FECHA DE REFERENCIA PARA CÁLCULO DE EDAD (SEGÚN CONFIGURACIÓN) ---
-// La edad del paciente se calcula en función del MES y AÑO seleccionados
-// en la ventana "CONFIGURACIÓN DE SESIÓN", no solo de la fecha de atención.
-const MESES_NOMBRES = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SETIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
-
-const getFechaReferenciaEdad = (anioConfig, mesConfig, fecAtencion) => {
-    // 1. Resolver índice del mes configurado (acepta SETIEMBRE/SEPTIEMBRE)
-    const mesNormalizado = (mesConfig || '').toUpperCase().replace('SEPTIEMBRE', 'SETIEMBRE').trim();
-    let mesIndex = MESES_NOMBRES.indexOf(mesNormalizado);
-    const anio = parseInt(anioConfig, 10);
-
-    // Si la configuración es inválida, usar la fecha de atención (comportamiento anterior)
-    if (mesIndex === -1 || isNaN(anio)) return fecAtencion || '';
-
-    // 2. Si la fecha de atención existe y pertenece al mes/año configurado,
-    //    se usa tal cual (cálculo exacto al día de la atención).
-    if (fecAtencion) {
-        const [aY, aM, aD] = fecAtencion.split('-').map(Number);
-        if (aY === anio && (aM - 1) === mesIndex) return fecAtencion;
-        // 3. Si NO coincide, se "ancla" al mes configurado conservando el día
-        //    de la atención (ajustado si el mes tiene menos días).
-        const diasDelMes = new Date(anio, mesIndex + 1, 0).getDate();
-        const dia = Math.min(aD || 1, diasDelMes);
-        return `${anio}-${String(mesIndex + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
-    }
-
-    // 4. Sin fecha de atención: se usa el día actual dentro del mes configurado
-    //    (o el último día del mes si hoy excede su cantidad de días).
-    const hoy = new Date();
-    const diasDelMes = new Date(anio, mesIndex + 1, 0).getDate();
-    const dia = Math.min(hoy.getDate(), diasDelMes);
-    return `${anio}-${String(mesIndex + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
-};
-
 const getAgeComponents = (birthDate, attnDate) => {
     if (!birthDate || !attnDate) return { y: '', m: '', d: '' };
     const birth = new Date(birthDate);
@@ -1333,18 +1299,13 @@ export default function App() {
       }
   });
   const [showNewBtn, setShowNewBtn] = useState(false);
-  // CAMBIO: La edad se calcula según el MES/AÑO de la ventana CONFIGURACIÓN + F. Nacimiento
-  const fechaRefEdad = useMemo(() => {
-      return getFechaReferenciaEdad(adminData.anio, adminData.mes, patientData.fecAtencion);
-  }, [adminData.anio, adminData.mes, patientData.fecAtencion]);
-
   // CAMBIO: Formato de edad extendido
   const ageString = useMemo(() => { 
-      const { y, m, d } = getAgeComponents(patientData.fecNac, fechaRefEdad); 
+      const { y, m, d } = getAgeComponents(patientData.fecNac, patientData.fecAtencion); 
       if (typeof y !== 'number') return "-";
       return `${y} AÑOS, ${m} MESES, ${d} DÍAS`; 
-  }, [patientData.fecNac, fechaRefEdad]);
-  const ageObj = useMemo(() => { return getAgeComponents(patientData.fecNac, fechaRefEdad); }, [patientData.fecNac, fechaRefEdad]);
+  }, [patientData.fecNac, patientData.fecAtencion]);
+  const ageObj = useMemo(() => { return getAgeComponents(patientData.fecNac, patientData.fecAtencion); }, [patientData.fecNac, patientData.fecAtencion]);
   const ageInMonths = useMemo(() => { if (typeof ageObj.y === 'number' && typeof ageObj.m === 'number') { return (ageObj.y * 12) + ageObj.m; } return ''; }, [ageObj]);
   const initialClinical = { peso: '', talla: '', pAbd: '', pCef: '', imc: '', hb: '', dosaje: '', estNut: '', nivHb: '', riesgo: ' ', pPreGest: '' };
   const [clinicalData, setClinicalData] = useState(initialClinical);
@@ -1873,8 +1834,8 @@ export default function App() {
       setSearchTerm(p.nombre || "");
       const safeFecNac = parseExcelDate(p.fecNac);
       
-      // Alerta Adolescente (edad según mes/año de Configuración)
-      const currentAgeObj = getAgeComponents(safeFecNac, fechaRefEdad);
+      // Alerta Adolescente
+      const currentAgeObj = getAgeComponents(safeFecNac, patientData.fecAtencion);
       if (currentAgeObj.y >= 12 && currentAgeObj.y <= 17) {
           setShowAdolescentModal(true);
       }
@@ -2096,8 +2057,8 @@ const handleAdmin = (e) => {
               return; // DETIENE EL CAMBIO (El select no cambiará)
           }
 
-          // 2. REGLA DE EDAD FÉRTIL (Aproximada 10-55 años) — edad según mes/año de Configuración
-          const currentAge = getAgeComponents(patientData.fecNac, fechaRefEdad).y;
+          // 2. REGLA DE EDAD FÉRTIL (Aproximada 10-55 años)
+          const currentAge = getAgeComponents(patientData.fecNac, patientData.fecAtencion).y;
           if (currentAge < 10 || currentAge > 55) {
                alert(`⚠️ ALERTA DE EDAD\n\nLa paciente tiene ${currentAge} años.\nVerifique si realmente corresponde la condición de ${value}.`);
                // Aquí no hacemos return, solo avisamos, por si es un caso excepcional.
@@ -4965,12 +4926,12 @@ const handleAdmin = (e) => {
 
                                     {/* EDAD EN SU PROPIO INPUT */}
                                     <div className="relative group">
-                                        <label className="text-[9px] font-extrabold text-blue-500 uppercase block mb-0.5 ml-1">Edad ({adminData.mes} {adminData.anio})</label>
+                                        <label className="text-[9px] font-extrabold text-blue-500 uppercase block mb-0.5 ml-1">Edad Actual</label>
                                         <input 
                                             value={ageString} 
                                             readOnly 
                                             className="w-full bg-white h-9 rounded-lg border-2 border-blue-200 px-2 font-bold text-blue-900 outline-none text-[10px] shadow-sm truncate"
-                                            title={`${ageString} — Calculada según el mes configurado: ${adminData.mes} ${adminData.anio}`}
+                                            title={ageString}
                                         />
                                     </div>
 
@@ -6030,7 +5991,7 @@ const handleAdmin = (e) => {
       )}
 
       {/* --- OTROS MODALES --- */}
-      <AnemiaCalculatorModal isOpen={showAnemiaModal} onClose={() => setShowAnemiaModal(false)} initialData={{ fecNac: patientData.fecNac, fecAtencion: fechaRefEdad }} />
+      <AnemiaCalculatorModal isOpen={showAnemiaModal} onClose={() => setShowAnemiaModal(false)} initialData={{ fecNac: patientData.fecNac, fecAtencion: patientData.fecAtencion }} />
       <NutritionalStatusModal isOpen={showNutriModal} onClose={() => setShowNutriModal(false)} />
       <CredFollowUpModal isOpen={showCredModal} onClose={() => setShowCredModal(false)} />
       
