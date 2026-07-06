@@ -365,9 +365,14 @@ const getAgeComponents = (birthDate, attnDate) => {
 };
 
 // --- COMPONENTE CALENDARIO ---
-const SimpleCalendar = ({ selectedDate, onSelectDate, onClose, themeColor }) => {
+// Si se pasan lockYear/lockMonthIndex, el calendario queda ANCLADO a ese mes:
+// no se puede navegar a otros meses ni elegir fechas fuera del periodo configurado.
+const SimpleCalendar = ({ selectedDate, onSelectDate, onClose, themeColor, lockYear = null, lockMonthIndex = null }) => {
   const today = new Date();
-  const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const isLocked = lockYear !== null && lockMonthIndex !== null;
+  const [currentMonth, setCurrentMonth] = useState(
+      isLocked ? new Date(lockYear, lockMonthIndex, 1) : new Date(today.getFullYear(), today.getMonth(), 1)
+  );
   const year = currentMonth.getFullYear();
   const monthIndex = currentMonth.getMonth();
   const monthName = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"][monthIndex];
@@ -379,8 +384,8 @@ const SimpleCalendar = ({ selectedDate, onSelectDate, onClose, themeColor }) => 
     for (let i = 1; i <= daysInMonth; i++) days.push(i);
     return days;
   }, [year, monthIndex, daysInMonth, firstDayOfMonth]);
-  const handlePrevMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
-  const handleNextMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+  const handlePrevMonth = () => { if (!isLocked) setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1)); };
+  const handleNextMonth = () => { if (!isLocked) setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1)); };
   const handleDayClick = (day) => { if (day) { const date = new Date(year, monthIndex, day); const offset = date.getTimezoneOffset();
   const safeDate = new Date(date.getTime() - (offset*60*1000)); onSelectDate(safeDate.toISOString().split('T')[0]); onClose(); } };
   const selectedDateStr = selectedDate || today.toISOString().split('T')[0];
@@ -391,8 +396,10 @@ const SimpleCalendar = ({ selectedDate, onSelectDate, onClose, themeColor }) => 
   return (
     <div className="w-full max-w-xs mx-auto">
       <div className="p-4 bg-white rounded-xl shadow-2xl border border-slate-100 w-full animate-in zoom-in duration-300">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-2 mb-3 text-center animate-pulse"><span className="text-red-600 font-extrabold text-xs uppercase block">⚠️ Seleccione Fecha de Atención</span></div>
-        <div className="flex justify-between items-center mb-4"><button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-slate-100 text-slate-500"><ArrowLeft size={16} /></button><h4 className="font-bold text-slate-800 text-base">{monthName} {year}</h4><button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-slate-100 text-slate-500"><ArrowRight size={16} /></button></div>
+        {isLocked 
+            ? <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 mb-3 text-center"><span className="text-blue-700 font-extrabold text-xs uppercase block">🔒 Solo fechas de {monthName} {year}</span><span className="text-blue-400 font-bold text-[9px] uppercase block">Mes definido en Configuración</span></div>
+            : <div className="bg-red-50 border border-red-200 rounded-lg p-2 mb-3 text-center animate-pulse"><span className="text-red-600 font-extrabold text-xs uppercase block">⚠️ Seleccione Fecha de Atención</span></div>}
+        <div className="flex justify-between items-center mb-4"><button onClick={handlePrevMonth} disabled={isLocked} className={`p-2 rounded-full ${isLocked ? 'text-slate-200 cursor-not-allowed' : 'hover:bg-slate-100 text-slate-500'}`}><ArrowLeft size={16} /></button><h4 className="font-bold text-slate-800 text-base flex items-center gap-1.5">{isLocked && <Lock size={13} className="text-blue-500"/>}{monthName} {year}</h4><button onClick={handleNextMonth} disabled={isLocked} className={`p-2 rounded-full ${isLocked ? 'text-slate-200 cursor-not-allowed' : 'hover:bg-slate-100 text-slate-500'}`}><ArrowRight size={16} /></button></div>
         <div className="grid grid-cols-7 gap-1 text-center text-xs font-bold text-slate-400 mb-2"><div>L</div><div>M</div><div>M</div><div>J</div><div>V</div><div>S</div><div>D</div></div>
         <div className="grid grid-cols-7 gap-1">{calendarDays.map((day, index) => (<div key={index} className="aspect-square">{day ?
         (<button onClick={() => handleDayClick(day)} className={`w-full h-full rounded-full flex items-center justify-center text-sm font-medium transition-all ${isDaySelected(day) ? primaryColorClass + ' shadow-md' : isDayToday(day) ? todayColorClass + ' border-2' : 'text-slate-700 hover:bg-slate-100'}`}>{day}</button>) : <div />}</div>))}</div>
@@ -1314,7 +1321,10 @@ export default function App() {
   const [hbAdjusted, setHbAdjusted] = useState(null);
   const [isPremature, setIsPremature] = useState(false);
 
-  const [adminData, setAdminData] = useState({ anio: '2026', mes: 'MAYO', establecimiento: '', turno: 'MAÑANA', ups: 'MEDICINA', dniResp: '', nombreResp: '', isConfigured: false });
+  // BLINDAJE: El MES inicia VACÍO — el usuario debe seleccionarlo obligatoriamente.
+  // El resto de campos (establecimiento, turno, UPS, responsable) mantienen sus valores por defecto.
+  const [adminData, setAdminData] = useState({ anio: '2026', mes: '', establecimiento: '', turno: 'MAÑANA', ups: 'MEDICINA', dniResp: '', nombreResp: '', isConfigured: false });
+  const [showConfigConfirm, setShowConfigConfirm] = useState(false); // Modal de confirmación de mes al ingresar
   const [printCount, setPrintCount] = useState(() => {
       const saved = localStorage.getItem('his_print_count');
       return saved ? parseInt(saved, 10) : 0;
@@ -1544,6 +1554,17 @@ export default function App() {
   }, [clinicalData.peso, clinicalData.talla, ageObj.y]);
   //useEffect(() => { if (patientData.condicion !== 'GESTANTE') setPatientData(prev => ({...prev, fur: ''})); }, [patientData.condicion]);
   useEffect(() => { if (adminData.isConfigured) setPatientData(prev => ({...prev, estAtencion: adminData.establecimiento})); }, [adminData.isConfigured, adminData.establecimiento]);
+  // BLINDAJE: Si se reconfigura el MES y la fecha de atención vigente ya no pertenece a él,
+  // se limpia para obligar a seleccionar una fecha válida dentro del nuevo periodo.
+  useEffect(() => {
+      if (!adminData.isConfigured || !patientData.fecAtencion || !adminData.mes) return;
+      const [fy, fm] = patientData.fecAtencion.split('-').map(Number);
+      const mesIdx = MESES.indexOf(adminData.mes);
+      if (mesIdx === -1) return;
+      if (fy !== parseInt(adminData.anio, 10) || (fm - 1) !== mesIdx) {
+          setPatientData(prev => ({ ...prev, fecAtencion: '' }));
+      }
+  }, [adminData.isConfigured, adminData.mes, adminData.anio]);
   useEffect(() => { setAnemiaResult(""); setAnemiaColor("bg-slate-200 text-slate-500"); setHbAdjusted(null); }, [patientData.dni]);
     // --- NUEVA LÓGICA PROACTIVA: DETECTAR GESTANTE POR FUR ---
  // --- NUEVA LÓGICA PROACTIVA: DETECTAR GESTANTE POR FUR (CORREGIDO) ---
@@ -4084,7 +4105,20 @@ const handleAdmin = (e) => {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-4">
                     {/* Fila 1 */}
                     <div><label className={cfgLabelStyle}>Año</label><select name="anio" className={cfgInputStyle} value={adminData.anio} onChange={handleAdmin}><option>2025</option><option>2026</option><option>2027</option></select></div>
-                    <div><label className={cfgLabelStyle}>Mes</label><select name="mes" className={cfgInputStyle} value={adminData.mes} onChange={handleAdmin}>{MESES.map(m=><option key={m}>{m}</option>)}</select></div>
+                    <div>
+                        <label className={adminData.mes ? cfgLabelStyle : cfgLabelStyle.replace('text-slate-400', 'text-red-500') + ' animate-pulse'}>Mes {!adminData.mes && '⚠ OBLIGATORIO'}</label>
+                        <select 
+                            name="mes" 
+                            className={adminData.mes 
+                                ? cfgInputStyle.replace('border-slate-200', 'border-emerald-400').replace('bg-white', 'bg-emerald-50') 
+                                : cfgInputStyle.replace('border-slate-200', 'border-red-400').replace('bg-white', 'bg-red-50') + ' animate-pulse text-red-600'} 
+                            value={adminData.mes} 
+                            onChange={handleAdmin}
+                        >
+                            <option value="" disabled>— SELECCIONE MES —</option>
+                            {MESES.map(m=><option key={m} value={m}>{m}</option>)}
+                        </select>
+                    </div>
                     <div className="col-span-2"><label className={cfgLabelStyle}>Establecimiento</label><select name="establecimiento" className={cfgInputStyle} value={adminData.establecimiento} onChange={handleAdmin}>{ESTABLECIMIENTOS.map(e=><option key={e}>{e}</option>)}</select></div>
                     
                     {/* Fila 2 */}
@@ -4098,6 +4132,7 @@ const handleAdmin = (e) => {
                   <div className="mt-6 p-4 rounded-2xl bg-gradient-to-r from-slate-50 to-blue-50 border border-slate-100">
                     <div className="flex flex-wrap gap-3 items-center justify-center">
                       {[
+                        { label: 'Mes de Digitación', ok: !!adminData.mes, detail: adminData.mes ? `${adminData.mes} ${adminData.anio}` : '⚠ SELECCIONE EL MES' },
                         { label: 'Base de Datos', ok: dbPacientes.length > 0, detail: dbPacientes.length > 0 ? `${dbPacientes.length.toLocaleString()} registros` : 'Sin cargar' },
                         { label: 'CIE-10', ok: dbCie10.length > 0, detail: dbCie10.length > 0 ? `${dbCie10.length.toLocaleString()} códigos` : 'Sin cargar' },
                         { label: 'Personal', ok: dbPersonal.length > 0, detail: dbPersonal.length > 0 ? 'Configurado' : 'Sin cargar' },
@@ -4111,16 +4146,53 @@ const handleAdmin = (e) => {
                   </div>
                 </div>
 
-                {/* Botón ingresar */}
-                <div className="flex justify-end mt-8">
+                {/* Botón ingresar — BLOQUEADO hasta seleccionar el MES */}
+                <div className="flex flex-col items-end mt-8 gap-2">
+                  {!adminData.mes && (
+                    <span className="text-[11px] font-bold text-red-500 flex items-center gap-1.5 animate-pulse">
+                        <AlertTriangle size={13}/> Debe seleccionar el MES de digitación para poder ingresar
+                    </span>
+                  )}
                   <button 
-                    onClick={() => setAdminData({...adminData, isConfigured: true})} 
-                    className="group bg-[#0F172A] hover:bg-blue-700 text-white px-10 py-4 rounded-2xl shadow-xl font-black flex items-center gap-3 transition-all hover:scale-[1.03] hover:shadow-2xl text-sm tracking-wide"
+                    onClick={() => { if (adminData.mes) setShowConfigConfirm(true); }} 
+                    disabled={!adminData.mes}
+                    className={`group px-10 py-4 rounded-2xl font-black flex items-center gap-3 transition-all text-sm tracking-wide ${
+                        adminData.mes 
+                        ? 'bg-[#0F172A] hover:bg-blue-700 text-white shadow-xl hover:scale-[1.03] hover:shadow-2xl cursor-pointer' 
+                        : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'}`}
                   >
-                    INGRESAR AL SISTEMA 
-                    <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform"/>
+                    {adminData.mes ? <>INGRESAR AL SISTEMA <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform"/></> : <><Lock size={18}/> SELECCIONE EL MES</>}
                   </button>
                 </div>
+
+                {/* MODAL DE CONFIRMACIÓN DE MES */}
+                {showConfigConfirm && (
+                  <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border-2 border-blue-300 overflow-hidden animate-in zoom-in duration-300">
+                        <div className="bg-blue-50 p-6 border-b border-blue-100 flex flex-col items-center text-center gap-3">
+                            <div className="bg-blue-100 p-3 rounded-full text-blue-600 mb-1"><Calendar size={32} strokeWidth={2.5}/></div>
+                            <h3 className="text-xl font-black text-blue-900 uppercase leading-tight">Confirme el Mes de Digitación</h3>
+                            <p className="text-sm text-blue-700 font-medium">Las edades de los pacientes y el reporte HIS se calcularán en base a este periodo:</p>
+                            <div className="bg-white border-2 border-blue-400 rounded-xl px-6 py-3 shadow-inner">
+                                <span className="text-2xl font-black text-blue-800 tracking-widest">{adminData.mes} {adminData.anio}</span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 font-bold uppercase">{adminData.establecimiento || 'ESTABLECIMIENTO POR DEFECTO'} · TURNO {adminData.turno} · {adminData.ups}</p>
+                        </div>
+                        <div className="p-6 bg-white space-y-3">
+                            <button 
+                                onClick={() => { setShowConfigConfirm(false); setAdminData({...adminData, isConfigured: true}); }} 
+                                className="w-full py-3.5 rounded-xl bg-blue-600 text-white font-extrabold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2 text-sm transform hover:scale-[1.02]">
+                                <CheckCircle2 size={18}/> SÍ, ES CORRECTO — INGRESAR
+                            </button>
+                            <button 
+                                onClick={() => setShowConfigConfirm(false)} 
+                                className="w-full py-3.5 rounded-xl border-2 border-slate-200 text-slate-600 font-extrabold hover:bg-slate-50 hover:border-slate-300 transition-all flex items-center justify-center gap-2 text-sm">
+                                <RefreshCw size={16}/> CAMBIAR MES
+                            </button>
+                        </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -6006,7 +6078,14 @@ const handleAdmin = (e) => {
       {isCalendarOpen && (
         <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setIsCalendarOpen(false)}>
             <div ref={calendarRef} onClick={(e) => e.stopPropagation()}>
-                <SimpleCalendar selectedDate={patientData.fecAtencion} onSelectDate={handleDateSelect} onClose={() => setIsCalendarOpen(false)} themeColor="blue" />
+                <SimpleCalendar 
+                    selectedDate={patientData.fecAtencion} 
+                    onSelectDate={handleDateSelect} 
+                    onClose={() => setIsCalendarOpen(false)} 
+                    themeColor="blue" 
+                    lockYear={adminData.mes ? parseInt(adminData.anio, 10) : null}
+                    lockMonthIndex={adminData.mes ? MESES.indexOf(adminData.mes) : null}
+                />
             </div>
         </div>
       )}
