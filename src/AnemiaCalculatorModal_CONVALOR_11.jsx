@@ -164,7 +164,7 @@ const AnemiaCalculatorModal = ({ isOpen, onClose, initialData }) => {
             else { corte = 8.0; sev = 6.0; }
         } else if (grupo === 'termino_menor_2m') { corte = 13.5; sev = 10.0; }
         else if (grupo === 'termino_2_5m') { corte = 9.5; sev = 7.0; }
-        else if (grupo === 'nino_6_23m') { corte = 10.5; sev = 7.0; }
+        else if (grupo === 'nino_6_23m') { corte = 11.0; sev = 7.0; }
         else if (grupo === 'nino_24_59m') { corte = 11.0; sev = 7.0; }
         else if (grupo === 'nino_5_11a') { corte = 11.5; sev = 8.0; }
         else if (grupo.includes('adol') || grupo === 'mujer_15_mas' || grupo === 'puerpera') { corte = 12.0; sev = 8.0; }
