@@ -4386,6 +4386,36 @@ const handleAdmin = (e) => {
                 </div>
             </div>
 
+            {/* 2. BIBLIOTECA DE NORMAS TÉCNICAS (PDFs) */}
+            <div className="w-full max-w-6xl bg-white p-6 rounded-2xl shadow-sm border border-slate-200 shrink-0 relative z-20">
+                <p className="text-[10px] font-bold text-slate-400 uppercase mb-4 tracking-widest text-center flex items-center justify-center gap-2">
+                    <FileText size={14}/> BIBLIOTECA NORMATIVA (LECTURA RÁPIDA)
+                </p>
+                <div className="flex flex-wrap gap-4 justify-center">
+                    {[
+                        { titulo: 'NORMA TÉCNICA CRED', archivo: '/normas/cred.pdf' },
+                        { titulo: 'GUÍA DE ANEMIA 2025', archivo: '/normas/anemia.pdf' },
+                        { titulo: 'MANUAL GESTANTES', archivo: '/normas/gestante.pdf' },
+                        { titulo: 'CALENDARIO VACUNAS', archivo: '/normas/vacunas.pdf' },
+                    ].map((pdf, idx) => (
+                        <button 
+                            key={idx}
+                            onClick={() => setActivePdf(pdf)}
+                            className="group flex flex-col items-center justify-center w-24 h-24 bg-slate-50 border-2 border-slate-100 rounded-2xl hover:bg-red-50 hover:border-red-200 transition-all cursor-pointer shadow-sm hover:shadow-md hover:-translate-y-1 text-center p-2"
+                            title="Clic para leer documento"
+                        >
+                            <div className="mb-2 text-slate-400 group-hover:text-red-500 transition-colors">
+                                <FileText size={28} strokeWidth={1.5} />
+                            </div>
+                            <span className="text-[9px] font-bold text-slate-600 group-hover:text-red-700 uppercase leading-tight">
+                                {pdf.titulo}
+                            </span>
+                        </button>
+                    ))}
+                </div>
+            </div>
+                        
+                      
                         {/* 3. VISOR DE TABLA DE SEGUIMIENTOS */}
             {activeFollowUp && (
                 <div className="w-full max-w-6xl animate-in slide-in-from-top-5 fade-in duration-300 z-10 shrink-0">
@@ -4644,12 +4674,12 @@ const handleAdmin = (e) => {
              {/* --- CINTILLO FIJO DE DATOS (DINÁMICO POR SEXO) --- */}
             {patientData.paciente && step < 4 && (
               <div className={`
-                  border-b px-6 py-1 flex justify-between items-center shrink-0 animate-in slide-in-from-top-2 z-30 shadow-sm backdrop-blur-xl transition-colors duration-300
+                  border-b px-6 py-1 flex justify-between items-center shrink-0 animate-in slide-in-from-top-2 z-30 shadow-sm transition-colors duration-300
                   ${(patientData.sexo === 'M' || patientData.sexo === 'MASCULINO') 
-                      ? 'bg-sky-300/50 border-sky-400/60'  // ESTILO MASCULINO (Celeste glass más notorio)
+                      ? 'bg-sky-100 border-sky-300'  // ESTILO MASCULINO (Celeste Intenso)
                       : (patientData.sexo === 'F' || patientData.sexo === 'FEMENINO')
-                          ? 'bg-pink-400/45 border-pink-400/60' // ESTILO FEMENINO (Rosado glass más notorio)
-                          : 'bg-slate-200/50 border-slate-300/60' // ESTILO NEUTRO
+                          ? 'bg-pink-100 border-pink-300' // ESTILO FEMENINO (Rosado Intenso)
+                          : 'bg-slate-100 border-slate-200' // ESTILO NEUTRO
                   }
               `}>
                  <div className="flex items-center gap-3 min-w-0">
@@ -5869,20 +5899,15 @@ const handleAdmin = (e) => {
                                 const blocks = [];
                                 for (let i = 0; i < dxRows.length; i += 3) blocks.push(dxRows.slice(i, i + 3));
 
-                                return blocks.map((block, blockIdx) => {
-                                    // Igual que en el PDF: los datos generales del paciente SOLO se muestran
-                                    // en el primer bloque de 3 filas; los bloques siguientes van vacíos.
-                                    const esPrimerBloque = blockIdx === 0;
-                                    return (
+                                return blocks.map((block, blockIdx) => (
                                     <React.Fragment key={`${idx}-${blockIdx}`}>
                                         
                                         {/* FILA 1: Talla + P.C. */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
-                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white" rowSpan={3}>{esPrimerBloque ? (p.fecAtencion || "").split('-')[2] : ''}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white text-[9px]" rowSpan={3}>{esPrimerBloque ? p.dni : ''}</td>
+                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white" rowSpan={3}>{(p.fecAtencion || "").split('-')[2]}</td>
+                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white text-[9px]" rowSpan={3}>{p.dni}</td>
                                             {/* --- CELDA DE PACIENTE CON BOTONES DE EDICIÓN FLOTANTES --- */}
                                             <td className="border border-gray-500 px-1 align-middle font-bold bg-white uppercase text-[9px] relative group/row hover:bg-slate-50 transition-colors" rowSpan={3}>
-                                                {esPrimerBloque && (
                                                 <div className="w-full h-full relative flex items-center justify-between gap-1">
                                                     <span className="truncate w-full block" title={p.paciente}>{p.paciente || "(SIN NOMBRE)"}</span>
                                                     
@@ -5892,21 +5917,20 @@ const handleAdmin = (e) => {
                                                         <button onClick={() => handleDeletePatient(idx)} className="bg-red-100 text-red-700 hover:bg-red-600 hover:text-white p-1 rounded transition-colors" title="Eliminar"><Trash2 size={12}/></button>
                                                     </div>
                                                 </div>
-                                                )}
                                             </td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{esPrimerBloque ? (p.financiador === 'SIS' ? '2' : '1') : ''}</td>
-                                            <td className="border border-gray-500 px-1 align-middle text-[8px] bg-white truncate" rowSpan={3} title={p.distrito}>{esPrimerBloque ? p.distrito : ''}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white" rowSpan={3}>{esPrimerBloque ? (a.y > 0 ? a.y : a.m > 0 ? a.m + 'm' : a.d + 'd') : ''}</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{esPrimerBloque ? p.sexo : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.financiador === 'SIS' ? '2' : '1'}</td>
+                                            <td className="border border-gray-500 px-1 align-middle text-[8px] bg-white truncate" rowSpan={3} title={p.distrito}>{p.distrito}</td>
+                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white" rowSpan={3}>{a.y > 0 ? a.y : a.m > 0 ? a.m + 'm' : a.d + 'd'}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.sexo}</td>
                                             
                                             {/* ANTROPOMETRÍA FILA 1: Talla | valor | P.C. | valor */}
                                             <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">Talla</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{esPrimerBloque ? c.talla : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.talla}</td>
                                             <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.C.</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{esPrimerBloque ? c.pCef : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.pCef}</td>
                                             
-                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{esPrimerBloque ? p.condEst : ''}</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{esPrimerBloque ? p.condServ : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.condEst}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.condServ}</td>
 
                                             {/* DIAGNÓSTICO 1 (EXPANDIDO) */}
                                             <td className="border border-gray-500 px-1 align-middle uppercase text-[9px] truncate">{block[0].desc}</td>
@@ -5920,9 +5944,9 @@ const handleAdmin = (e) => {
                                         {/* FILA 2: Peso + P.Abd */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
                                             <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">Peso</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{esPrimerBloque ? c.peso : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.peso}</td>
                                             <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.Abd</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{esPrimerBloque ? c.pAbd : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.pAbd}</td>
                                             <td className="border border-gray-500 px-1 align-middle uppercase text-[9px] truncate">{block[1].desc}</td>
                                             <td className="border border-gray-500 text-center font-bold align-middle">{block[1].tipo}</td>
                                             <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[1].lab1}</td>
@@ -5934,9 +5958,9 @@ const handleAdmin = (e) => {
                                         {/* FILA 3: HB + P.Preg */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
                                             <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">HB</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{esPrimerBloque ? c.hb : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.hb}</td>
                                             <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.Preg</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{esPrimerBloque ? c.pPreGest : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.pPreGest}</td>
                                             <td className="border border-gray-500 px-1 align-middle uppercase text-[9px] truncate">{block[2].desc}</td>
                                             <td className="border border-gray-500 text-center font-bold align-middle">{block[2].tipo}</td>
                                             <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[2].lab1}</td>
@@ -5945,21 +5969,13 @@ const handleAdmin = (e) => {
                                             <td className="border border-gray-500 text-center font-bold align-middle text-[9px]">{block[2].codigo}</td>
                                         </tr>
                                         
-                                        {blockIdx === blocks.length - 1 && (
-                                            <tr className="h-[2px] bg-gray-500"><td colSpan={19} className="bg-gray-500 p-0 border-0"></td></tr>
-                                        )}
+                                        <tr className="h-[2px] bg-gray-500"><td colSpan={19} className="bg-gray-500 p-0 border-0"></td></tr>
                                     </React.Fragment>
-                                    );
-                                });
+                                ));
                             })
                         )}
-                        {/* FILAS VACÍAS DE RELLENO — cuadrícula uniforme estilo Excel */}
-                        {consolidatedPatients.length < 5 && Array.from({length: 9}).map((_, i) => (
-                             <tr key={`filler-${i}`} className="h-5">
-                                {Array.from({length: 19}).map((_, j) => (
-                                    <td key={j} className="border border-gray-300 bg-white"></td>
-                                ))}
-                             </tr>
+                        {consolidatedPatients.length < 5 && Array.from({length: 3}).map((_, i) => (
+                             <tr key={`filler-${i}`}><td className="border border-gray-500 h-16" colSpan={7}></td><td className="border border-gray-500" colSpan={4}></td><td className="border border-gray-500" colSpan={3}></td><td className="border border-gray-500" colSpan={6}></td></tr>
                         ))}
                     </tbody>
                 </table>

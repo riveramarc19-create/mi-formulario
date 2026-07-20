@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { createPortal } from 'react-dom';
 import { Activity, ArrowRight, ArrowLeft, X, Plus, LogOut, Database, Search, Trash2, FileSpreadsheet, Calendar, Edit, Download, Grid, Save, UserPlus, Users,User,UserRound,Stethoscope, Save as SaveIcon, FileText, AlertTriangle, Calculator, Siren, Baby, RefreshCw, CheckCircle, Droplets, Eye, EyeOff,Lock, Heart, Syringe, Brain, Smile, ArrowDown, CheckCircle2 } from 'lucide-react';
 
 import NutritionalStatusModal from './NutritionalStatusModal';
@@ -1281,7 +1280,6 @@ export default function App() {
   // Aparece dentro de cada campo cuando los datos están bloqueados. Al pulsarlo,
   // desbloquea SOLO ese campo (candado abierto). Vuelve a pulsarlo para bloquearlo.
   const BotonEditarCampo = ({ campo, color = "blue" }) => {
-      if (campo === 'direccion') return null; // el caserío siempre es editable, no necesita lápiz
       if (!isPatientDataLocked) return null; // sin bloqueo global, no hace falta
       const activo = !!camposEditables[campo];
       const colores = {
@@ -1357,7 +1355,7 @@ export default function App() {
     }
   };
 
-  const [validationAlert, setValidationAlert] = useState({ isOpen: false, type: '', title: '', message: '', details: '', highlight: '' });
+  const [validationAlert, setValidationAlert] = useState({ isOpen: false, type: '', title: '', message: '', details: '' });
   const [searchTerm, setSearchTerm] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -1389,19 +1387,12 @@ export default function App() {
   const [caserioQuery, setCaserioQuery] = useState("");      // texto que el usuario escribe para filtrar
   const [showCaserioList, setShowCaserioList] = useState(false); // visibilidad del desplegable de sugerencias
   const [caserioOriginalHIS, setCaserioOriginalHIS] = useState(""); // texto de dirección tal como vino del HIS (pista de referencia)
-  const caserioInputRef = useRef(null); // ref al input de caserío para posicionar la lista flotante
-  const [caserioDropPos, setCaserioDropPos] = useState(null); // {top,left,width} de la lista flotante
   // --- EDICIÓN INDIVIDUAL POR CAMPO ---
   // Conjunto de nombres de campos que el usuario ha desbloqueado manualmente (lápiz).
   const [camposEditables, setCamposEditables] = useState({}); // { hc:true, distrito:true, direccion:true, estOrigen:true }
   const toggleCampoEditable = (campo) => setCamposEditables(prev => ({ ...prev, [campo]: !prev[campo] }));
   // Un campo está en solo-lectura si los datos están bloqueados Y no fue desbloqueado individualmente.
-  const esSoloLectura = (campo) => {
-      // El caserío (direccion) SIEMPRE es editable: es el dato que más se completa/corrige,
-      // así que nunca se bloquea aunque el paciente ya tenga datos cargados.
-      if (campo === 'direccion') return false;
-      return isPatientDataLocked && !camposEditables[campo];
-  };
+  const esSoloLectura = (campo) => isPatientDataLocked && !camposEditables[campo];
   const [anemiaResult, setAnemiaResult] = useState("");
   const [anemiaColor, setAnemiaColor] = useState("bg-slate-200 text-slate-500");
   const [hbAdjusted, setHbAdjusted] = useState(null);
@@ -1640,22 +1631,6 @@ export default function App() {
   }, [clinicalData.peso, clinicalData.talla, ageObj.y]);
   //useEffect(() => { if (patientData.condicion !== 'GESTANTE') setPatientData(prev => ({...prev, fur: ''})); }, [patientData.condicion]);
   useEffect(() => { if (adminData.isConfigured) setPatientData(prev => ({...prev, estAtencion: adminData.establecimiento})); }, [adminData.isConfigured, adminData.establecimiento]);
-  // Al hacer scroll, REPOSICIONA la lista flotante de caserío (antes se cerraba, lo que impedía verla)
-  useEffect(() => {
-      if (!showCaserioList) return;
-      const reposicionar = () => {
-          if (caserioInputRef.current) {
-              const r = caserioInputRef.current.getBoundingClientRect();
-              setCaserioDropPos({ top: r.top, bottom: r.bottom, left: r.left, width: r.width });
-          }
-      };
-      window.addEventListener('scroll', reposicionar, true);
-      window.addEventListener('resize', reposicionar);
-      return () => {
-          window.removeEventListener('scroll', reposicionar, true);
-          window.removeEventListener('resize', reposicionar);
-      };
-  }, [showCaserioList]);
   // BLINDAJE: Si se reconfigura el MES y la fecha de atención vigente ya no pertenece a él,
   // se limpia para obligar a seleccionar una fecha válida dentro del nuevo periodo.
   useEffect(() => {
@@ -2375,16 +2350,6 @@ const handleAdmin = (e) => {
   };
 
   const addDx = () => { 
-      // OPCIÓN 1: No crear otra fila si la última aún está vacía.
-      // En ese caso, se abre el buscador de esa fila vacía para que se llene primero,
-      // evitando que queden filas vacías varadas entre los diagnósticos.
-      const lastIndex = diagnoses.length - 1;
-      const lastDx = diagnoses[lastIndex];
-      if (lastDx && (!lastDx.codigo || !lastDx.desc)) {
-          openDxSearch(lastIndex);
-          return;
-      }
-
       const newIndex = diagnoses.length; 
       
       // 1. Agregamos la fila a la lista con tipo 'D' por defecto
@@ -2398,7 +2363,7 @@ const handleAdmin = (e) => {
       
       // 3. Abrimos el modal y hacemos scroll
       setIsDxModalOpen(true);
-      setTimeout(() => { if (dxBottomRef.current) { dxBottomRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } }, 100); 
+      setTimeout(() => { if (dxBottomRef.current) { dxBottomRef.current.scrollIntoView({ behavior: 'smooth' }); } }, 100); 
   };
   const removeDx = (i) => setDiagnoses(diagnoses.filter((_, idx) => idx !== i));
 
@@ -2515,9 +2480,8 @@ const handleAdmin = (e) => {
                     isOpen: true,
                     type: 'LAB_MISSING', 
                     title: 'Falta Resultado de Hemoglobina',
-                    message: `En la fila ${i + 1}, ha registrado el procedimiento de Dosaje (${code}), pero no ha ingresado el valor de hemoglobina.`,
-                    details: 'El sistema detectó que el campo "Hemoglobina" en los Datos Clínicos (Paso 2) está vacío.',
-                    highlight: 'RECUERDA QUE EL VALOR DE HEMOGLOBINA SE DEBE REGISTRAR SIN DESCUENTO.'
+                    message: `En la fila ${i + 1}, ha registrado el procedimiento de Dosaje (${code}), pero no ingresó el resultado.`,
+                    details: 'El sistema detectó que el campo "Hemoglobina" en los Datos Clínicos (Paso 2) está vacío.\n\nRECUERDA QUE EL VALOR DE HEMOGLOBINA SE DEBE REGISTRAR SIN DESCUENTO.'
                 });
                 return false; 
             }
@@ -4186,6 +4150,37 @@ const handleAdmin = (e) => {
                 <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full mt-2 uppercase tracking-wider">{adminData.ups || 'SIN UPS'}</span>
                 <span className="text-[10px] text-slate-400 font-medium mt-1">DNI: {adminData.dniResp || '---'}</span>
 
+                {/* Separador */}
+                <div className="w-full border-t border-slate-100 my-5"></div>
+
+                {/* Panel de Noticias */}
+                <div className="w-full">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                    <Siren size={12}/> NOVEDADES DEL SISTEMA
+                  </h4>
+                  <div className="space-y-2 max-h-[250px] overflow-y-auto no-scrollbar pr-1">
+                    {NOTICIAS.map((n, i) => (
+                      <div key={i} className="flex gap-2.5 p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors border border-slate-100 group">
+                        <span className={`shrink-0 text-[8px] font-black text-${n.color}-700 bg-${n.color}-100 px-1.5 py-0.5 rounded-md uppercase mt-0.5`}>{n.tipo}</span>
+                        <p className="text-[11px] text-slate-600 leading-snug font-medium">{n.msg}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Estadísticas rápidas */}
+                <div className="w-full border-t border-slate-100 mt-5 pt-4">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-indigo-50 rounded-xl p-2.5 text-center border border-indigo-100">
+                      <div className="text-lg font-black text-indigo-700">{dbPacientes.length > 0 ? (dbPacientes.length / 1000).toFixed(1) + 'K' : '0'}</div>
+                      <div className="text-[8px] font-bold text-indigo-400 uppercase">Pacientes</div>
+                    </div>
+                    <div className="bg-amber-50 rounded-xl p-2.5 text-center border border-amber-100">
+                      <div className="text-lg font-black text-amber-700">{savedPatients.length}</div>
+                      <div className="text-[8px] font-bold text-amber-400 uppercase">Lote Actual</div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* --- COLUMNA DERECHA: FORMULARIO --- */}
@@ -4329,20 +4324,12 @@ const handleAdmin = (e) => {
                     {adminData.nombreResp || "INVITADO"}
                 </span>
             </div>
-            <div className="flex gap-2 items-center">
-                <button 
-                    onClick={() => setIsModalOpen(false)} 
-                    className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-200 px-4 py-2 rounded-xl border border-blue-500/30 flex gap-2 transition-all hover:border-blue-400 font-bold text-xs items-center"
-                >
-                    <ArrowRight size={16}/> IR A SEGUIMIENTO
-                </button>
-                <button 
-                    onClick={() => setAdminData({...adminData, isConfigured: false})} 
-                    className="bg-red-500/10 hover:bg-red-500/20 text-red-200 px-4 py-2 rounded-xl border border-red-500/30 flex gap-2 transition-all hover:border-red-400 font-bold text-xs items-center"
-                >
-                    <LogOut size={16}/> IR A CONFIGURACIÓN
-                </button>
-            </div>
+            <button 
+                onClick={() => setAdminData({...adminData, isConfigured: false})} 
+                className="bg-red-500/10 hover:bg-red-500/20 text-red-200 px-4 py-2 rounded-xl border border-red-500/30 flex gap-2 transition-all hover:border-red-400 font-bold text-xs items-center"
+            >
+                <LogOut size={16}/> SALIR A CONFIGURACIÓN
+            </button>
         </div>
       </div>
 
@@ -4386,6 +4373,36 @@ const handleAdmin = (e) => {
                 </div>
             </div>
 
+            {/* 2. BIBLIOTECA DE NORMAS TÉCNICAS (PDFs) */}
+            <div className="w-full max-w-6xl bg-white p-6 rounded-2xl shadow-sm border border-slate-200 shrink-0 relative z-20">
+                <p className="text-[10px] font-bold text-slate-400 uppercase mb-4 tracking-widest text-center flex items-center justify-center gap-2">
+                    <FileText size={14}/> BIBLIOTECA NORMATIVA (LECTURA RÁPIDA)
+                </p>
+                <div className="flex flex-wrap gap-4 justify-center">
+                    {[
+                        { titulo: 'NORMA TÉCNICA CRED', archivo: '/normas/cred.pdf' },
+                        { titulo: 'GUÍA DE ANEMIA 2025', archivo: '/normas/anemia.pdf' },
+                        { titulo: 'MANUAL GESTANTES', archivo: '/normas/gestante.pdf' },
+                        { titulo: 'CALENDARIO VACUNAS', archivo: '/normas/vacunas.pdf' },
+                    ].map((pdf, idx) => (
+                        <button 
+                            key={idx}
+                            onClick={() => setActivePdf(pdf)}
+                            className="group flex flex-col items-center justify-center w-24 h-24 bg-slate-50 border-2 border-slate-100 rounded-2xl hover:bg-red-50 hover:border-red-200 transition-all cursor-pointer shadow-sm hover:shadow-md hover:-translate-y-1 text-center p-2"
+                            title="Clic para leer documento"
+                        >
+                            <div className="mb-2 text-slate-400 group-hover:text-red-500 transition-colors">
+                                <FileText size={28} strokeWidth={1.5} />
+                            </div>
+                            <span className="text-[9px] font-bold text-slate-600 group-hover:text-red-700 uppercase leading-tight">
+                                {pdf.titulo}
+                            </span>
+                        </button>
+                    ))}
+                </div>
+            </div>
+                        
+                      
                         {/* 3. VISOR DE TABLA DE SEGUIMIENTOS */}
             {activeFollowUp && (
                 <div className="w-full max-w-6xl animate-in slide-in-from-top-5 fade-in duration-300 z-10 shrink-0">
@@ -4644,12 +4661,12 @@ const handleAdmin = (e) => {
              {/* --- CINTILLO FIJO DE DATOS (DINÁMICO POR SEXO) --- */}
             {patientData.paciente && step < 4 && (
               <div className={`
-                  border-b px-6 py-1 flex justify-between items-center shrink-0 animate-in slide-in-from-top-2 z-30 shadow-sm backdrop-blur-xl transition-colors duration-300
+                  border-b px-6 py-1 flex justify-between items-center shrink-0 animate-in slide-in-from-top-2 z-30 shadow-sm transition-colors duration-300
                   ${(patientData.sexo === 'M' || patientData.sexo === 'MASCULINO') 
-                      ? 'bg-sky-300/50 border-sky-400/60'  // ESTILO MASCULINO (Celeste glass más notorio)
+                      ? 'bg-sky-100 border-sky-300'  // ESTILO MASCULINO (Celeste Intenso)
                       : (patientData.sexo === 'F' || patientData.sexo === 'FEMENINO')
-                          ? 'bg-pink-400/45 border-pink-400/60' // ESTILO FEMENINO (Rosado glass más notorio)
-                          : 'bg-slate-200/50 border-slate-300/60' // ESTILO NEUTRO
+                          ? 'bg-pink-100 border-pink-300' // ESTILO FEMENINO (Rosado Intenso)
+                          : 'bg-slate-100 border-slate-200' // ESTILO NEUTRO
                   }
               `}>
                  <div className="flex items-center gap-3 min-w-0">
@@ -4709,29 +4726,28 @@ const handleAdmin = (e) => {
 {/* --- ALERTA DE VALIDACIÓN FLOTANTE (FIXED) --- */}
 {validationAlert.isOpen && (
   <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
-    <div className="absolute inset-0 bg-yellow-900/30 backdrop-blur-sm" onClick={() => setValidationAlert({ ...validationAlert, isOpen: false })}></div>
+    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setValidationAlert({ ...validationAlert, isOpen: false })}></div>
 
-    {/* GLASS CLARO — colores morados, alta transparencia. El tipo GESTANTE/TRANSFER conserva su matiz */}
-    <div className={`relative rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border animate-in zoom-in duration-300
-        ${validationAlert.type === 'GESTANTE' ? 'border-pink-300/50' : validationAlert.type === 'TRANSFER' ? 'border-indigo-300/50' : 'border-yellow-300/60'}`}
-        style={{ background: 'rgba(255,255,255,0.35)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
+    {/* LÓGICA DE COLORES SEGÚN TIPO */}
+    <div className={`relative bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border-2 animate-in zoom-in duration-300 
+        ${validationAlert.type === 'GESTANTE' ? 'border-pink-200' : validationAlert.type === 'TRANSFER' ? 'border-indigo-200' : 'border-orange-200'}`}>
       
       {/* CABECERA */}
-      <div className={`px-8 py-6 border-b flex items-center gap-4
-          ${validationAlert.type === 'GESTANTE' ? 'bg-pink-200/25 border-pink-200/40' : validationAlert.type === 'TRANSFER' ? 'bg-indigo-200/25 border-indigo-200/40' : 'bg-yellow-200/30 border-yellow-200/50'}`}>
+      <div className={`px-8 py-6 border-b flex items-center gap-4 
+          ${validationAlert.type === 'GESTANTE' ? 'bg-pink-50 border-pink-100' : validationAlert.type === 'TRANSFER' ? 'bg-indigo-50 border-indigo-100' : 'bg-orange-50 border-orange-100'}`}>
         
-        <div className={`p-4 rounded-full shrink-0 border backdrop-blur-sm
-            ${validationAlert.type === 'GESTANTE' ? 'bg-pink-300/40 text-pink-700 border-pink-300/50' : validationAlert.type === 'TRANSFER' ? 'bg-indigo-300/40 text-indigo-700 border-indigo-300/50' : 'bg-yellow-300/50 text-yellow-700 border-yellow-300/60'}`}>
+        <div className={`p-4 rounded-full shrink-0 shadow-sm 
+            ${validationAlert.type === 'GESTANTE' ? 'bg-pink-200 text-pink-700' : validationAlert.type === 'TRANSFER' ? 'bg-indigo-200 text-indigo-700' : 'bg-orange-200 text-orange-700'}`}>
           {validationAlert.type === 'GESTANTE' ? <Baby size={40} strokeWidth={2} /> : validationAlert.type === 'TRANSFER' ? <RefreshCw size={40} strokeWidth={2}/> : <Activity size={40} strokeWidth={2} />}
         </div>
         
         <div>
-          <h3 className={`text-2xl font-black drop-shadow-sm
-              ${validationAlert.type === 'GESTANTE' ? 'text-pink-800' : validationAlert.type === 'TRANSFER' ? 'text-indigo-800' : 'text-yellow-700'}`}>
+          <h3 className={`text-2xl font-black 
+              ${validationAlert.type === 'GESTANTE' ? 'text-pink-700' : validationAlert.type === 'TRANSFER' ? 'text-indigo-800' : 'text-orange-800'}`}>
               {validationAlert.title}
           </h3>
-          <p className={`text-xs font-bold mt-1 uppercase tracking-wide
-              ${validationAlert.type === 'GESTANTE' ? 'text-pink-600' : validationAlert.type === 'TRANSFER' ? 'text-indigo-600' : 'text-yellow-600'}`}>
+          <p className={`text-xs font-bold mt-1 uppercase 
+              ${validationAlert.type === 'GESTANTE' ? 'text-pink-400' : validationAlert.type === 'TRANSFER' ? 'text-indigo-400' : 'text-orange-400'}`}>
               {validationAlert.type === 'TRANSFER' ? 'Acción Requerida: Asignar HC' : 'Corrección requerida'}
           </p>
         </div>
@@ -4739,26 +4755,19 @@ const handleAdmin = (e) => {
 
       {/* CONTENIDO */}
       <div className="p-8 max-h-[60vh] overflow-y-auto">
-        <p className="text-slate-800 font-bold text-lg mb-6 leading-snug drop-shadow-sm">{validationAlert.message}</p>
-        <div className={`p-5 rounded-2xl border flex items-start gap-4 backdrop-blur-sm
-            ${validationAlert.type === 'GESTANTE' ? 'bg-pink-100/30 border-pink-300/40' : validationAlert.type === 'TRANSFER' ? 'bg-indigo-100/30 border-indigo-300/40' : 'bg-yellow-100/40 border-yellow-300/50'}`}>
-          <div className={`mt-1
-              ${validationAlert.type === 'GESTANTE' ? 'text-pink-600' : validationAlert.type === 'TRANSFER' ? 'text-indigo-600' : 'text-yellow-600'}`}>
+        <p className="text-slate-700 font-bold text-lg mb-6 leading-snug">{validationAlert.message}</p>
+        <div className={`p-5 rounded-2xl border flex items-start gap-4 shadow-sm 
+            ${validationAlert.type === 'GESTANTE' ? 'bg-pink-50 border-pink-200' : validationAlert.type === 'TRANSFER' ? 'bg-indigo-50 border-indigo-200' : 'bg-orange-50 border-orange-200'}`}>
+          <div className={`mt-1 
+              ${validationAlert.type === 'GESTANTE' ? 'text-pink-500' : validationAlert.type === 'TRANSFER' ? 'text-indigo-500' : 'text-orange-500'}`}>
               <AlertTriangle size={24}/>
           </div>
-          <div className="flex-1">
-              <div className="text-sm font-semibold text-slate-700 whitespace-pre-line leading-relaxed">{validationAlert.details}</div>
-              {validationAlert.highlight && (
-                  <div className="animate-baile mt-4 inline-block bg-yellow-400 text-yellow-900 text-xs font-black px-4 py-2 rounded-xl shadow-lg uppercase tracking-wide origin-center border-2 border-yellow-500">
-                      ⚠ {validationAlert.highlight}
-                  </div>
-              )}
-          </div>
+          <div className="text-sm font-medium text-slate-600 whitespace-pre-line leading-relaxed">{validationAlert.details}</div>
         </div>
       </div>
 
       {/* BOTÓN */}
-      <div className="px-8 py-5 bg-white/15 border-t border-white/25 flex justify-end">
+      <div className="px-8 py-5 bg-slate-50 border-t border-slate-100 flex justify-end">
          {/* BOTÓN DE ACCIÓN EN LA ALERTA */}
          <button 
             onClick={() => { 
@@ -4789,8 +4798,8 @@ const handleAdmin = (e) => {
                     setStep(1); 
                 }
             }}
-            className={`px-8 py-3 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-sm tracking-wide 
-                ${validationAlert.type === 'GESTANTE' ? 'bg-pink-500 hover:bg-pink-600 text-white' : validationAlert.type === 'TRANSFER' ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-yellow-400 hover:bg-yellow-500 text-yellow-900'}`}
+            className={`px-8 py-3 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-sm tracking-wide text-white 
+                ${validationAlert.type === 'GESTANTE' ? 'bg-pink-500 hover:bg-pink-600' : validationAlert.type === 'TRANSFER' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-orange-500 hover:bg-orange-600'}`}
         >
             {validationAlert.type === 'TRANSFER' ? 'ENTENDIDO, INGRESARÉ HC' : 'ENTENDIDO, VOY A CORREGIR'}
         </button>
@@ -4999,7 +5008,7 @@ const handleAdmin = (e) => {
                 
                 {/* COLUMNA IZQUIERDA: ADMISIÓN */}
                 <div className="lg:col-span-3 space-y-2">
-                    <div className="bg-violet-100/30 backdrop-blur-xl rounded-2xl p-3 border-2 border-violet-300/50 h-full shadow-md flex flex-col justify-center relative overflow-hidden">
+                    <div className="bg-violet-100/80 rounded-2xl p-3 border-2 border-violet-300 h-full shadow-md flex flex-col justify-center relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-16 h-16 bg-violet-200 rounded-bl-full opacity-70 pointer-events-none"></div>
 
                         <div className="space-y-2.5 relative z-10">
@@ -5072,7 +5081,7 @@ const handleAdmin = (e) => {
                 <div className="lg:col-span-9 space-y-3">
                     
                     {/* TARJETA DE IDENTIDAD */}
-                    <div className="bg-blue-50/40 backdrop-blur-xl rounded-2xl p-3 shadow-md border-2 border-blue-200/50 relative overflow-hidden group">
+                    <div className="bg-blue-50 rounded-2xl p-3 shadow-md border-2 border-blue-200 relative overflow-hidden group">
                         
                         <div className="flex flex-col md:flex-row gap-4 items-center md:items-start mt-1">
                             {/* AVATAR DINÁMICO */}
@@ -5163,8 +5172,8 @@ const handleAdmin = (e) => {
 
                     {/* SECCIÓN UBICACIÓN (ESMERALDA FUERTE) Y ORIGEN (ÍNDIGO FUERTE) */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div className="bg-emerald-100/30 backdrop-blur-xl rounded-2xl p-3 border-2 border-emerald-300/50 shadow-md relative">
-                             <div className="absolute top-0 right-0 w-16 h-16 bg-emerald-200 rounded-bl-full opacity-60 pointer-events-none rounded-tr-2xl"></div>
+                        <div className="bg-emerald-100/80 rounded-2xl p-3 border-2 border-emerald-300 shadow-md relative overflow-hidden">
+                             <div className="absolute top-0 right-0 w-16 h-16 bg-emerald-200 rounded-bl-full opacity-60 pointer-events-none"></div>
                             <label className="text-[10px] font-extrabold text-emerald-800 uppercase ml-1 mb-1.5 flex gap-2 items-center relative z-10"><Database size={12}/> Ubicación Actual</label>
                             
                             <div className="space-y-2 relative z-10">
@@ -5173,31 +5182,18 @@ const handleAdmin = (e) => {
                                     - patientData.direccion únicamente se llena al elegir una sugerencia válida. */}
                                 <div className="relative">
                                     <input
-                                        ref={caserioInputRef}
                                         name="direccion"
                                         autoComplete="off"
                                         value={showCaserioList ? caserioQuery : patientData.direccion}
                                         readOnly={esSoloLectura('direccion')}
                                         placeholder="ESCRIBA EL CASERÍO..."
-                                        onFocus={() => { if(!esSoloLectura('direccion')){ 
-                                            setCaserioQuery(""); 
-                                            setShowCaserioList(true); 
-                                            if(caserioInputRef.current){ const r = caserioInputRef.current.getBoundingClientRect(); setCaserioDropPos({top: r.top, bottom: r.bottom, left: r.left, width: r.width}); }
-                                        } }}
-                                        onClick={() => { if(!esSoloLectura('direccion')){ 
-                                            setShowCaserioList(true); 
-                                            if(caserioInputRef.current){ const r = caserioInputRef.current.getBoundingClientRect(); setCaserioDropPos({top: r.top, bottom: r.bottom, left: r.left, width: r.width}); }
-                                        } }}
+                                        onFocus={() => { if(!esSoloLectura('direccion')){ setCaserioQuery(""); setShowCaserioList(true); } }}
                                         onChange={(e) => {
                                             const q = e.target.value.toUpperCase();
                                             setCaserioQuery(q);
                                             setShowCaserioList(true);
-                                            if(caserioInputRef.current){ const r = caserioInputRef.current.getBoundingClientRect(); setCaserioDropPos({top: r.top, bottom: r.bottom, left: r.left, width: r.width}); }
-                                            // Si el texto coincide EXACTO con un caserío válido, se guarda (borde verde);
-                                            // si no, se invalida la dirección (borde rojo).
-                                            if (listaCaserios.includes(q)) {
-                                                setPatientData(prev => ({...prev, direccion: q}));
-                                            } else {
+                                            // Si el texto ya no coincide EXACTO con un caserío válido, se invalida la dirección
+                                            if (!listaCaserios.includes(q)) {
                                                 setPatientData(prev => ({...prev, direccion: ""}));
                                             }
                                         }}
@@ -5206,58 +5202,43 @@ const handleAdmin = (e) => {
                                             setTimeout(() => { setShowCaserioList(false); setCaserioQuery(""); }, 150);
                                         }}
                                         className={`w-full h-8 px-3 pr-8 rounded-lg bg-white border-2 font-bold text-xs outline-none transition-all uppercase shadow-sm
-                                            ${((patientData.direccion && listaCaserios.includes(patientData.direccion)) || (showCaserioList && listaCaserios.includes(caserioQuery.trim())))
+                                            ${(patientData.direccion && listaCaserios.includes(patientData.direccion))
                                                 ? 'border-emerald-500 text-emerald-900 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100'
                                                 : 'border-red-500 text-red-800 placeholder-red-400 bg-red-50'
                                             }`}
                                     />
                                     <BotonEditarCampo campo="direccion" color="emerald" />
-                                    {/* LISTA DE SUGERENCIAS FLOTANTE (Portal al body: inmune al backdrop-blur y overflow) */}
-                                    {showCaserioList && !esSoloLectura('direccion') && caserioDropPos && createPortal(
-                                        (() => {
-                                            const filtro = caserioQuery.trim();
-                                            const sugerencias = filtro
-                                                ? listaCaserios.filter(c => c.includes(filtro))
-                                                : listaCaserios;
-                                            // Decide si abrir hacia abajo o hacia arriba según el espacio disponible
-                                            const espacioAbajo = window.innerHeight - caserioDropPos.bottom;
-                                            const abrirArriba = espacioAbajo < 240 && caserioDropPos.top > 240;
-                                            const estilo = abrirArriba
-                                                ? { position: 'fixed', bottom: window.innerHeight - caserioDropPos.top + 4, left: caserioDropPos.left, width: caserioDropPos.width, maxHeight: Math.min(caserioDropPos.top - 12, 288) }
-                                                : { position: 'fixed', top: caserioDropPos.bottom + 4, left: caserioDropPos.left, width: caserioDropPos.width, maxHeight: Math.min(espacioAbajo - 12, 288) };
-                                            return (
-                                                <div 
-                                                    style={{ ...estilo, zIndex: 99999 }}
-                                                    className="bg-white border-2 border-emerald-300 rounded-lg shadow-2xl overflow-y-auto"
-                                                >
-                                                    <div className="sticky top-0 bg-emerald-50 border-b border-emerald-100 px-3 py-1 text-[9px] font-black text-emerald-600 uppercase tracking-wide flex justify-between">
-                                                        <span>{sugerencias.length} {sugerencias.length === 1 ? 'coincidencia' : 'coincidencias'}</span>
-                                                        {sugerencias.length > 5 && <span className="text-emerald-400">↕ desliza para ver más</span>}
-                                                    </div>
-                                                    {sugerencias.length === 0 ? (
-                                                        <div className="px-3 py-2 text-[11px] font-bold text-red-500">Sin coincidencias en la lista de caseríos</div>
-                                                    ) : sugerencias.map(c => (
-                                                        <button
-                                                            key={c}
-                                                            type="button"
-                                                            onMouseDown={(e) => {
-                                                                e.preventDefault();
-                                                                setPatientData(prev => ({...prev, direccion: c}));
-                                                                setCaserioQuery("");
-                                                                setShowCaserioList(false);
-                                                                setCaserioOriginalHIS("");
-                                                                setCamposEditables(prev => ({ ...prev, direccion: false }));
-                                                            }}
-                                                            className="w-full text-left px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition-colors border-b border-emerald-50 last:border-0 uppercase"
-                                                        >
-                                                            {c}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            );
-                                        })(),
-                                        document.body
-                                    )}
+                                    {/* LISTA DE SUGERENCIAS FILTRADAS */}
+                                    {showCaserioList && !esSoloLectura('direccion') && (() => {
+                                        const filtro = caserioQuery.trim();
+                                        const sugerencias = filtro
+                                            ? listaCaserios.filter(c => c.includes(filtro))
+                                            : listaCaserios;
+                                        return (
+                                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border-2 border-emerald-300 rounded-lg shadow-xl max-h-52 overflow-y-auto z-50">
+                                                {sugerencias.length === 0 ? (
+                                                    <div className="px-3 py-2 text-[11px] font-bold text-red-500">Sin coincidencias en la lista de caseríos</div>
+                                                ) : sugerencias.map(c => (
+                                                    <button
+                                                        key={c}
+                                                        type="button"
+                                                        onMouseDown={(e) => {
+                                                            e.preventDefault(); // evita que el blur cancele la selección
+                                                            setPatientData(prev => ({...prev, direccion: c}));
+                                                            setCaserioQuery("");
+                                                            setShowCaserioList(false);
+                                                            setCaserioOriginalHIS(""); // ya se resolvió, quitar la pista
+                                                            // Al confirmar el caserío, se vuelve a bloquear SOLO este campo
+                                                            setCamposEditables(prev => ({ ...prev, direccion: false }));
+                                                        }}
+                                                        className="w-full text-left px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition-colors border-b border-emerald-50 last:border-0 uppercase"
+                                                    >
+                                                        {c}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
 
                                 {/* PISTA: DATO ORIGINAL DEL HIS (Propuesta D) — solo si aún no hay caserío válido */}
@@ -5292,7 +5273,7 @@ const handleAdmin = (e) => {
                             </div>
                         </div>
 
-                        <div className="bg-indigo-100/30 backdrop-blur-xl rounded-2xl p-3 border-2 border-indigo-300/50 shadow-md relative overflow-hidden">
+                        <div className="bg-indigo-100/80 rounded-2xl p-3 border-2 border-indigo-300 shadow-md relative overflow-hidden">
                              <div className="absolute top-0 right-0 w-16 h-16 bg-indigo-200 rounded-bl-full opacity-60 pointer-events-none"></div>
                             <label className="text-[10px] font-extrabold text-indigo-800 uppercase ml-1 mb-1.5 flex gap-2 items-center relative z-10"><ArrowRight size={12}/> EE.SS DE ATENCIÓN</label>
                             <div className="space-y-2 relative z-10">
@@ -5536,38 +5517,35 @@ const handleAdmin = (e) => {
       {step === 3 && (
         <div className="animate-in fade-in slide-in-from-right-8 duration-300 w-full max-w-[95%] mx-auto pb-10">
            
-           {/* CABECERA (queda fija por estar fuera del área de scroll) */}
-           <div className="mb-1">
-           <div className="flex justify-between items-center mb-3 py-2 px-5 rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-white shadow-sm">
-              <div className="flex items-baseline gap-3">
-                  <h3 className="font-black text-indigo-900 text-base tracking-tight">Diagnósticos y Procedimientos (CIE-10)</h3>
-                  <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider hidden sm:block">
+           {/* CABECERA */}
+           <div className="flex justify-between items-end mb-6 p-6 rounded-3xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-white shadow-sm">
+              <div>
+                  <h3 className="font-black text-indigo-900 text-xl tracking-tight">Diagnósticos y Procedimientos (CIE-10)</h3>
+                  <p className="text-xs mt-1.5 font-bold text-indigo-400 uppercase tracking-wider">
                       Registre los diagnósticos.
                   </p>
               </div>
-              <div className="bg-white px-3 py-1 rounded-lg border border-indigo-100 shadow-sm shrink-0">
+              <div className="bg-white px-4 py-2 rounded-xl border border-indigo-100 shadow-sm">
                   <span className="text-[10px] font-black text-slate-400 uppercase">Registros:</span>
-                  <span className="ml-2 text-base font-black text-indigo-600">{diagnoses.length}</span>
+                  <span className="ml-2 text-lg font-black text-indigo-600">{diagnoses.length}</span>
               </div>
            </div>
 
            {/* ENCABEZADOS DE LA TABLA */}
-           <div className="hidden md:grid grid-cols-12 gap-4 px-4 text-[9px] font-extrabold text-slate-400 uppercase tracking-widest">
-              <div className="col-span-1 text-center">N° / Buscar</div>
+           <div className="hidden md:grid grid-cols-12 gap-4 px-4 mb-2 text-[9px] font-extrabold text-slate-400 uppercase tracking-widest">
+              <div className="col-span-1 text-center">Buscar</div>
               <div className="col-span-6 pl-2">Descripción del Diagnóstico</div>
               <div className="col-span-1 text-center">Tipo</div>
               <div className="col-span-2 text-center">Campos LAB</div>
               <div className="col-span-2 text-center">Código / Acción</div>
            </div>
-           </div>
 
-           {/* LISTA CON SCROLL INTERNO (aparece cuando el paciente tiene 3+ diagnósticos) */}
-           <div className={`space-y-3 pr-1 ${diagnoses.length > 3 ? 'max-h-[50vh] overflow-y-auto pt-2 pb-2' : 'pt-2'}`}>
+           <div className="space-y-3">
             {diagnoses.map((dx, idx) => {
               const hasError = dxErrors[idx];
               const containerClass = hasError 
-                  ? "border-red-300 ring-2 ring-red-100 bg-red-50/40 backdrop-blur-md" 
-                  : "border-white/60 bg-white/40 backdrop-blur-md hover:bg-white/60 hover:border-indigo-300/70 hover:shadow-lg";
+                  ? "border-red-500 ring-2 ring-red-100 bg-red-50/10" 
+                  : "border-slate-200 bg-white hover:border-indigo-300 hover:shadow-md";
               
               const showAddButton = (idx === diagnoses.length - 1);
               
@@ -5577,12 +5555,11 @@ const handleAdmin = (e) => {
               return (
               <div key={idx} className={`grid grid-cols-12 gap-4 items-center p-2 pr-4 rounded-2xl border transition-all duration-300 group relative ${containerClass}`}>
                 
-                {/* 1. NÚMERO + BOTÓN LUPA */}
-                <div className="col-span-1 flex justify-center items-center gap-2">
-                    <span className="text-sm font-black text-slate-400 w-5 text-right tabular-nums shrink-0">{idx + 1}</span>
+                {/* 1. BOTÓN LUPA */}
+                <div className="col-span-1 flex justify-center">
                     <button 
                         onClick={() => openDxSearch(idx)} 
-                        className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-500 hover:bg-indigo-600 hover:text-white border border-indigo-100 flex items-center justify-center transition-all active:scale-95 shadow-sm shrink-0"
+                        className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-500 hover:bg-indigo-600 hover:text-white border border-indigo-100 flex items-center justify-center transition-all active:scale-95 shadow-sm"
                     >
                         <Search size={18} strokeWidth={2.5}/>
                     </button>
@@ -5594,7 +5571,7 @@ const handleAdmin = (e) => {
                     <div className="absolute inset-y-0 left-0 w-1 bg-indigo-500 rounded-l-xl opacity-0 group-hover/input:opacity-100 transition-opacity"></div>
                     
                     {/* Contenedor principal */}
-                    <div className="w-full h-12 pl-4 pr-10 rounded-xl bg-white/50 border border-white/70 flex items-center cursor-pointer group-hover/input:bg-white/80 group-hover/input:border-indigo-300 transition-all shadow-sm relative backdrop-blur-sm">
+                    <div className="w-full h-12 pl-4 pr-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center cursor-pointer group-hover/input:bg-white group-hover/input:border-indigo-300 transition-all shadow-sm relative">
                         
                         {/* Texto del Diagnóstico */}
                         {dx.desc ? (
@@ -5673,13 +5650,9 @@ const handleAdmin = (e) => {
                         return (
                             <div key={n} className="relative group/lab">
                                 
-                                {/* MENÚ DE SUGERENCIAS — PÍLDORAS GLASS
-                                    Se abre hacia ABAJO en las primeras filas (no hay espacio arriba por la cabecera)
-                                    y hacia ARRIBA en el resto, para que nunca se corte la primera opción. */}
-                                {/* MENÚ DE SUGERENCIAS (ESTILO CLÁSICO) */}
+                                {/* MENÚ DE SUGERENCIAS */}
                                 {isFocused && isSlotActive && slotOptions.length > 0 && (
-                                    <div className={`absolute left-1/2 -translate-x-1/2 bg-white border border-slate-200 shadow-xl rounded-xl p-1.5 flex gap-1 z-[60] animate-in zoom-in duration-200 min-w-[80px] justify-center flex-wrap
-                                        ${idx <= 1 ? 'top-full mt-2' : 'bottom-full mb-2'}`}>
+                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white border border-slate-200 shadow-xl rounded-xl p-1.5 flex gap-1 z-50 animate-in zoom-in duration-200 min-w-[80px] justify-center flex-wrap">
                                         {slotOptions.map(sug => (
                                             <button 
                                                 key={sug}
@@ -5769,7 +5742,7 @@ const handleAdmin = (e) => {
                   </div>
                </div>
             )})}
-            <div ref={dxBottomRef} className="h-2 w-full bg-transparent"></div>
+            <div ref={dxBottomRef} className="h-32 w-full bg-transparent"></div>
           </div>
         </div>
       )}     
@@ -5869,20 +5842,15 @@ const handleAdmin = (e) => {
                                 const blocks = [];
                                 for (let i = 0; i < dxRows.length; i += 3) blocks.push(dxRows.slice(i, i + 3));
 
-                                return blocks.map((block, blockIdx) => {
-                                    // Igual que en el PDF: los datos generales del paciente SOLO se muestran
-                                    // en el primer bloque de 3 filas; los bloques siguientes van vacíos.
-                                    const esPrimerBloque = blockIdx === 0;
-                                    return (
+                                return blocks.map((block, blockIdx) => (
                                     <React.Fragment key={`${idx}-${blockIdx}`}>
                                         
                                         {/* FILA 1: Talla + P.C. */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
-                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white" rowSpan={3}>{esPrimerBloque ? (p.fecAtencion || "").split('-')[2] : ''}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white text-[9px]" rowSpan={3}>{esPrimerBloque ? p.dni : ''}</td>
+                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white" rowSpan={3}>{(p.fecAtencion || "").split('-')[2]}</td>
+                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white text-[9px]" rowSpan={3}>{p.dni}</td>
                                             {/* --- CELDA DE PACIENTE CON BOTONES DE EDICIÓN FLOTANTES --- */}
                                             <td className="border border-gray-500 px-1 align-middle font-bold bg-white uppercase text-[9px] relative group/row hover:bg-slate-50 transition-colors" rowSpan={3}>
-                                                {esPrimerBloque && (
                                                 <div className="w-full h-full relative flex items-center justify-between gap-1">
                                                     <span className="truncate w-full block" title={p.paciente}>{p.paciente || "(SIN NOMBRE)"}</span>
                                                     
@@ -5892,21 +5860,20 @@ const handleAdmin = (e) => {
                                                         <button onClick={() => handleDeletePatient(idx)} className="bg-red-100 text-red-700 hover:bg-red-600 hover:text-white p-1 rounded transition-colors" title="Eliminar"><Trash2 size={12}/></button>
                                                     </div>
                                                 </div>
-                                                )}
                                             </td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{esPrimerBloque ? (p.financiador === 'SIS' ? '2' : '1') : ''}</td>
-                                            <td className="border border-gray-500 px-1 align-middle text-[8px] bg-white truncate" rowSpan={3} title={p.distrito}>{esPrimerBloque ? p.distrito : ''}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white" rowSpan={3}>{esPrimerBloque ? (a.y > 0 ? a.y : a.m > 0 ? a.m + 'm' : a.d + 'd') : ''}</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{esPrimerBloque ? p.sexo : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.financiador === 'SIS' ? '2' : '1'}</td>
+                                            <td className="border border-gray-500 px-1 align-middle text-[8px] bg-white truncate" rowSpan={3} title={p.distrito}>{p.distrito}</td>
+                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white" rowSpan={3}>{a.y > 0 ? a.y : a.m > 0 ? a.m + 'm' : a.d + 'd'}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.sexo}</td>
                                             
                                             {/* ANTROPOMETRÍA FILA 1: Talla | valor | P.C. | valor */}
                                             <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">Talla</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{esPrimerBloque ? c.talla : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.talla}</td>
                                             <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.C.</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{esPrimerBloque ? c.pCef : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.pCef}</td>
                                             
-                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{esPrimerBloque ? p.condEst : ''}</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{esPrimerBloque ? p.condServ : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.condEst}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.condServ}</td>
 
                                             {/* DIAGNÓSTICO 1 (EXPANDIDO) */}
                                             <td className="border border-gray-500 px-1 align-middle uppercase text-[9px] truncate">{block[0].desc}</td>
@@ -5920,9 +5887,9 @@ const handleAdmin = (e) => {
                                         {/* FILA 2: Peso + P.Abd */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
                                             <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">Peso</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{esPrimerBloque ? c.peso : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.peso}</td>
                                             <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.Abd</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{esPrimerBloque ? c.pAbd : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.pAbd}</td>
                                             <td className="border border-gray-500 px-1 align-middle uppercase text-[9px] truncate">{block[1].desc}</td>
                                             <td className="border border-gray-500 text-center font-bold align-middle">{block[1].tipo}</td>
                                             <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[1].lab1}</td>
@@ -5934,9 +5901,9 @@ const handleAdmin = (e) => {
                                         {/* FILA 3: HB + P.Preg */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
                                             <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">HB</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{esPrimerBloque ? c.hb : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.hb}</td>
                                             <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.Preg</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{esPrimerBloque ? c.pPreGest : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.pPreGest}</td>
                                             <td className="border border-gray-500 px-1 align-middle uppercase text-[9px] truncate">{block[2].desc}</td>
                                             <td className="border border-gray-500 text-center font-bold align-middle">{block[2].tipo}</td>
                                             <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[2].lab1}</td>
@@ -5945,21 +5912,13 @@ const handleAdmin = (e) => {
                                             <td className="border border-gray-500 text-center font-bold align-middle text-[9px]">{block[2].codigo}</td>
                                         </tr>
                                         
-                                        {blockIdx === blocks.length - 1 && (
-                                            <tr className="h-[2px] bg-gray-500"><td colSpan={19} className="bg-gray-500 p-0 border-0"></td></tr>
-                                        )}
+                                        <tr className="h-[2px] bg-gray-500"><td colSpan={19} className="bg-gray-500 p-0 border-0"></td></tr>
                                     </React.Fragment>
-                                    );
-                                });
+                                ));
                             })
                         )}
-                        {/* FILAS VACÍAS DE RELLENO — cuadrícula uniforme estilo Excel */}
-                        {consolidatedPatients.length < 5 && Array.from({length: 9}).map((_, i) => (
-                             <tr key={`filler-${i}`} className="h-5">
-                                {Array.from({length: 19}).map((_, j) => (
-                                    <td key={j} className="border border-gray-300 bg-white"></td>
-                                ))}
-                             </tr>
+                        {consolidatedPatients.length < 5 && Array.from({length: 3}).map((_, i) => (
+                             <tr key={`filler-${i}`}><td className="border border-gray-500 h-16" colSpan={7}></td><td className="border border-gray-500" colSpan={4}></td><td className="border border-gray-500" colSpan={3}></td><td className="border border-gray-500" colSpan={6}></td></tr>
                         ))}
                     </tbody>
                 </table>
@@ -5973,7 +5932,7 @@ const handleAdmin = (e) => {
             {/* PIE DE PÁGINA (FOOTER) */}
       <div className="bg-white p-6 border-t border-slate-100 flex justify-between items-center shrink-0">
         
-        {/* BOTÓN IZQUIERDO (ATRÁS) — "IR A SEGUIMIENTO" se movió a la cabecera superior */}
+        {/* BOTÓN IZQUIERDO (ATRÁS / SALIR) */}
         {step > 1 ? (
           <button 
             onClick={handleBack} 
@@ -5982,7 +5941,12 @@ const handleAdmin = (e) => {
             <ArrowLeft size={18} /> Atrás
           </button>
           ) : (
-          <div></div>
+          <button 
+            onClick={() => setIsModalOpen(false)} 
+            className="px-6 py-2 rounded-xl hover:bg-blue-50 text-slate-400 hover:text-blue-600 font-bold flex gap-2 transition-all text-xs h-10 items-center border border-transparent hover:border-blue-100"
+          >
+            <LogOut size={18} /> IR A SEGUIMIENTO
+          </button>
         )}
         {/* BOTONES DERECHOS (ACCIONES PRINCIPALES) */}
         <div className="flex gap-3">
@@ -5999,7 +5963,7 @@ const handleAdmin = (e) => {
             setStep(1);
             setTimeout(() => setIsCalendarOpen(true), 100); // Agregué esto para que abra el calendario igual que antes
         }}
-        className="btn-petrol-glow bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-6 rounded-lg flex items-center gap-2 transition-all duration-300 text-xs h-10"
+        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-6 rounded-lg shadow-lg flex items-center gap-2 transition-all duration-300 animate-fadeIn text-xs h-10"
     >
         <UserPlus size={18} />
         NUEVO PACIENTE
@@ -6152,6 +6116,20 @@ const handleAdmin = (e) => {
                                     </div>
                                 )}
                             </div>
+                            
+                            {/* LABS SUPERIORES (Sigue igual, no tocar) */}
+                            <div className="flex gap-2 shrink-0 bg-white p-2 rounded-2xl shadow-sm border border-slate-100 h-16 items-center">
+                                {[1, 2, 3].map(n => (
+                                    <input 
+                                        key={n} 
+                                        maxLength={3} 
+                                        placeholder={`LAB ${n}`} 
+                                        value={tempDx[`lab${n}`]} 
+                                        onChange={(e) => setTempDx({...tempDx, [`lab${n}`]: e.target.value.toUpperCase()})} 
+                                        className="w-20 h-12 rounded-xl bg-slate-100 border-2 border-transparent focus:border-blue-400 focus:bg-white text-center font-bold text-slate-700 outline-none uppercase text-sm placeholder:text-slate-400 placeholder:font-bold transition-all focus:shadow-sm"
+                                    />
+                                ))}
+                            </div>
                         </div>
                         {/* --- ZONA DE CONFIRMACIÓN Y SELECTOR "MALABARISTA" --- */}
                         <div className={`rounded-[2rem] p-6 transition-all duration-500 flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden
@@ -6183,8 +6161,8 @@ const handleAdmin = (e) => {
                                     <div className="flex items-center justify-center gap-3 mb-4">
                                         {!tempDx.tipo ? (
                                             // SOLO EL TEXTO, SIN FLECHAS
-                                            <span className="font-redondeada text-sm font-extrabold uppercase tracking-[0.12em] bg-gradient-to-r from-rose-500 to-orange-500 bg-clip-text text-transparent drop-shadow-sm animate-pulse">
-                                                Elegir tipo de diagnóstico
+                                            <span className="text-xs font-black uppercase tracking-[0.2em] bg-gradient-to-r from-rose-500 to-orange-500 bg-clip-text text-transparent drop-shadow-sm animate-pulse">
+                                                ELEGIR TIPO DE DIAGNOSTICO
                                             </span>
                                         ) : (
                                             <span className="text-[10px] font-bold text-slate-400 tracking-widest uppercase flex items-center gap-2">
@@ -6339,7 +6317,7 @@ const handleAdmin = (e) => {
         />
       )}
 
-      <style>{` @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&display=swap'); .font-redondeada { font-family: 'Baloo 2', system-ui, sans-serif; } .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; } input[type="date"]::-webkit-calendar-picker-indicator { opacity: 1; display: block; width: 1em; height: 1em; position: absolute; top: 50%; right: 12px; transform: translateY(-50%); color: #475569; cursor: pointer; } input[type="date"] { text-align: center; padding-left: 0.5rem; padding-right: 2.5rem; position: relative; } @keyframes histPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.25); opacity: 0.85; } } .animate-hist-pulse { animation: histPulse 2s ease-in-out infinite; } @keyframes petrolPulse { 0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(13, 148, 136, 0.7), 0 0 10px 2px rgba(13, 148, 136, 0.5); border-color: #0d9488; } 50% { transform: scale(1.06); box-shadow: 0 0 0 6px rgba(13, 148, 136, 0), 0 0 22px 6px rgba(15, 118, 110, 0.85); border-color: #5eead4; } } .btn-petrol-glow { animation: petrolPulse 1.8s ease-in-out infinite; border: 2px solid #0d9488; } .btn-petrol-glow:hover { animation-play-state: paused; transform: scale(1.08); } @keyframes baileAviso { 0%,100% { transform: scale(1) rotate(0deg); } 20% { transform: scale(1.08) rotate(-1.5deg); } 40% { transform: scale(1.08) rotate(1.5deg); } 60% { transform: scale(1.05) rotate(-1deg); } 80% { transform: scale(1.05) rotate(1deg); } } .animate-baile { animation: baileAviso 1.4s ease-in-out infinite; } `}</style>
+      <style>{` .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; } input[type="date"]::-webkit-calendar-picker-indicator { opacity: 1; display: block; width: 1em; height: 1em; position: absolute; top: 50%; right: 12px; transform: translateY(-50%); color: #475569; cursor: pointer; } input[type="date"] { text-align: center; padding-left: 0.5rem; padding-right: 2.5rem; position: relative; } @keyframes histPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.25); opacity: 0.85; } } .animate-hist-pulse { animation: histPulse 2s ease-in-out infinite; } `}</style>
     </div>
   );
 }

@@ -5869,20 +5869,15 @@ const handleAdmin = (e) => {
                                 const blocks = [];
                                 for (let i = 0; i < dxRows.length; i += 3) blocks.push(dxRows.slice(i, i + 3));
 
-                                return blocks.map((block, blockIdx) => {
-                                    // Igual que en el PDF: los datos generales del paciente SOLO se muestran
-                                    // en el primer bloque de 3 filas; los bloques siguientes van vacíos.
-                                    const esPrimerBloque = blockIdx === 0;
-                                    return (
+                                return blocks.map((block, blockIdx) => (
                                     <React.Fragment key={`${idx}-${blockIdx}`}>
                                         
                                         {/* FILA 1: Talla + P.C. */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
-                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white" rowSpan={3}>{esPrimerBloque ? (p.fecAtencion || "").split('-')[2] : ''}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white text-[9px]" rowSpan={3}>{esPrimerBloque ? p.dni : ''}</td>
+                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white" rowSpan={3}>{(p.fecAtencion || "").split('-')[2]}</td>
+                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white text-[9px]" rowSpan={3}>{p.dni}</td>
                                             {/* --- CELDA DE PACIENTE CON BOTONES DE EDICIÓN FLOTANTES --- */}
                                             <td className="border border-gray-500 px-1 align-middle font-bold bg-white uppercase text-[9px] relative group/row hover:bg-slate-50 transition-colors" rowSpan={3}>
-                                                {esPrimerBloque && (
                                                 <div className="w-full h-full relative flex items-center justify-between gap-1">
                                                     <span className="truncate w-full block" title={p.paciente}>{p.paciente || "(SIN NOMBRE)"}</span>
                                                     
@@ -5892,21 +5887,20 @@ const handleAdmin = (e) => {
                                                         <button onClick={() => handleDeletePatient(idx)} className="bg-red-100 text-red-700 hover:bg-red-600 hover:text-white p-1 rounded transition-colors" title="Eliminar"><Trash2 size={12}/></button>
                                                     </div>
                                                 </div>
-                                                )}
                                             </td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{esPrimerBloque ? (p.financiador === 'SIS' ? '2' : '1') : ''}</td>
-                                            <td className="border border-gray-500 px-1 align-middle text-[8px] bg-white truncate" rowSpan={3} title={p.distrito}>{esPrimerBloque ? p.distrito : ''}</td>
-                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white" rowSpan={3}>{esPrimerBloque ? (a.y > 0 ? a.y : a.m > 0 ? a.m + 'm' : a.d + 'd') : ''}</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{esPrimerBloque ? p.sexo : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.financiador === 'SIS' ? '2' : '1'}</td>
+                                            <td className="border border-gray-500 px-1 align-middle text-[8px] bg-white truncate" rowSpan={3} title={p.distrito}>{p.distrito}</td>
+                                            <td className="border border-gray-500 text-center font-bold align-middle bg-white" rowSpan={3}>{a.y > 0 ? a.y : a.m > 0 ? a.m + 'm' : a.d + 'd'}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.sexo}</td>
                                             
                                             {/* ANTROPOMETRÍA FILA 1: Talla | valor | P.C. | valor */}
                                             <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">Talla</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{esPrimerBloque ? c.talla : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.talla}</td>
                                             <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.C.</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{esPrimerBloque ? c.pCef : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.pCef}</td>
                                             
-                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{esPrimerBloque ? p.condEst : ''}</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{esPrimerBloque ? p.condServ : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.condEst}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white" rowSpan={3}>{p.condServ}</td>
 
                                             {/* DIAGNÓSTICO 1 (EXPANDIDO) */}
                                             <td className="border border-gray-500 px-1 align-middle uppercase text-[9px] truncate">{block[0].desc}</td>
@@ -5920,9 +5914,9 @@ const handleAdmin = (e) => {
                                         {/* FILA 2: Peso + P.Abd */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
                                             <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">Peso</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{esPrimerBloque ? c.peso : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.peso}</td>
                                             <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.Abd</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{esPrimerBloque ? c.pAbd : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.pAbd}</td>
                                             <td className="border border-gray-500 px-1 align-middle uppercase text-[9px] truncate">{block[1].desc}</td>
                                             <td className="border border-gray-500 text-center font-bold align-middle">{block[1].tipo}</td>
                                             <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[1].lab1}</td>
@@ -5934,9 +5928,9 @@ const handleAdmin = (e) => {
                                         {/* FILA 3: HB + P.Preg */}
                                         <tr className="hover:bg-blue-50 transition-colors h-5">
                                             <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">HB</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{esPrimerBloque ? c.hb : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.hb}</td>
                                             <td className="border border-gray-500 text-center align-middle bg-gray-50 text-[7px] font-bold text-gray-500">P.Preg</td>
-                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{esPrimerBloque ? c.pPreGest : ''}</td>
+                                            <td className="border border-gray-500 text-center align-middle bg-white font-bold text-[9px]">{c.pPreGest}</td>
                                             <td className="border border-gray-500 px-1 align-middle uppercase text-[9px] truncate">{block[2].desc}</td>
                                             <td className="border border-gray-500 text-center font-bold align-middle">{block[2].tipo}</td>
                                             <td className="border border-gray-500 text-center align-middle font-mono text-[9px]">{block[2].lab1}</td>
@@ -5945,21 +5939,13 @@ const handleAdmin = (e) => {
                                             <td className="border border-gray-500 text-center font-bold align-middle text-[9px]">{block[2].codigo}</td>
                                         </tr>
                                         
-                                        {blockIdx === blocks.length - 1 && (
-                                            <tr className="h-[2px] bg-gray-500"><td colSpan={19} className="bg-gray-500 p-0 border-0"></td></tr>
-                                        )}
+                                        <tr className="h-[2px] bg-gray-500"><td colSpan={19} className="bg-gray-500 p-0 border-0"></td></tr>
                                     </React.Fragment>
-                                    );
-                                });
+                                ));
                             })
                         )}
-                        {/* FILAS VACÍAS DE RELLENO — cuadrícula uniforme estilo Excel */}
-                        {consolidatedPatients.length < 5 && Array.from({length: 9}).map((_, i) => (
-                             <tr key={`filler-${i}`} className="h-5">
-                                {Array.from({length: 19}).map((_, j) => (
-                                    <td key={j} className="border border-gray-300 bg-white"></td>
-                                ))}
-                             </tr>
+                        {consolidatedPatients.length < 5 && Array.from({length: 3}).map((_, i) => (
+                             <tr key={`filler-${i}`}><td className="border border-gray-500 h-16" colSpan={7}></td><td className="border border-gray-500" colSpan={4}></td><td className="border border-gray-500" colSpan={3}></td><td className="border border-gray-500" colSpan={6}></td></tr>
                         ))}
                     </tbody>
                 </table>
