@@ -1284,87 +1284,6 @@ export default function App() {
   const [showCredModal, setShowCredModal] = useState(false);
   const [activePdf, setActivePdf] = useState(null);
   const [isBatchFinished, setIsBatchFinished] = useState(false);
-
-  // ===== ENVÍO A DRIVE (BUZÓN GOOGLE APPS SCRIPT) =====
-  // ⬇️ PEGA AQUÍ LA URL DE TU BUZÓN (la que te da Apps Script al publicar como app web).
-  //    Mientras esté vacía, el envío se omite y solo se descarga el archivo.
-  const DRIVE_BUZON_URL = "https://script.google.com/macros/s/AKfycby5UNfdC14tRQ3__w_6NbdtJl-SQgWpuLJ71tGxEQh4fKrzocil52KwrroJtfg_XjDV/exec";
-  // Estado del envío para mostrar avisos/acuse al usuario
-  const [envioDrive, setEnvioDrive] = useState({ estado: 'idle', mensaje: '', folio: '' }); // idle | enviando | ok | error
-  // Auto-oculta el acuse verde de envío exitoso a los 4 segundos (sin que el usuario lo cierre)
-  useEffect(() => {
-      if (envioDrive.estado === 'ok') {
-          const t = setTimeout(() => setEnvioDrive({ estado: 'idle', mensaje: '', folio: '' }), 2000);
-          return () => clearTimeout(t);
-      }
-  }, [envioDrive.estado]);
-
-  // Convierte un Blob a base64 (para mandarlo al buzón por POST)
-  const blobABase64 = (blob) => new Promise((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve(r.result.split(',')[1]);
-      r.onerror = reject;
-      r.readAsDataURL(blob);
-  });
-
-  // Envía el archivo al buzón de Drive. Muestra acuse visible. NO es silencioso.
-  const enviarADrive = async (blob, nombreArchivo, tipo) => {
-      if (!DRIVE_BUZON_URL) return; // sin buzón configurado, no se envía
-      const folio = `HIS-${Date.now()}`;
-      setEnvioDrive({ estado: 'enviando', mensaje: 'Enviando a la oficina…', folio });
-      try {
-          const base64 = await blobABase64(blob);
-          await fetch(DRIVE_BUZON_URL, {
-              method: 'POST',
-              mode: 'no-cors', // Apps Script requiere no-cors desde el navegador
-              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-              body: JSON.stringify({
-                  folio,
-                  nombre: nombreArchivo,
-                  tipo,
-                  mime: tipo === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                  data: base64,
-                  responsable: adminData.nombreResp || 'INVITADO',
-                  dniResp: adminData.dniResp || '',
-                  establecimiento: adminData.establecimiento || '',
-                  mes: `${adminData.mes || ''} ${adminData.anio || ''}`.trim(),
-                  enviadoEn: new Date().toISOString(),
-              }),
-          });
-          // Con no-cors no se puede leer la respuesta, se asume éxito si no lanzó error de red
-          setEnvioDrive({ estado: 'ok', mensaje: 'HIS PROCESADO', folio });
-      } catch (e) {
-          setEnvioDrive({ estado: 'error', mensaje: 'No se pudo enviar a la oficina (se descargó igual)', folio });
-      }
-  };
-  // FOLIO DE CIERRE: comprobante visible generado al terminar la digitación
-  const [folioCierre, setFolioCierre] = useState(null); // { folio, fecha, hora, responsable, establecimiento, mes, totalPacientes, totalDx }
-  // Genera un folio de cierre único, lo guarda localmente y lo muestra
-  const generarFolioCierre = () => {
-      const ahora = new Date();
-      const pad = (x) => String(x).padStart(2, '0');
-      const folio = `HIS-${ahora.getFullYear()}${pad(ahora.getMonth()+1)}${pad(ahora.getDate())}-${pad(ahora.getHours())}${pad(ahora.getMinutes())}${pad(ahora.getSeconds())}`;
-      const totalDx = savedPatients.reduce((acc, rec) => acc + ((rec.diagnoses || []).filter(d => d.codigo).length), 0);
-      const comprobante = {
-          folio,
-          fecha: `${pad(ahora.getDate())}/${pad(ahora.getMonth()+1)}/${ahora.getFullYear()}`,
-          hora: `${pad(ahora.getHours())}:${pad(ahora.getMinutes())}:${pad(ahora.getSeconds())}`,
-          responsable: adminData.nombreResp || 'INVITADO',
-          dniResp: adminData.dniResp || '---',
-          establecimiento: adminData.establecimiento || '---',
-          mes: `${adminData.mes || ''} ${adminData.anio || ''}`.trim(),
-          turno: adminData.turno || '',
-          totalPacientes: savedPatients.length,
-          totalDx,
-      };
-      try {
-          const historial = JSON.parse(localStorage.getItem('HIS_FOLIOS_CIERRE') || '[]');
-          historial.push(comprobante);
-          localStorage.setItem('HIS_FOLIOS_CIERRE', JSON.stringify(historial));
-      } catch (e) { /* si falla el storage, igual se muestra el folio */ }
-      setFolioCierre(comprobante);
-      setIsBatchFinished(true);
-  };
   const [isMasterUploadEnabled, setIsMasterUploadEnabled] = useState(false); 
   const [isProcessingMaster, setIsProcessingMaster] = useState(false);
   const [padronDate, setPadronDate] = useState(localStorage.getItem('PADRON_DATE') || "");
@@ -3702,9 +3621,6 @@ const handleAdmin = (e) => {
         
         doc.save(fileName); // Guardamos con el nuevo nombre
 
-        // ENVÍO A DRIVE (con aviso/acuse visible)
-        if (DRIVE_BUZON_URL) { try { enviarADrive(doc.output('blob'), fileName, 'pdf'); } catch(e){} }
-
         // Guardamos el nuevo número en el Estado y en la Memoria del navegador
         setPrintCount(nextCount);
         localStorage.setItem('his_print_count', nextCount);
@@ -4020,17 +3936,7 @@ const handleAdmin = (e) => {
             }
         }
         XLSX.utils.book_append_sheet(wb, ws, "HIS_Export");
-        const nombreXlsx = `HIS_${adminData.mes}_${allPatients.length}_PACIENTES.xlsx`;
-        XLSX.writeFile(wb, nombreXlsx);
-
-        // ENVÍO A DRIVE (con aviso/acuse visible)
-        if (DRIVE_BUZON_URL) {
-            try {
-                const arr = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-                const blob = new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-                enviarADrive(blob, nombreXlsx, 'xlsx');
-            } catch(e){}
-        }
+        XLSX.writeFile(wb, `HIS_${adminData.mes}_${allPatients.length}_PACIENTES.xlsx`);
     
         // --- INICIO DEL CAMBIO: LIMPIEZA AUTOMÁTICA SIN PREGUNTAR ---
         localStorage.removeItem('HIS_LOTE_PENDIENTE'); // <--- AGREGA ESTO
@@ -4851,25 +4757,6 @@ const handleAdmin = (e) => {
               
               {/* --- ALERTA DE VALIDACIÓN FLOTANTE (FIXED) --- */}
 {/* --- ALERTA DE VALIDACIÓN FLOTANTE (FIXED) --- */}
-{/* ACUSE DE ENVÍO A DRIVE (toast) */}
-{envioDrive.estado !== 'idle' && (
-  <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[10000] animate-in slide-in-from-bottom-4 fade-in duration-300">
-    <div className={`flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl border-2 font-bold text-sm
-        ${envioDrive.estado === 'enviando' ? 'bg-blue-600 border-blue-400 text-white' :
-          envioDrive.estado === 'ok' ? 'bg-emerald-600 border-emerald-400 text-white' :
-          'bg-amber-500 border-amber-400 text-white'}`}>
-        {envioDrive.estado === 'enviando' && <RefreshCw size={18} className="animate-spin"/>}
-        {envioDrive.estado === 'ok' && <CheckCircle size={18}/>}
-        {envioDrive.estado === 'error' && <AlertTriangle size={18}/>}
-        <div>
-            <div>{envioDrive.mensaje}</div>
-            {envioDrive.estado === 'ok' && <div className="text-[10px] font-medium opacity-90">Folio: {envioDrive.folio}</div>}
-        </div>
-        <button onClick={() => setEnvioDrive({ estado: 'idle', mensaje: '', folio: '' })} className="ml-2 opacity-70 hover:opacity-100"><X size={16}/></button>
-    </div>
-  </div>
-)}
-
 {validationAlert.isOpen && (
   <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
     <div className="absolute inset-0 bg-yellow-900/30 backdrop-blur-sm" onClick={() => setValidationAlert({ ...validationAlert, isOpen: false })}></div>
@@ -6181,7 +6068,7 @@ const handleAdmin = (e) => {
                   {/* BOTÓN "TERMINAR": SOLO APARECE SI YA HAY AL MENOS 1 PACIENTE GUARDADO */}
                   {savedPatients.length > 0 && (
                     <button
-                      onClick={generarFolioCierre}
+                      onClick={() => setIsBatchFinished(true)}
                       className="px-6 py-2 rounded-xl font-bold shadow-lg flex gap-2 items-center transition-all text-xs h-10 bg-amber-500 hover:bg-amber-600 text-white animate-in fade-in slide-in-from-right-4"
                     >
                       <CheckCircle size={18} /> TERMINAR DIGITACIÓN
@@ -6199,30 +6086,18 @@ const handleAdmin = (e) => {
                     ↩ SEGUIR EDITANDO
                   </button>
 
-                  {/* BOTÓN EXPORTAR EXCEL */}
+                  {/* BOTÓN EXPORTAR EXCEL - (Aquí estaba tu error principal, faltaba la etiqueta de apertura) */}
                   <button
-                    onClick={() => {
-                        if (DRIVE_BUZON_URL) {
-                            const ok = window.confirm("📤 Al exportar, este HIS se DESCARGARÁ en tu equipo.\n\n¿Deseas continuar?");
-                            if (!ok) return;
-                        }
-                        generateExcel();
-                    }}
+                    onClick={generateExcel}
                     className="px-10 py-2 rounded-xl font-bold shadow-xl flex gap-2 items-center transition-all text-xs h-10 bg-emerald-600 hover:bg-emerald-700 text-white hover:-translate-y-1 animate-in zoom-in"
                   >
                     {/* AQUI ESTA EL CAMBIO: Usamos consolidatedPatients.length */}
                     <Download size={20} /> EXPORTAR EXCEL ({consolidatedPatients.length})
                   </button>
 
-                  {/* BOTÓN EXPORTAR PDF */}
+                  {/* BOTÓN EXPORTAR PDF (CORREGIDO) */}
                   <button
-                    onClick={() => {
-                        if (DRIVE_BUZON_URL) {
-                            const ok = window.confirm("📤 Al exportar, este HIS se DESCARGARÁ en tu equipo.\n\n¿Deseas continuar?");
-                            if (!ok) return;
-                        }
-                        generatePDF();
-                    }}
+                    onClick={generatePDF}
                     className="px-6 py-2 rounded-xl font-bold shadow-xl flex gap-2 items-center transition-all text-xs h-10 bg-red-600 hover:bg-red-700 text-white hover:-translate-y-1 ml-2 animate-in zoom-in"
                   >
                     {/* AQUI ESTA EL CAMBIO: Usamos consolidatedPatients.length */}

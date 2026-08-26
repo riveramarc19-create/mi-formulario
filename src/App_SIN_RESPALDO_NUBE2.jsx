@@ -1284,59 +1284,6 @@ export default function App() {
   const [showCredModal, setShowCredModal] = useState(false);
   const [activePdf, setActivePdf] = useState(null);
   const [isBatchFinished, setIsBatchFinished] = useState(false);
-
-  // ===== ENVÍO A DRIVE (BUZÓN GOOGLE APPS SCRIPT) =====
-  // ⬇️ PEGA AQUÍ LA URL DE TU BUZÓN (la que te da Apps Script al publicar como app web).
-  //    Mientras esté vacía, el envío se omite y solo se descarga el archivo.
-  const DRIVE_BUZON_URL = "https://script.google.com/macros/s/AKfycby5UNfdC14tRQ3__w_6NbdtJl-SQgWpuLJ71tGxEQh4fKrzocil52KwrroJtfg_XjDV/exec";
-  // Estado del envío para mostrar avisos/acuse al usuario
-  const [envioDrive, setEnvioDrive] = useState({ estado: 'idle', mensaje: '', folio: '' }); // idle | enviando | ok | error
-  // Auto-oculta el acuse verde de envío exitoso a los 4 segundos (sin que el usuario lo cierre)
-  useEffect(() => {
-      if (envioDrive.estado === 'ok') {
-          const t = setTimeout(() => setEnvioDrive({ estado: 'idle', mensaje: '', folio: '' }), 2000);
-          return () => clearTimeout(t);
-      }
-  }, [envioDrive.estado]);
-
-  // Convierte un Blob a base64 (para mandarlo al buzón por POST)
-  const blobABase64 = (blob) => new Promise((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve(r.result.split(',')[1]);
-      r.onerror = reject;
-      r.readAsDataURL(blob);
-  });
-
-  // Envía el archivo al buzón de Drive. Muestra acuse visible. NO es silencioso.
-  const enviarADrive = async (blob, nombreArchivo, tipo) => {
-      if (!DRIVE_BUZON_URL) return; // sin buzón configurado, no se envía
-      const folio = `HIS-${Date.now()}`;
-      setEnvioDrive({ estado: 'enviando', mensaje: 'Enviando a la oficina…', folio });
-      try {
-          const base64 = await blobABase64(blob);
-          await fetch(DRIVE_BUZON_URL, {
-              method: 'POST',
-              mode: 'no-cors', // Apps Script requiere no-cors desde el navegador
-              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-              body: JSON.stringify({
-                  folio,
-                  nombre: nombreArchivo,
-                  tipo,
-                  mime: tipo === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                  data: base64,
-                  responsable: adminData.nombreResp || 'INVITADO',
-                  dniResp: adminData.dniResp || '',
-                  establecimiento: adminData.establecimiento || '',
-                  mes: `${adminData.mes || ''} ${adminData.anio || ''}`.trim(),
-                  enviadoEn: new Date().toISOString(),
-              }),
-          });
-          // Con no-cors no se puede leer la respuesta, se asume éxito si no lanzó error de red
-          setEnvioDrive({ estado: 'ok', mensaje: 'HIS PROCESADO', folio });
-      } catch (e) {
-          setEnvioDrive({ estado: 'error', mensaje: 'No se pudo enviar a la oficina (se descargó igual)', folio });
-      }
-  };
   // FOLIO DE CIERRE: comprobante visible generado al terminar la digitación
   const [folioCierre, setFolioCierre] = useState(null); // { folio, fecha, hora, responsable, establecimiento, mes, totalPacientes, totalDx }
   // Genera un folio de cierre único, lo guarda localmente y lo muestra
@@ -3702,9 +3649,6 @@ const handleAdmin = (e) => {
         
         doc.save(fileName); // Guardamos con el nuevo nombre
 
-        // ENVÍO A DRIVE (con aviso/acuse visible)
-        if (DRIVE_BUZON_URL) { try { enviarADrive(doc.output('blob'), fileName, 'pdf'); } catch(e){} }
-
         // Guardamos el nuevo número en el Estado y en la Memoria del navegador
         setPrintCount(nextCount);
         localStorage.setItem('his_print_count', nextCount);
@@ -4020,17 +3964,7 @@ const handleAdmin = (e) => {
             }
         }
         XLSX.utils.book_append_sheet(wb, ws, "HIS_Export");
-        const nombreXlsx = `HIS_${adminData.mes}_${allPatients.length}_PACIENTES.xlsx`;
-        XLSX.writeFile(wb, nombreXlsx);
-
-        // ENVÍO A DRIVE (con aviso/acuse visible)
-        if (DRIVE_BUZON_URL) {
-            try {
-                const arr = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-                const blob = new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-                enviarADrive(blob, nombreXlsx, 'xlsx');
-            } catch(e){}
-        }
+        XLSX.writeFile(wb, `HIS_${adminData.mes}_${allPatients.length}_PACIENTES.xlsx`);
     
         // --- INICIO DEL CAMBIO: LIMPIEZA AUTOMÁTICA SIN PREGUNTAR ---
         localStorage.removeItem('HIS_LOTE_PENDIENTE'); // <--- AGREGA ESTO
@@ -4851,21 +4785,32 @@ const handleAdmin = (e) => {
               
               {/* --- ALERTA DE VALIDACIÓN FLOTANTE (FIXED) --- */}
 {/* --- ALERTA DE VALIDACIÓN FLOTANTE (FIXED) --- */}
-{/* ACUSE DE ENVÍO A DRIVE (toast) */}
-{envioDrive.estado !== 'idle' && (
-  <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[10000] animate-in slide-in-from-bottom-4 fade-in duration-300">
-    <div className={`flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl border-2 font-bold text-sm
-        ${envioDrive.estado === 'enviando' ? 'bg-blue-600 border-blue-400 text-white' :
-          envioDrive.estado === 'ok' ? 'bg-emerald-600 border-emerald-400 text-white' :
-          'bg-amber-500 border-amber-400 text-white'}`}>
-        {envioDrive.estado === 'enviando' && <RefreshCw size={18} className="animate-spin"/>}
-        {envioDrive.estado === 'ok' && <CheckCircle size={18}/>}
-        {envioDrive.estado === 'error' && <AlertTriangle size={18}/>}
-        <div>
-            <div>{envioDrive.mensaje}</div>
-            {envioDrive.estado === 'ok' && <div className="text-[10px] font-medium opacity-90">Folio: {envioDrive.folio}</div>}
+{/* MODAL COMPROBANTE DE FOLIO DE CIERRE */}
+{folioCierre && (
+  <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
+    <div className="absolute inset-0 bg-emerald-950/50 backdrop-blur-sm" onClick={() => setFolioCierre(null)}></div>
+    <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-emerald-300 animate-in zoom-in duration-300">
+      <div className="bg-emerald-600 px-8 py-6 text-center text-white">
+        <div className="mx-auto bg-white/20 w-16 h-16 rounded-full flex items-center justify-center mb-3"><CheckCircle size={38} strokeWidth={2}/></div>
+        <h3 className="text-xl font-black uppercase">Digitación Cerrada</h3>
+        <p className="text-emerald-100 text-xs font-bold mt-1 uppercase tracking-wide">Comprobante de cierre generado</p>
+      </div>
+      <div className="p-6 space-y-3">
+        <div className="bg-emerald-50 border-2 border-emerald-200 border-dashed rounded-2xl p-4 text-center">
+          <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest block">Folio de Cierre</span>
+          <span className="text-lg font-black text-emerald-800 tracking-wide select-all">{folioCierre.folio}</span>
         </div>
-        <button onClick={() => setEnvioDrive({ estado: 'idle', mensaje: '', folio: '' })} className="ml-2 opacity-70 hover:opacity-100"><X size={16}/></button>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="bg-slate-50 rounded-lg p-2.5"><span className="text-[9px] font-bold text-slate-400 uppercase block">Fecha</span><span className="font-black text-slate-700">{folioCierre.fecha}</span></div>
+          <div className="bg-slate-50 rounded-lg p-2.5"><span className="text-[9px] font-bold text-slate-400 uppercase block">Hora</span><span className="font-black text-slate-700">{folioCierre.hora}</span></div>
+          <div className="bg-slate-50 rounded-lg p-2.5 col-span-2"><span className="text-[9px] font-bold text-slate-400 uppercase block">Responsable</span><span className="font-black text-slate-700 uppercase">{folioCierre.responsable} · DNI {folioCierre.dniResp}</span></div>
+          <div className="bg-slate-50 rounded-lg p-2.5 col-span-2"><span className="text-[9px] font-bold text-slate-400 uppercase block">Periodo / Establecimiento</span><span className="font-black text-slate-700 uppercase">{folioCierre.mes} · {folioCierre.establecimiento}</span></div>
+          <div className="bg-blue-50 rounded-lg p-2.5 text-center"><span className="text-[9px] font-bold text-blue-400 uppercase block">Pacientes</span><span className="font-black text-blue-700 text-lg">{folioCierre.totalPacientes}</span></div>
+          <div className="bg-indigo-50 rounded-lg p-2.5 text-center"><span className="text-[9px] font-bold text-indigo-400 uppercase block">Diagnósticos</span><span className="font-black text-indigo-700 text-lg">{folioCierre.totalDx}</span></div>
+        </div>
+        <p className="text-[10px] text-slate-400 text-center leading-snug pt-1">Este folio queda registrado como comprobante del cierre de digitación. Consérvelo para verificar la entrega del HIS.</p>
+        <button onClick={() => setFolioCierre(null)} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black transition-colors text-sm">ENTENDIDO</button>
+      </div>
     </div>
   </div>
 )}
@@ -6199,30 +6144,18 @@ const handleAdmin = (e) => {
                     ↩ SEGUIR EDITANDO
                   </button>
 
-                  {/* BOTÓN EXPORTAR EXCEL */}
+                  {/* BOTÓN EXPORTAR EXCEL - (Aquí estaba tu error principal, faltaba la etiqueta de apertura) */}
                   <button
-                    onClick={() => {
-                        if (DRIVE_BUZON_URL) {
-                            const ok = window.confirm("📤 Al exportar, este HIS se DESCARGARÁ en tu equipo.\n\n¿Deseas continuar?");
-                            if (!ok) return;
-                        }
-                        generateExcel();
-                    }}
+                    onClick={generateExcel}
                     className="px-10 py-2 rounded-xl font-bold shadow-xl flex gap-2 items-center transition-all text-xs h-10 bg-emerald-600 hover:bg-emerald-700 text-white hover:-translate-y-1 animate-in zoom-in"
                   >
                     {/* AQUI ESTA EL CAMBIO: Usamos consolidatedPatients.length */}
                     <Download size={20} /> EXPORTAR EXCEL ({consolidatedPatients.length})
                   </button>
 
-                  {/* BOTÓN EXPORTAR PDF */}
+                  {/* BOTÓN EXPORTAR PDF (CORREGIDO) */}
                   <button
-                    onClick={() => {
-                        if (DRIVE_BUZON_URL) {
-                            const ok = window.confirm("📤 Al exportar, este HIS se DESCARGARÁ en tu equipo.\n\n¿Deseas continuar?");
-                            if (!ok) return;
-                        }
-                        generatePDF();
-                    }}
+                    onClick={generatePDF}
                     className="px-6 py-2 rounded-xl font-bold shadow-xl flex gap-2 items-center transition-all text-xs h-10 bg-red-600 hover:bg-red-700 text-white hover:-translate-y-1 ml-2 animate-in zoom-in"
                   >
                     {/* AQUI ESTA EL CAMBIO: Usamos consolidatedPatients.length */}

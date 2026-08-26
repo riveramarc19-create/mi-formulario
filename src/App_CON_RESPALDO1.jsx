@@ -1291,13 +1291,6 @@ export default function App() {
   const DRIVE_BUZON_URL = "https://script.google.com/macros/s/AKfycby5UNfdC14tRQ3__w_6NbdtJl-SQgWpuLJ71tGxEQh4fKrzocil52KwrroJtfg_XjDV/exec";
   // Estado del envío para mostrar avisos/acuse al usuario
   const [envioDrive, setEnvioDrive] = useState({ estado: 'idle', mensaje: '', folio: '' }); // idle | enviando | ok | error
-  // Auto-oculta el acuse verde de envío exitoso a los 4 segundos (sin que el usuario lo cierre)
-  useEffect(() => {
-      if (envioDrive.estado === 'ok') {
-          const t = setTimeout(() => setEnvioDrive({ estado: 'idle', mensaje: '', folio: '' }), 2000);
-          return () => clearTimeout(t);
-      }
-  }, [envioDrive.estado]);
 
   // Convierte un Blob a base64 (para mandarlo al buzón por POST)
   const blobABase64 = (blob) => new Promise((resolve, reject) => {
@@ -1311,7 +1304,7 @@ export default function App() {
   const enviarADrive = async (blob, nombreArchivo, tipo) => {
       if (!DRIVE_BUZON_URL) return; // sin buzón configurado, no se envía
       const folio = `HIS-${Date.now()}`;
-      setEnvioDrive({ estado: 'enviando', mensaje: 'Enviando a la oficina…', folio });
+      setEnvioDrive({ estado: 'enviando', mensaje: 'Preparando archivo…', folio });
       try {
           const base64 = await blobABase64(blob);
           await fetch(DRIVE_BUZON_URL, {
@@ -1332,9 +1325,9 @@ export default function App() {
               }),
           });
           // Con no-cors no se puede leer la respuesta, se asume éxito si no lanzó error de red
-          setEnvioDrive({ estado: 'ok', mensaje: 'HIS PROCESADO', folio });
+          setEnvioDrive({ estado: 'ok', mensaje: 'Preparando HIS', folio });
       } catch (e) {
-          setEnvioDrive({ estado: 'error', mensaje: 'No se pudo enviar a la oficina (se descargó igual)', folio });
+          setEnvioDrive({ estado: 'error', mensaje: 'No se pudo enviar HIS (se descargó igual)', folio });
       }
   };
   // FOLIO DE CIERRE: comprobante visible generado al terminar la digitación
@@ -4866,6 +4859,36 @@ const handleAdmin = (e) => {
             {envioDrive.estado === 'ok' && <div className="text-[10px] font-medium opacity-90">Folio: {envioDrive.folio}</div>}
         </div>
         <button onClick={() => setEnvioDrive({ estado: 'idle', mensaje: '', folio: '' })} className="ml-2 opacity-70 hover:opacity-100"><X size={16}/></button>
+    </div>
+  </div>
+)}
+
+{/* MODAL COMPROBANTE DE FOLIO DE CIERRE */}
+{folioCierre && (
+  <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
+    <div className="absolute inset-0 bg-emerald-950/50 backdrop-blur-sm" onClick={() => setFolioCierre(null)}></div>
+    <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-emerald-300 animate-in zoom-in duration-300">
+      <div className="bg-emerald-600 px-8 py-6 text-center text-white">
+        <div className="mx-auto bg-white/20 w-16 h-16 rounded-full flex items-center justify-center mb-3"><CheckCircle size={38} strokeWidth={2}/></div>
+        <h3 className="text-xl font-black uppercase">Digitación Cerrada</h3>
+        <p className="text-emerald-100 text-xs font-bold mt-1 uppercase tracking-wide">Comprobante de cierre generado</p>
+      </div>
+      <div className="p-6 space-y-3">
+        <div className="bg-emerald-50 border-2 border-emerald-200 border-dashed rounded-2xl p-4 text-center">
+          <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest block">Folio de Cierre</span>
+          <span className="text-lg font-black text-emerald-800 tracking-wide select-all">{folioCierre.folio}</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="bg-slate-50 rounded-lg p-2.5"><span className="text-[9px] font-bold text-slate-400 uppercase block">Fecha</span><span className="font-black text-slate-700">{folioCierre.fecha}</span></div>
+          <div className="bg-slate-50 rounded-lg p-2.5"><span className="text-[9px] font-bold text-slate-400 uppercase block">Hora</span><span className="font-black text-slate-700">{folioCierre.hora}</span></div>
+          <div className="bg-slate-50 rounded-lg p-2.5 col-span-2"><span className="text-[9px] font-bold text-slate-400 uppercase block">Responsable</span><span className="font-black text-slate-700 uppercase">{folioCierre.responsable} · DNI {folioCierre.dniResp}</span></div>
+          <div className="bg-slate-50 rounded-lg p-2.5 col-span-2"><span className="text-[9px] font-bold text-slate-400 uppercase block">Periodo / Establecimiento</span><span className="font-black text-slate-700 uppercase">{folioCierre.mes} · {folioCierre.establecimiento}</span></div>
+          <div className="bg-blue-50 rounded-lg p-2.5 text-center"><span className="text-[9px] font-bold text-blue-400 uppercase block">Pacientes</span><span className="font-black text-blue-700 text-lg">{folioCierre.totalPacientes}</span></div>
+          <div className="bg-indigo-50 rounded-lg p-2.5 text-center"><span className="text-[9px] font-bold text-indigo-400 uppercase block">Diagnósticos</span><span className="font-black text-indigo-700 text-lg">{folioCierre.totalDx}</span></div>
+        </div>
+        <p className="text-[10px] text-slate-400 text-center leading-snug pt-1">Este folio queda registrado como comprobante del cierre de digitación. Consérvelo para verificar la entrega del HIS.</p>
+        <button onClick={() => setFolioCierre(null)} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black transition-colors text-sm">ENTENDIDO</button>
+      </div>
     </div>
   </div>
 )}
