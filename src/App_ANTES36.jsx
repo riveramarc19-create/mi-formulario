@@ -1789,11 +1789,6 @@ export default function App() {
           window.removeEventListener('resize', reposicionar);
       };
   }, [showCaserioList]);
-  // Cinturón de seguridad: si se abre el modal de gestante, cierra la lista de caseríos
-  // para que nunca se superpongan.
-  useEffect(() => {
-      if (gestanteConfirm.isOpen) { setShowCaserioList(false); setCaserioQuery(""); }
-  }, [gestanteConfirm.isOpen]);
   // BLINDAJE: Si se reconfigura el MES y la fecha de atención vigente ya no pertenece a él,
   // se limpia para obligar a seleccionar una fecha válida dentro del nuevo periodo.
   useEffect(() => {
@@ -4479,18 +4474,6 @@ const handleAdmin = (e) => {
                 >
                     <LogOut size={16}/> IR A CONFIGURACIÓN
                 </button>
-                <button 
-                    onClick={() => {
-                        const ok = window.confirm("¿Cerrar sesión?\n\nSaldrás completamente del sistema y volverás a la pantalla de acceso.");
-                        if (!ok) return;
-                        setAdminData({ anio: '2026', mes: '', establecimiento: '', turno: 'MAÑANA', ups: 'MEDICINA', dniResp: '', nombreResp: '', isConfigured: false });
-                        setIsModalOpen(false);
-                        setIsAuthenticated(false);
-                    }}
-                    className="bg-slate-500/10 hover:bg-slate-500/20 text-slate-200 px-4 py-2 rounded-xl border border-slate-500/30 flex gap-2 transition-all hover:border-slate-400 font-bold text-xs items-center"
-                >
-                    <LogOut size={16}/> CERRAR SESIÓN
-                </button>
             </div>
         </div>
       </div>
@@ -5384,8 +5367,11 @@ const handleAdmin = (e) => {
                                         value={showCaserioList ? caserioQuery : patientData.direccion}
                                         readOnly={esSoloLectura('direccion')}
                                         placeholder="ESCRIBA EL CASERÍO..."
-                                        onFocus={() => { /* El foco solo (p.ej. autocompletar DNI) NO abre la lista;
-                                            la lista se abre por clic o al escribir, para evitar que aparezca sola. */ }}
+                                        onFocus={() => { if(!esSoloLectura('direccion')){ 
+                                            setCaserioQuery(""); 
+                                            setShowCaserioList(true); 
+                                            if(caserioInputRef.current){ const r = caserioInputRef.current.getBoundingClientRect(); setCaserioDropPos({top: r.top, bottom: r.bottom, left: r.left, width: r.width}); }
+                                        } }}
                                         onClick={() => { if(!esSoloLectura('direccion')){ 
                                             setShowCaserioList(true); 
                                             if(caserioInputRef.current){ const r = caserioInputRef.current.getBoundingClientRect(); setCaserioDropPos({top: r.top, bottom: r.bottom, left: r.left, width: r.width}); }
