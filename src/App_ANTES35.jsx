@@ -1311,7 +1311,7 @@ export default function App() {
   const enviarADrive = async (blob, nombreArchivo, tipo) => {
       if (!DRIVE_BUZON_URL) return; // sin buzón configurado, no se envía
       const folio = `HIS-${Date.now()}`;
-      setEnvioDrive({ estado: 'enviando', mensaje: 'Enviando His…', folio });
+      setEnvioDrive({ estado: 'enviando', mensaje: 'Enviando a la oficina…', folio });
       try {
           const base64 = await blobABase64(blob);
           await fetch(DRIVE_BUZON_URL, {
@@ -1514,8 +1514,6 @@ export default function App() {
   const [showJurisdictionModal, setShowJurisdictionModal] = useState(false);
   const [jurisdictionErrorMsg, setJurisdictionErrorMsg] = useState("");
   const [showAdolescentModal, setShowAdolescentModal] = useState(false);
-  // Modal propio para confirmar condición de GESTANTE por FUR detectada
-  const [gestanteConfirm, setGestanteConfirm] = useState({ isOpen: false, paciente: '', fur: '' });
 
   const [anemiaLocation, setAnemiaLocation] = useState("");
   // --- AUTOCOMPLETE DE CASERÍO (búsqueda inteligente, solo valores válidos) ---
@@ -1809,7 +1807,21 @@ export default function App() {
           
           // Pequeño delay para que no choque con la renderización
           const timer = setTimeout(() => {
-              setGestanteConfirm({ isOpen: true, paciente: patientData.paciente, fur: patientData.fur });
+              const confirmacion = window.confirm(
+                  `⚠️ ATENCIÓN: Sra. ${patientData.paciente}\n\n` +
+                  `El sistema detectó una Fecha de Última Regla (FUR): ${patientData.fur}\n\n` +
+                  `¿La paciente continúa con la condición de GESTANTE?\n` +
+                  `[SÍ] = SÍ, marcar como GESTANTE.\n` +
+                  `[NO, Ya no es gestante] = borrar FUR y continuar.`
+              );
+
+              if (confirmacion) {
+                  // Opción SÍ: Marcar como GESTANTE
+                  setPatientData(prev => ({ ...prev, condicion: 'GESTANTE' }));
+              } else {
+                  // Opción NO: Borrar FUR y dejar Condición vacía
+                  setPatientData(prev => ({ ...prev, fur: '', condicion: '' }));
+              }
           }, 200);
           
           return () => clearTimeout(timer); // Limpieza del timer
@@ -4854,43 +4866,6 @@ const handleAdmin = (e) => {
             {envioDrive.estado === 'ok' && <div className="text-[10px] font-medium opacity-90">Folio: {envioDrive.folio}</div>}
         </div>
         <button onClick={() => setEnvioDrive({ estado: 'idle', mensaje: '', folio: '' })} className="ml-2 opacity-70 hover:opacity-100"><X size={16}/></button>
-    </div>
-  </div>
-)}
-
-{/* MODAL CONFIRMACIÓN GESTANTE (reemplaza el confirm nativo) */}
-{gestanteConfirm.isOpen && (
-  <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
-    <div className="absolute inset-0 bg-pink-950/40 backdrop-blur-sm"></div>
-    <div className="relative rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-pink-300/60 animate-in zoom-in duration-300"
-         style={{ background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}>
-      <div className="bg-pink-500/90 px-8 py-6 text-center text-white">
-        <div className="mx-auto bg-white/25 w-16 h-16 rounded-full flex items-center justify-center mb-3"><Baby size={38} strokeWidth={2}/></div>
-        <h3 className="text-xl font-black uppercase leading-tight">¿Continúa siendo gestante?</h3>
-        <p className="text-pink-100 text-xs font-bold mt-1 uppercase tracking-wide">Se detectó una FUR registrada</p>
-      </div>
-      <div className="p-6 space-y-4">
-        <div className="text-center">
-          <p className="text-sm font-bold text-slate-700 uppercase">{gestanteConfirm.paciente || 'PACIENTE'}</p>
-          <div className="mt-2 bg-pink-50 border border-pink-200 rounded-xl px-4 py-2 inline-block">
-            <span className="text-[10px] font-bold text-pink-500 uppercase block">Fecha de Última Regla (FUR)</span>
-            <span className="text-base font-black text-pink-800">{gestanteConfirm.fur}</span>
-          </div>
-        </div>
-        <div className="space-y-2 pt-1">
-          <button
-            onClick={() => { setPatientData(prev => ({ ...prev, condicion: 'GESTANTE' })); setGestanteConfirm({ isOpen: false, paciente: '', fur: '' }); }}
-            className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black shadow-lg shadow-emerald-200 transition-all active:scale-95 flex items-center justify-center gap-2 text-sm uppercase">
-            <CheckCircle size={18}/> Sí, sigue siendo gestante
-          </button>
-          <button
-            onClick={() => { setPatientData(prev => ({ ...prev, fur: '', condicion: '' })); setGestanteConfirm({ isOpen: false, paciente: '', fur: '' }); }}
-            className="w-full py-3.5 rounded-xl bg-white border-2 border-slate-300 text-slate-600 hover:bg-slate-50 hover:border-slate-400 font-black transition-all active:scale-95 flex items-center justify-center gap-2 text-sm uppercase">
-            <X size={18}/> No, ya no es gestante
-          </button>
-        </div>
-        <p className="text-[10px] text-slate-400 text-center leading-snug">Si ya no es gestante, se borrará la FUR y podrá continuar el registro.</p>
-      </div>
     </div>
   </div>
 )}
